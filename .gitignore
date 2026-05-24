@@ -107,6 +107,8 @@ ipython_config.py
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
 #uv.lock
+.cache_uv/
+.cache_xdg/
 
 # poetry
 #   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
@@ -218,3 +220,12 @@ agentlightning/dashboard/**/*.svg
 
 # Docker data
 docker/data/
+
+# Local training data and artifacts
+sql_agent_training/data/
+sql_agent_training/artifacts/
+sql_agent_training/logs/
+
+# Source package directory, not a virtual environment.
+!sql_agent_training/sql_agent_training/env/
+!sql_agent_training/sql_agent_training/env/**

@@ -1,0 +1,10 @@
+stages:
+  - sft
+  - grpo
+
+sft_config: configs/sft.local_dryrun.yaml
+grpo_config: configs/agent_grpo.local_dryrun.yaml
+
+sft_dry_run: true
+grpo_prepare_only: false
+grpo_run_verl: false

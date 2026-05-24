@@ -1,0 +1,45 @@
+dry_run: false
+
+model:
+  path: Qwen/Qwen2.5-Coder-0.5B-Instruct
+  sft_checkpoint: null
+
+tokenizer:
+  kind: hf
+
+data:
+  data_dir: /root/autodl-tmp/data/spider
+  train_file: train_spider.json
+  validation_file: dev.json
+
+rollout:
+  n: 4
+  max_turns: 3
+  temperature: 0.7
+  max_prompt_length: 4096
+  max_response_length: 2048
+
+verl:
+  default_agent_loop: sql_agent
+  agent_loop_config_path: configs/verl_sql_agent_loop.yaml
+  train_parquet: /root/autodl-tmp/data/verl/spider_train_smoke.parquet
+  val_parquet: /root/autodl-tmp/data/verl/spider_val_smoke.parquet
+  train_limit: 1
+  val_limit: 1
+  train_batch_size: 1
+  val_batch_size: 1
+  total_training_steps: 1
+  n_gpus_per_node: 1
+  tensor_model_parallel_size: 1
+  ppo_mini_batch_size: 1
+  ppo_micro_batch_size_per_gpu: 1
+  rollout_name: vllm
+  agent_num_workers: 1
+
+algorithm:
+  adv_estimator: grpo
+  use_kl_in_reward: false
+
+output:
+  checkpoint_dir: /root/autodl-tmp/checkpoints/sql-agent-grpo
+  log_dir: /root/autodl-tmp/logs/sql-agent-training

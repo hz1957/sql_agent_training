@@ -1,0 +1,28 @@
+model:
+  path: Qwen/Qwen2.5-Coder-0.5B-Instruct
+
+tokenizer:
+  kind: whitespace
+
+data:
+  data_dir: data/spider
+  train_file: train_spider.json
+  validation_file: dev.json
+
+output:
+  sft_jsonl: artifacts/sft/train.jsonl
+  checkpoint_dir: artifacts/checkpoints/sft
+  predictions_jsonl: artifacts/eval/sft_predictions.jsonl
+
+training:
+  max_prompt_length: 1024
+  max_response_length: 256
+  learning_rate: 0.00002
+  num_train_epochs: 1
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 1
+  logging_steps: 1
+  save_steps: 10
+  bf16: false
+  fp16: false
+  report_to: none

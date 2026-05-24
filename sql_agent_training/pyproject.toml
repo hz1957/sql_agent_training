@@ -1,0 +1,47 @@
+[project]
+name = "sql-agent-training"
+version = "0.1.0"
+description = "Standalone Spider SQL agent training stack with SFT and VERL Agent GRPO."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "datasets>=2.18",
+  "huggingface-hub>=0.24",
+  "pandas>=2.0",
+  "pyarrow>=14.0",
+  "pyyaml>=6.0",
+  "sqlparse>=0.5",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+sft = [
+  "torch",
+  "transformers>=4.45,<5",
+  "accelerate",
+  "protobuf",
+]
+train = [
+  "cachetools",
+  "torch",
+  "transformers>=4.45,<5",
+  "accelerate",
+  "protobuf",
+  "verl>=0.5.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+line_length = 120
