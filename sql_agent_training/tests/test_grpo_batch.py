@@ -1,6 +1,6 @@
 import pytest
 
-from sql_agent_training.train.grpo_batch import TokenizedTrajectory, build_grpo_batch, make_response_mask
+from sql_agent_training.train.grpo_batch import TokenizedTrajectory, build_grpo_batch
 
 
 def _trajectory(uid: str, rollout: int) -> TokenizedTrajectory:
@@ -47,7 +47,3 @@ def test_tokenized_trajectory_rejects_bad_mask_length() -> None:
     )
     with pytest.raises(ValueError, match="same length"):
         bad.validate()
-
-
-def test_make_response_mask() -> None:
-    assert make_response_mask(generated_token_count=2, tool_token_count=3) == [1, 1, 0, 0, 0]

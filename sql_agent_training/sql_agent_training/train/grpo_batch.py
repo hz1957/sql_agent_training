@@ -68,11 +68,3 @@ def build_grpo_batch(trajectories: list[TokenizedTrajectory], *, rollout_n: int,
             raise ValueError(f"uid {uid!r} has {len(items)} trajectories, expected {rollout_n}")
         groups.append(GrpoGroup(uid=uid, trajectories=items))
     return GrpoBatch(groups=groups)
-
-
-def make_response_mask(*, generated_token_count: int, tool_token_count: int = 0) -> list[int]:
-    """Build a simple response mask segment."""
-
-    if generated_token_count < 0 or tool_token_count < 0:
-        raise ValueError("token counts must be non-negative")
-    return [1] * generated_token_count + [0] * tool_token_count

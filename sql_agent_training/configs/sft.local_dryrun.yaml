@@ -1,5 +1,5 @@
 model:
-  path: Qwen/Qwen2.5-Coder-0.5B-Instruct
+  path: data/models/SmolLM2-135M-Instruct
 
 tokenizer:
   kind: whitespace

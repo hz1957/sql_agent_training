@@ -142,7 +142,7 @@ def generate_predictions(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate and evaluate SFT SQL predictions.")
-    parser.add_argument("--config", default="configs/sft.autodl.yaml")
+    parser.add_argument("--config", default="configs/sft.yaml")
     parser.add_argument("--split", default="validation", choices=["train", "validation"])
     parser.add_argument("--limit", type=int, default=None, help="Limit number of examples for local smoke tests.")
     parser.add_argument("--dry-run-gold", action="store_true", help="Emit gold SQL as predictions for plumbing tests.")

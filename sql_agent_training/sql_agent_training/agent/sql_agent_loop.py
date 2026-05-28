@@ -14,6 +14,16 @@ from sql_agent_training.env.sqlite_tool import SQLiteTool
 from sql_agent_training.reward.spider_reward import spider_execution_reward
 
 
+def _format_execution_feedback(ok: bool, rows: list[tuple[object, ...]], error: str | None) -> str:
+    """Render bounded tool feedback for the next model turn."""
+
+    if not ok:
+        return str(error)
+    preview = rows[:5]
+    suffix = "" if len(rows) <= len(preview) else f"; truncated={len(rows) - len(preview)}"
+    return f"rows={preview}; row_count={len(rows)}{suffix}"
+
+
 @dataclass(frozen=True)
 class SqlAgentInput:
     """Input fields required for one SQL agent rollout."""
@@ -27,26 +37,11 @@ class SqlAgentInput:
 
 
 class SqlAgentLoop:
-    """Deterministic SQL rewrite loop independent of the VERL runtime."""
+    """Deterministic SQL rewrite loop for local tests and rollout preparation."""
 
     def __init__(self, max_turns: int = 3, sqlite_tool: SQLiteTool | None = None) -> None:
         self.max_turns = max_turns
         self.sqlite_tool = sqlite_tool or SQLiteTool()
-
-    def empty_trajectory(self, sample: SqlAgentInput, reason: str = "not_run") -> AgentTrajectory:
-        """Return a structured empty trajectory for dry-run plumbing tests."""
-
-        return AgentTrajectory(
-            uid=sample.uid,
-            rollout_id=sample.rollout_id,
-            turns=[
-                AgentTurn(role="user", content=sample.question, metadata={"db_id": sample.db_id}),
-            ],
-            final_sql=None,
-            final_sql_source="none",
-            reward=None,
-            metadata={"reason": reason, "max_turns": self.max_turns},
-        )
 
     def run_with_responses(
         self,
@@ -138,7 +133,7 @@ class SqlAgentLoop:
             turns.append(
                 AgentTurn(
                     role="tool",
-                    content=str(execution.rows if execution.ok else execution.error),
+                    content=_format_execution_feedback(execution.ok, execution.rows, execution.error),
                     metadata={
                         "ok": execution.ok,
                         "sql": candidate_sql,

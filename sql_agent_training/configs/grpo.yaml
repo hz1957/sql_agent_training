@@ -1,0 +1,31 @@
+dry_run: true
+
+model:
+  backend: hf
+  path: data/models/SmolLM2-135M-Instruct
+
+tokenizer:
+  kind: hf
+
+rollout:
+  n: 2
+  max_turns: 1
+  scripted_responses:
+    - SELECT COUNT(*) FROM Singer
+    - SELECT Name FROM Singer
+  max_prompt_length: 256
+  max_response_length: 64
+
+output:
+  rollouts_jsonl: artifacts/grpo/rollouts.jsonl
+  checkpoint_dir: artifacts/checkpoints/grpo_smol135m
+  metrics_json: artifacts/checkpoints/grpo_smol135m/metrics.json
+
+training:
+  seed: 0
+  device: auto
+  max_steps: 1
+  learning_rate: 0.000001
+  clip_epsilon: 0.2
+  kl_beta: 0.02
+  max_grad_norm: 1.0

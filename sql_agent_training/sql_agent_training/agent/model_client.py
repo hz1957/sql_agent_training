@@ -28,7 +28,7 @@ class ModelResponse:
 
 
 class ModelClient(Protocol):
-    """Protocol implemented by local, vLLM, SGLang, or VERL model clients."""
+    """Protocol implemented by local or hosted model clients."""
 
     def generate(self, request: ModelRequest) -> ModelResponse:
         """Generate the next assistant message."""
