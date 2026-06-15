@@ -22,6 +22,7 @@ from typing import Any
 
 import yaml
 
+from sql_agent_training.agent.model_client import HuggingFaceModelClient, ModelClient
 from sql_agent_training.agent.sql_agent_loop import SqlAgentInput, SqlAgentLoop
 from sql_agent_training.agent.tokenization import load_tokenizer, trajectory_to_tokenized
 from sql_agent_training.agent.trace_format import TokenizedTrajectory
@@ -86,7 +87,10 @@ def _run_one_example(
     sqlite_path: str | Path,
     rollout_index: int,
     loop: SqlAgentLoop,
+    model_client: ModelClient | None = None,
     scripted_responses: list[str] | None = None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
 ) -> Any:
     sample = SqlAgentInput(
         uid=example.uid,
@@ -96,11 +100,33 @@ def _run_one_example(
         schema_prompt=schema_prompt,
         gold_sql=example.gold_sql,
     )
-    # The minimal flow uses scripted policy responses. That isolates the
-    # agent/reward/GRPO plumbing from model quality while still allowing local
-    # demos to include both good and bad rollouts.
-    response = scripted_responses[rollout_index % len(scripted_responses)] if scripted_responses else example.gold_sql
-    return loop.run_with_responses(sample, [response], sqlite_path)
+    if scripted_responses:
+        response = scripted_responses[rollout_index % len(scripted_responses)]
+        return loop.run_with_responses(sample, [response], sqlite_path)
+    if model_client is None:
+        return loop.run_with_responses(sample, [example.gold_sql], sqlite_path)
+    return loop.run(sample, model_client, sqlite_path, max_tokens=max_tokens, temperature=temperature)
+
+
+def _load_rollout_model_client(config: dict[str, Any]) -> ModelClient | None:
+    model_config = config.get("model", {})
+    backend = str(model_config.get("backend", "scripted"))
+    if backend in {"scripted", "tiny"}:
+        return None
+    if backend != "hf":
+        raise ValueError(f"Unknown rollout model backend: {backend}")
+
+    model_path = model_config.get("path")
+    if not model_path:
+        raise ValueError("model.path is required when model.backend is hf")
+
+    rollout_config = config.get("rollout", {})
+    return HuggingFaceModelClient(
+        str(model_path),
+        device=str(model_config.get("device", config.get("training", {}).get("device", "auto"))),
+        max_new_tokens=int(rollout_config.get("max_response_length", 256)),
+        temperature=float(rollout_config.get("temperature", 0.0)),
+    )
 
 
 def _build_batch_from_examples(
@@ -116,6 +142,10 @@ def _build_batch_from_examples(
     tokenizer = load_tokenizer(tokenizer_kind, model_path if tokenizer_kind == "hf" else None)
     loop = SqlAgentLoop(max_turns=_max_turns(config))
     scripted_responses = config.get("rollout", {}).get("scripted_responses")
+    model_client = None if scripted_responses else _load_rollout_model_client(config)
+    max_tokens = int(config.get("rollout", {}).get("max_response_length", 256))
+    temperature = config.get("rollout", {}).get("temperature")
+    temperature = float(temperature) if temperature is not None else None
 
     tokenized = []
     for example in examples:
@@ -128,7 +158,10 @@ def _build_batch_from_examples(
                 sqlite_path=sqlite_path,
                 rollout_index=rollout_index,
                 loop=loop,
+                model_client=model_client,
                 scripted_responses=scripted_responses,
+                max_tokens=max_tokens,
+                temperature=temperature,
             )
             tokenized.append(_trim_tokenized_trajectory(trajectory_to_tokenized(trajectory, tokenizer), config))
 
