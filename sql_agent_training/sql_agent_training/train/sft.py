@@ -81,6 +81,23 @@ def _trainer_output_dir(config: dict, checkpoint_dir: str | Path) -> Path:
     return Path(checkpoint_dir)
 
 
+def _normalize_save_strategy(value) -> str:
+    """Normalize YAML-loaded save_strategy values for Hugging Face TrainingArguments."""
+
+    if value is None or value is False:
+        return "no"
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"false", "none"}:
+            return "no"
+        if normalized in {"no", "steps", "epoch", "best"}:
+            return normalized
+    raise ValueError(
+        "training.save_strategy must be one of 'no', 'steps', 'epoch', or 'best'; "
+        f"got {value!r}"
+    )
+
+
 def _write_run_config(config: dict, checkpoint_dir: str | Path) -> Path:
     path = Path(checkpoint_dir) / "run_config.yaml"
     path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
@@ -96,10 +113,11 @@ def _run_transformers_training(config: dict, tokenizer, dataset: SftTorchDataset
     model = AutoModelForCausalLM.from_pretrained(config["model"]["path"], trust_remote_code=True)
     collator = SftDataCollator(pad_token_id=tokenizer.pad_token_id)
     training = config["training"]
-    save_strategy = str(training.get("save_strategy", "no"))
+    save_strategy = _normalize_save_strategy(training.get("save_strategy", "no"))
+    run_config = {**config, "training": {**training, "save_strategy": save_strategy}}
     final_checkpoint_dir = _new_final_checkpoint_dir(config)
     final_checkpoint_dir.mkdir(parents=True, exist_ok=False)
-    run_config_path = _write_run_config(config, final_checkpoint_dir)
+    run_config_path = _write_run_config(run_config, final_checkpoint_dir)
     args = TrainingArguments(
         output_dir=str(_trainer_output_dir(config, final_checkpoint_dir)),
         learning_rate=float(training["learning_rate"]),

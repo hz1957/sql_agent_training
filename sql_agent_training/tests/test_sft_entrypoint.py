@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from sql_agent_training.train.sft import _new_checkpoint_dir, _trainer_output_dir
+from sql_agent_training.train.sft import _new_checkpoint_dir, _normalize_save_strategy, _trainer_output_dir
 
 
 def test_sft_dry_run_writes_jsonl(tmp_path: Path) -> None:
@@ -86,3 +86,20 @@ def test_sft_trainer_output_dir_can_be_overridden(tmp_path: Path) -> None:
     config = {"output": {"checkpoint_dir": str(checkpoint_dir), "trainer_output_dir": str(trainer_dir)}}
 
     assert _trainer_output_dir(config, checkpoint_dir) == trainer_dir
+
+
+def test_sft_save_strategy_normalizes_yaml_booleans() -> None:
+    assert _normalize_save_strategy(False) == "no"
+    assert _normalize_save_strategy(None) == "no"
+    assert _normalize_save_strategy("no") == "no"
+    assert _normalize_save_strategy("steps") == "steps"
+    assert _normalize_save_strategy("false") == "no"
+
+
+def test_sft_save_strategy_rejects_invalid_values() -> None:
+    try:
+        _normalize_save_strategy(True)
+    except ValueError as exc:
+        assert "training.save_strategy" in str(exc)
+    else:
+        raise AssertionError("Expected invalid save_strategy to raise ValueError")
