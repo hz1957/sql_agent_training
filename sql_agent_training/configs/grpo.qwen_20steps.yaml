@@ -3,6 +3,7 @@ dry_run: false
 model:
   backend: hf
   path: data/models/Qwen2.5-Coder-0.5B-Instruct
+  torch_dtype: auto
 
 tokenizer:
   kind: hf
@@ -30,6 +31,7 @@ training:
   max_steps: 20
   update_epochs: 4
   task_batch_size: 8
+  logprob_micro_batch_size: 1
   learning_rate: 0.000001
   clip_epsilon: 0.2
   kl_beta: 0.02

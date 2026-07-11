@@ -109,14 +109,28 @@ def compute_group_advantages(
 def _sequence_logprobs(model: Any, input_ids: Any, attention_mask: Any) -> Any:
     torch = _require_torch()
     outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-    logits = outputs.logits
-    log_probs = torch.nn.functional.log_softmax(logits[:, :-1, :], dim=-1)
+    logits = outputs.logits[:, :-1, :]
     labels = input_ids[:, 1:]
-    return log_probs.gather(dim=-1, index=labels.unsqueeze(-1)).squeeze(-1)
+    target_logits = logits.gather(dim=-1, index=labels.unsqueeze(-1)).squeeze(-1)
+    return target_logits - torch.logsumexp(logits, dim=-1)
 
 
-def _masked_mean(values: Any, mask: Any) -> Any:
-    return (values * mask).sum() / mask.sum().clamp_min(1.0)
+def _sequence_logprobs_microbatched(
+    model: Any,
+    input_ids: Any,
+    attention_mask: Any,
+    *,
+    micro_batch_size: int,
+) -> Any:
+    torch = _require_torch()
+    if micro_batch_size <= 0 or micro_batch_size >= int(input_ids.shape[0]):
+        return _sequence_logprobs(model, input_ids, attention_mask)
+
+    rows = []
+    for start in range(0, int(input_ids.shape[0]), micro_batch_size):
+        stop = start + micro_batch_size
+        rows.append(_sequence_logprobs(model, input_ids[start:stop], attention_mask[start:stop]))
+    return torch.cat(rows, dim=0)
 
 
 def _masked_values(values: Any, mask: Any) -> Any:
@@ -189,6 +203,7 @@ class GrpoTrainer:
         pad_token_id: int,
         loss_config: GrpoLossConfig | None = None,
         device: str = "cpu",
+        logprob_micro_batch_size: int = 1,
     ) -> None:
         self.policy_model = policy_model
         self.reference_model = reference_model
@@ -196,6 +211,7 @@ class GrpoTrainer:
         self.pad_token_id = pad_token_id
         self.loss_config = loss_config or GrpoLossConfig()
         self.device = device
+        self.logprob_micro_batch_size = logprob_micro_batch_size
 
     def prepare_batch(self, batch: GrpoBatch) -> GrpoTrainingBatch:
         """Build padded tensors and cache old/reference log-probabilities."""
@@ -215,15 +231,17 @@ class GrpoTrainer:
         self.policy_model.eval()
         self.reference_model.eval()
         with torch.no_grad():
-            old_logprobs = _sequence_logprobs(
+            old_logprobs = _sequence_logprobs_microbatched(
                 self.policy_model,
                 tensors["input_ids"],
                 tensors["attention_mask"],
+                micro_batch_size=self.logprob_micro_batch_size,
             ).detach()
-            reference_logprobs = _sequence_logprobs(
+            reference_logprobs = _sequence_logprobs_microbatched(
                 self.reference_model,
                 tensors["input_ids"],
                 tensors["attention_mask"],
+                micro_batch_size=self.logprob_micro_batch_size,
             ).detach()
 
         return GrpoTrainingBatch(
@@ -242,48 +260,87 @@ class GrpoTrainer:
 
         torch = _require_torch()
         self.policy_model.train()
-        new_logprobs = _sequence_logprobs(self.policy_model, batch.input_ids, batch.attention_mask)
-        log_ratio = new_logprobs - batch.old_logprobs
-        ratio = torch.exp(log_ratio)
-        token_advantages = batch.advantages.unsqueeze(-1)
-        unclipped = ratio * token_advantages
-        clipped_ratio = torch.clamp(
-            ratio,
-            1.0 - self.loss_config.clip_epsilon,
-            1.0 + self.loss_config.clip_epsilon,
-        )
-        clipped = clipped_ratio * token_advantages
-        policy_loss_tokens = -torch.minimum(unclipped, clipped)
-
-        ref_delta = batch.reference_logprobs - new_logprobs
-        kl_tokens = torch.exp(ref_delta) - ref_delta - 1.0
-        policy_kl_tokens = (ratio - 1.0) - log_ratio
-        policy_loss = _masked_mean(policy_loss_tokens, batch.response_mask)
-        kl_loss = self.loss_config.kl_beta * _masked_mean(kl_tokens, batch.response_mask)
-        loss = policy_loss + kl_loss
-
         self.optimizer.zero_grad(set_to_none=True)
-        loss.backward()
+        total_tokens = batch.response_mask.sum().clamp_min(1.0)
+        micro_batch_size = self.logprob_micro_batch_size
+        batch_size = int(batch.input_ids.shape[0])
+
+        metric_sums = {
+            "policy_loss": 0.0,
+            "kl": 0.0,
+            "clip_fraction": 0.0,
+            "ratio": 0.0,
+            "policy_approx_kl": 0.0,
+        }
+        ratio_min: float | None = None
+        ratio_max: float | None = None
+        trainable_tokens = int(batch.response_mask.sum().detach().cpu().item())
+
+        for start in range(0, batch_size, micro_batch_size if micro_batch_size > 0 else batch_size):
+            stop = start + (micro_batch_size if micro_batch_size > 0 else batch_size)
+            new_logprobs = _sequence_logprobs(
+                self.policy_model,
+                batch.input_ids[start:stop],
+                batch.attention_mask[start:stop],
+            )
+            old_logprobs = batch.old_logprobs[start:stop]
+            reference_logprobs = batch.reference_logprobs[start:stop]
+            response_mask = batch.response_mask[start:stop]
+            token_advantages = batch.advantages[start:stop].unsqueeze(-1)
+
+            log_ratio = new_logprobs - old_logprobs
+            ratio = torch.exp(log_ratio)
+            unclipped = ratio * token_advantages
+            clipped_ratio = torch.clamp(
+                ratio,
+                1.0 - self.loss_config.clip_epsilon,
+                1.0 + self.loss_config.clip_epsilon,
+            )
+            clipped = clipped_ratio * token_advantages
+            policy_loss_tokens = -torch.minimum(unclipped, clipped)
+
+            ref_delta = reference_logprobs - new_logprobs
+            kl_tokens = torch.exp(ref_delta) - ref_delta - 1.0
+            policy_kl_tokens = (ratio - 1.0) - log_ratio
+            micro_policy_loss = (policy_loss_tokens * response_mask).sum() / total_tokens
+            micro_kl_loss = self.loss_config.kl_beta * (kl_tokens * response_mask).sum() / total_tokens
+            (micro_policy_loss + micro_kl_loss).backward()
+
+            with torch.no_grad():
+                response_ratios = _masked_values(ratio, response_mask)
+                metric_sums["policy_loss"] += float((policy_loss_tokens * response_mask).sum().detach().cpu())
+                metric_sums["kl"] += float((kl_tokens * response_mask).sum().detach().cpu())
+                clip_mask = ((ratio - 1.0).abs() > self.loss_config.clip_epsilon).float()
+                metric_sums["clip_fraction"] += float((clip_mask * response_mask).sum().detach().cpu())
+                metric_sums["policy_approx_kl"] += float((policy_kl_tokens * response_mask).sum().detach().cpu())
+                if response_ratios.numel() > 0:
+                    metric_sums["ratio"] += float(response_ratios.sum().detach().cpu())
+                    current_min = float(response_ratios.min().detach().cpu())
+                    current_max = float(response_ratios.max().detach().cpu())
+                    ratio_min = current_min if ratio_min is None else min(ratio_min, current_min)
+                    ratio_max = current_max if ratio_max is None else max(ratio_max, current_max)
+
         if self.loss_config.max_grad_norm is not None:
             torch.nn.utils.clip_grad_norm_(self.policy_model.parameters(), self.loss_config.max_grad_norm)
         self.optimizer.step()
 
         with torch.no_grad():
-            clip_mask = ((ratio - 1.0).abs() > self.loss_config.clip_epsilon).float()
-            response_ratios = _masked_values(ratio, batch.response_mask)
-            trainable_tokens = int(batch.response_mask.sum().item())
+            denominator = float(max(trainable_tokens, 1))
+            policy_loss_value = metric_sums["policy_loss"] / denominator
+            approx_kl_value = metric_sums["kl"] / denominator
+            kl_loss_value = self.loss_config.kl_beta * approx_kl_value
             return GrpoTrainMetrics(
-                loss=float(loss.detach().cpu()),
-                policy_loss=float(policy_loss.detach().cpu()),
-                kl_loss=float(kl_loss.detach().cpu()),
-                approx_kl=float(_masked_mean(kl_tokens, batch.response_mask).detach().cpu()),
-                clip_fraction=float(_masked_mean(clip_mask, batch.response_mask).detach().cpu()),
+                loss=policy_loss_value + kl_loss_value,
+                policy_loss=policy_loss_value,
+                kl_loss=kl_loss_value,
+                approx_kl=approx_kl_value,
+                clip_fraction=metric_sums["clip_fraction"] / denominator,
                 mean_reward=float(batch.rewards.mean().detach().cpu()),
                 mean_advantage=float(batch.advantages.mean().detach().cpu()),
-                ratio_mean=float(response_ratios.mean().detach().cpu()) if trainable_tokens else 0.0,
-                ratio_min=float(response_ratios.min().detach().cpu()) if trainable_tokens else 0.0,
-                ratio_max=float(response_ratios.max().detach().cpu()) if trainable_tokens else 0.0,
-                policy_approx_kl=float(_masked_mean(policy_kl_tokens, batch.response_mask).detach().cpu()),
+                ratio_mean=metric_sums["ratio"] / denominator if trainable_tokens else 0.0,
+                ratio_min=ratio_min if ratio_min is not None else 0.0,
+                ratio_max=ratio_max if ratio_max is not None else 0.0,
+                policy_approx_kl=metric_sums["policy_approx_kl"] / denominator,
                 trainable_tokens=trainable_tokens,
             )
 
@@ -314,6 +371,23 @@ def _device_from_config(config: dict[str, Any]) -> str:
     return requested
 
 
+def _torch_dtype_from_config(config: dict[str, Any], device: str) -> Any | None:
+    torch = _require_torch()
+    if not device.startswith("cuda"):
+        return None
+
+    requested = str(config.get("model", {}).get("torch_dtype", "auto")).lower()
+    if requested in {"none", "float32", "fp32"}:
+        return None if requested == "none" else torch.float32
+    if requested in {"bfloat16", "bf16"}:
+        return torch.bfloat16
+    if requested in {"float16", "fp16", "half"}:
+        return torch.float16
+    if requested != "auto":
+        raise ValueError(f"Unknown model.torch_dtype: {requested}")
+    return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+
+
 def _loss_config_from_config(config: dict[str, Any]) -> GrpoLossConfig:
     training = config.get("training", {})
     return GrpoLossConfig(
@@ -321,9 +395,7 @@ def _loss_config_from_config(config: dict[str, Any]) -> GrpoLossConfig:
         kl_beta=float(training.get("kl_beta", 0.02)),
         advantage_epsilon=float(training.get("advantage_epsilon", 1e-6)),
         normalize_advantages=bool(training.get("normalize_advantages", True)),
-        max_grad_norm=(
-            float(training["max_grad_norm"]) if training.get("max_grad_norm") is not None else None
-        ),
+        max_grad_norm=(float(training["max_grad_norm"]) if training.get("max_grad_norm") is not None else None),
     )
 
 
@@ -352,8 +424,17 @@ def _build_models(config: dict[str, Any], batch: GrpoBatch | None, device: str) 
     tokenizer_config = config.get("tokenizer", {})
     tokenizer_path = str(model_config.get("tokenizer_path") or tokenizer_config.get("path") or model_path)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
-    policy = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True).to(device)
-    reference = AutoModelForCausalLM.from_pretrained(reference_path, trust_remote_code=True).to(device)
+    torch_dtype = _torch_dtype_from_config(config, device)
+    policy = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        trust_remote_code=True,
+        torch_dtype=torch_dtype,
+    ).to(device)
+    reference = AutoModelForCausalLM.from_pretrained(
+        reference_path,
+        trust_remote_code=True,
+        torch_dtype=torch_dtype,
+    ).to(device)
     reference.eval()
     for parameter in reference.parameters():
         parameter.requires_grad_(False)
@@ -402,6 +483,13 @@ def _update_epochs(config: dict[str, Any]) -> int:
     if epochs <= 0:
         raise ValueError("training.update_epochs must be positive")
     return epochs
+
+
+def _logprob_micro_batch_size(config: dict[str, Any]) -> int:
+    size = int(config.get("training", {}).get("logprob_micro_batch_size", 1))
+    if size <= 0:
+        raise ValueError("training.logprob_micro_batch_size must be positive")
+    return size
 
 
 def _sample_step_examples(
@@ -482,6 +570,7 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
         pad_token_id=pad_token_id,
         loss_config=_loss_config_from_config(config),
         device=device,
+        logprob_micro_batch_size=_logprob_micro_batch_size(config),
     )
     rollout_client = _build_online_rollout_client(policy_model, tokenizer, config, device)
     task_batch_size = _task_batch_size(config)
