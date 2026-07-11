@@ -3,7 +3,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
+
+from sql_agent_training.train.sft import _assert_checkpoint_complete
 
 
 def test_sft_dry_run_writes_jsonl(tmp_path: Path) -> None:
@@ -59,3 +62,22 @@ def test_sft_dry_run_writes_jsonl(tmp_path: Path) -> None:
     row = json.loads(output_path.read_text(encoding="utf-8").strip())
     assert row["completion"] == "SELECT Name FROM Singer"
     assert "SELECT Name FROM Singer" not in row["prompt"]
+
+
+def test_checkpoint_validation_rejects_config_only_directory(tmp_path: Path) -> None:
+    checkpoint_dir = tmp_path / "checkpoint-875"
+    checkpoint_dir.mkdir()
+    (checkpoint_dir / "config.json").write_text("{}", encoding="utf-8")
+    (checkpoint_dir / "generation_config.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="no model weights found"):
+        _assert_checkpoint_complete(checkpoint_dir, requires_tokenizer=False)
+
+
+def test_checkpoint_validation_accepts_weights_and_tokenizer(tmp_path: Path) -> None:
+    checkpoint_dir = tmp_path / "checkpoint"
+    checkpoint_dir.mkdir()
+    (checkpoint_dir / "model.safetensors").write_bytes(b"weights")
+    (checkpoint_dir / "tokenizer.json").write_text("{}", encoding="utf-8")
+
+    _assert_checkpoint_complete(checkpoint_dir, requires_tokenizer=True)
