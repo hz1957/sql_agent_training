@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -28,7 +29,14 @@ class SqlGenerator(Protocol):
 class TransformersSqlGenerator:
     """Transformers-backed SQL generator."""
 
-    def __init__(self, model_name_or_path: str, *, max_input_tokens: int = 1024, max_new_tokens: int = 256) -> None:
+    def __init__(
+        self,
+        model_name_or_path: str,
+        *,
+        tokenizer_name_or_path: str | None = None,
+        max_input_tokens: int = 1024,
+        max_new_tokens: int = 256,
+    ) -> None:
         try:
             import torch
             from transformers import AutoModelForCausalLM
@@ -36,7 +44,7 @@ class TransformersSqlGenerator:
             raise RuntimeError("Install the train extra to run generation: pip install -e '.[train]'") from exc
 
         self.torch = torch
-        self.tokenizer = HuggingFaceTokenizer(model_name_or_path).tokenizer
+        self.tokenizer = HuggingFaceTokenizer(tokenizer_name_or_path or model_name_or_path).tokenizer
         self.model = AutoModelForCausalLM.from_pretrained(model_name_or_path, trust_remote_code=True)
         if torch.cuda.is_available():
             self.model = self.model.cuda()
@@ -108,6 +116,51 @@ def evaluate_predictions(rows: list[PredictionResult], data_dir: str | Path) -> 
     }
 
 
+def _has_model_files(path: str | Path) -> bool:
+    root = Path(path)
+    return any((root / name).exists() for name in ("model.safetensors", "pytorch_model.bin"))
+
+
+def _has_tokenizer_files(path: str | Path) -> bool:
+    root = Path(path)
+    return any((root / name).exists() for name in ("tokenizer.json", "tokenizer_config.json", "vocab.json"))
+
+
+def _checkpoint_step(path: Path) -> int:
+    match = re.fullmatch(r"checkpoint-(\d+)", path.name)
+    return int(match.group(1)) if match else -1
+
+
+def _latest_checkpoint(path: Path) -> Path | None:
+    checkpoints = [child for child in path.glob("checkpoint-*") if child.is_dir() and _has_model_files(child)]
+    if not checkpoints:
+        return None
+    return max(checkpoints, key=_checkpoint_step)
+
+
+def _resolve_model_and_tokenizer(
+    config: dict,
+    *,
+    checkpoint: str | None,
+    tokenizer_path: str | None,
+) -> tuple[str, str]:
+    model_config = config.get("model", {})
+    output_config = config.get("output", {})
+    tokenizer_config = config.get("tokenizer", {})
+
+    model_path = Path(checkpoint or output_config.get("checkpoint_dir") or model_config["path"])
+    if not _has_model_files(model_path):
+        nested_checkpoint = _latest_checkpoint(model_path)
+        if nested_checkpoint is not None:
+            model_path = nested_checkpoint
+
+    resolved_tokenizer = tokenizer_path or model_config.get("tokenizer_path") or tokenizer_config.get("path")
+    if not resolved_tokenizer:
+        resolved_tokenizer = str(model_path) if _has_tokenizer_files(model_path) else str(model_config["path"])
+
+    return str(model_path), str(resolved_tokenizer)
+
+
 def generate_predictions(
     examples: list[SpiderExample],
     tables_index: dict,
@@ -143,6 +196,8 @@ def generate_predictions(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate and evaluate SFT SQL predictions.")
     parser.add_argument("--config", default="configs/sft.yaml")
+    parser.add_argument("--checkpoint", default=None, help="Model checkpoint to evaluate. Defaults to output.checkpoint_dir.")
+    parser.add_argument("--tokenizer", default=None, help="Tokenizer path. Defaults to checkpoint tokenizer or model.path.")
     parser.add_argument("--split", default="validation", choices=["train", "validation"])
     parser.add_argument("--limit", type=int, default=None, help="Limit number of examples for local smoke tests.")
     parser.add_argument("--dry-run-gold", action="store_true", help="Emit gold SQL as predictions for plumbing tests.")
@@ -164,8 +219,14 @@ def main() -> None:
         generator: SqlGenerator | None = None
     else:
         training = config.get("training", {})
+        model_path, tokenizer_path = _resolve_model_and_tokenizer(
+            config,
+            checkpoint=args.checkpoint,
+            tokenizer_path=args.tokenizer,
+        )
         generator = TransformersSqlGenerator(
-            config["output"].get("checkpoint_dir") or config["model"]["path"],
+            model_path,
+            tokenizer_name_or_path=tokenizer_path,
             max_input_tokens=int(training.get("max_prompt_length", 1024)),
             max_new_tokens=int(training.get("max_response_length", 256)),
         )
