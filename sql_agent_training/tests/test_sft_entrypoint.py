@@ -73,16 +73,16 @@ def test_sft_new_checkpoint_dir_uses_timestamped_run_folder(tmp_path: Path) -> N
     assert len(checkpoint_dir.name) == len("20260711_061234")
 
 
-def test_sft_trainer_output_dir_is_inside_final_checkpoint(tmp_path: Path) -> None:
+def test_sft_trainer_output_dir_defaults_to_final_checkpoint(tmp_path: Path) -> None:
     checkpoint_dir = tmp_path / "sft_model" / "20260711_061234"
     config = {"output": {"checkpoint_dir": str(tmp_path / "sft_model")}}
 
-    assert _trainer_output_dir(config, checkpoint_dir) == checkpoint_dir / "trainer_checkpoints"
+    assert _trainer_output_dir(config, checkpoint_dir) == checkpoint_dir
 
 
 def test_sft_trainer_output_dir_can_be_overridden(tmp_path: Path) -> None:
     checkpoint_dir = tmp_path / "sft_model"
     trainer_dir = tmp_path / "trainer_state"
-    config = {"output": {"checkpoint_dir": str(checkpoint_dir), "trainer_checkpoint_dir": str(trainer_dir)}}
+    config = {"output": {"checkpoint_dir": str(checkpoint_dir), "trainer_output_dir": str(trainer_dir)}}
 
     assert _trainer_output_dir(config, checkpoint_dir) == trainer_dir

@@ -119,5 +119,5 @@ uv run python -m sql_agent_training.train.sft_eval --config configs/sft.yaml --c
 ```
 
 Each SFT run saves an eval-ready model and tokenizer under a timestamped directory below `output.checkpoint_dir`,
-for example `artifacts/checkpoints/sft/<timestamp>/`. Hugging Face Trainer state, when enabled, lives under that
-run directory's `trainer_checkpoints/` subdirectory.
+for example `artifacts/checkpoints/sft/<timestamp>/`. If intermediate Hugging Face Trainer checkpoints are enabled,
+they are written as `checkpoint-*` subdirectories inside that same timestamped run directory.

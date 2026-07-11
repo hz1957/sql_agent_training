@@ -71,12 +71,14 @@ def _new_final_checkpoint_dir(config: dict) -> Path:
 
 
 def _trainer_output_dir(config: dict, checkpoint_dir: str | Path) -> Path:
-    """Return the private Hugging Face Trainer state/checkpoint directory."""
+    """Return the Hugging Face Trainer output directory for this run."""
 
     output = config.get("output", {})
+    if output.get("trainer_output_dir"):
+        return Path(output["trainer_output_dir"])
     if output.get("trainer_checkpoint_dir"):
         return Path(output["trainer_checkpoint_dir"])
-    return Path(checkpoint_dir) / "trainer_checkpoints"
+    return Path(checkpoint_dir)
 
 
 def _write_run_config(config: dict, checkpoint_dir: str | Path) -> Path:
@@ -119,7 +121,7 @@ def _run_transformers_training(config: dict, tokenizer, dataset: SftTorchDataset
         tokenizer.tokenizer.save_pretrained(str(final_checkpoint_dir))
     return {
         "checkpoint_dir": str(final_checkpoint_dir),
-        "trainer_checkpoint_dir": str(_trainer_output_dir(config, final_checkpoint_dir)),
+        "trainer_output_dir": str(_trainer_output_dir(config, final_checkpoint_dir)),
         "run_config": str(run_config_path),
     }
 
