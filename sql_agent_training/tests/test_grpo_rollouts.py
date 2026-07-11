@@ -2,7 +2,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from sql_agent_training.train.grpo import build_grpo_batch_from_config, run_grpo
+from sql_agent_training.train.grpo_rollouts import build_rollout_batch_from_config, run_grpo_rollouts
 
 
 def _write_spider_dir(root: Path) -> None:
@@ -43,8 +43,8 @@ def _write_spider_dir(root: Path) -> None:
         conn.close()
 
 
-def test_build_grpo_batch_from_config_uses_builtin_demo() -> None:
-    batch = build_grpo_batch_from_config(
+def test_build_rollout_batch_from_config_uses_builtin_demo() -> None:
+    batch = build_rollout_batch_from_config(
         {
             "dry_run": True,
             "tokenizer": {"kind": "whitespace"},
@@ -61,12 +61,12 @@ def test_build_grpo_batch_from_config_uses_builtin_demo() -> None:
     assert [trajectory.reward for trajectory in batch.trajectories] == [0.0, 1.0]
 
 
-def test_run_grpo_writes_rollout_summary(tmp_path: Path) -> None:
+def test_run_grpo_rollouts_writes_rollout_summary(tmp_path: Path) -> None:
     data_dir = tmp_path / "spider"
     _write_spider_dir(data_dir)
     output = tmp_path / "rollouts.jsonl"
 
-    summary = run_grpo(
+    summary = run_grpo_rollouts(
         {
             "dry_run": False,
             "tokenizer": {"kind": "whitespace"},
@@ -82,3 +82,27 @@ def test_run_grpo_writes_rollout_summary(tmp_path: Path) -> None:
     assert summary["mean_reward"] == 1.0
     assert len(rows) == 2
     assert rows[0]["uid"] == "music:0"
+    assert "prompt" in rows[0]
+    assert "response" in rows[0]
+    assert "Question" in rows[0]["prompt"]
+    assert rows[0]["response"].startswith("assistant:")
+
+
+def test_run_grpo_rollouts_can_skip_rollout_text(tmp_path: Path) -> None:
+    data_dir = tmp_path / "spider"
+    _write_spider_dir(data_dir)
+    output = tmp_path / "rollouts.jsonl"
+
+    run_grpo_rollouts(
+        {
+            "dry_run": False,
+            "tokenizer": {"kind": "whitespace"},
+            "data": {"data_dir": str(data_dir), "train_file": "train_spider.json"},
+            "rollout": {"n": 1, "max_turns": 1, "train_limit": 1},
+            "output": {"rollouts_jsonl": str(output), "include_text": False},
+        }
+    )
+
+    row = json.loads(output.read_text(encoding="utf-8").splitlines()[0])
+    assert "prompt" not in row
+    assert "response" not in row

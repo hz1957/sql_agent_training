@@ -51,7 +51,7 @@ def test_build_stage_commands_supports_grpo_only() -> None:
         [
             sys.executable,
             "-m",
-            "sql_agent_training.train.grpo_trainer",
+            "sql_agent_training.train.grpo_train",
             "--config",
             "configs/grpo.yaml",
         ]
@@ -81,7 +81,7 @@ def test_build_stage_commands_supports_sft_then_grpo_dry_run() -> None:
         [
             sys.executable,
             "-m",
-            "sql_agent_training.train.grpo_trainer",
+            "sql_agent_training.train.grpo_train",
             "--config",
             "configs/grpo.local_dryrun.yaml",
             "--dry-run",

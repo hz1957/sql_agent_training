@@ -10,8 +10,8 @@ from huggingface_hub import snapshot_download
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download a model snapshot for local smoke tests.")
-    parser.add_argument("--model-id", default="HuggingFaceTB/SmolLM2-135M-Instruct")
-    parser.add_argument("--output-dir", default="data/models/SmolLM2-135M-Instruct")
+    parser.add_argument("--model-id", default="Qwen/Qwen2.5-Coder-0.5B-Instruct")
+    parser.add_argument("--output-dir", default="data/models/Qwen2.5-Coder-0.5B-Instruct")
     parser.add_argument("--cache-dir", default="data/.hf_cache")
     args = parser.parse_args()
 

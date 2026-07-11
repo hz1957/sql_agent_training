@@ -1,12 +1,12 @@
-"""Small but complete GRPO trainer for tokenized SQL-agent trajectories.
+"""Small but complete GRPO training loop for tokenized SQL-agent transitions.
 
-The trainer consumes the grouped trajectory format produced by `train.grpo` and
+The trainer consumes the grouped policy-sample format produced by `train.grpo_rollouts` and
 performs the actual RL update:
 
 1. Compute group-relative advantages.
 2. Cache old policy log-probabilities and reference log-probabilities.
-3. Compute clipped GRPO policy loss plus a reference KL penalty.
-4. Backpropagate and update policy weights.
+3. Reuse the prepared batch for one or more clipped actor update epochs.
+4. Compute clipped GRPO policy loss plus a reference KL penalty.
 
 The `tiny` backend is intentionally included so the whole update can run on a
 laptop CPU/GPU while preserving the same math used by a larger model.
@@ -17,14 +17,22 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import random
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from sql_agent_training.train.grpo import build_grpo_batch_from_config
-from sql_agent_training.train.grpo_batch import GrpoBatch
+from sql_agent_training.agent.model_client import HuggingFaceInMemoryModelClient, ModelClient
+from sql_agent_training.data.spider_dataset import SpiderExample
+from sql_agent_training.train.grpo_rollouts import (
+    RolloutJsonlWriter,
+    build_rollout_batch_from_config,
+    load_rollout_source_from_config,
+)
+from sql_agent_training.train.grpo_batch import GrpoBatch, summarize_grpo_batch
 
 
 def _require_torch():
@@ -71,6 +79,10 @@ class GrpoTrainMetrics:
     clip_fraction: float
     mean_reward: float
     mean_advantage: float
+    ratio_mean: float
+    ratio_min: float
+    ratio_max: float
+    policy_approx_kl: float
     trainable_tokens: int
 
 
@@ -80,7 +92,7 @@ def compute_group_advantages(
     normalize: bool = True,
     epsilon: float = 1e-6,
 ) -> dict[str, float]:
-    """Compute per-rollout group-relative GRPO advantages."""
+    """Compute per-sample group-relative GRPO advantages."""
 
     advantages: dict[str, float] = {}
     for group in batch.groups:
@@ -105,6 +117,10 @@ def _sequence_logprobs(model: Any, input_ids: Any, attention_mask: Any) -> Any:
 
 def _masked_mean(values: Any, mask: Any) -> Any:
     return (values * mask).sum() / mask.sum().clamp_min(1.0)
+
+
+def _masked_values(values: Any, mask: Any) -> Any:
+    return values[mask.bool()]
 
 
 def _max_token_id(batch: GrpoBatch) -> int:
@@ -227,7 +243,8 @@ class GrpoTrainer:
         torch = _require_torch()
         self.policy_model.train()
         new_logprobs = _sequence_logprobs(self.policy_model, batch.input_ids, batch.attention_mask)
-        ratio = torch.exp(new_logprobs - batch.old_logprobs)
+        log_ratio = new_logprobs - batch.old_logprobs
+        ratio = torch.exp(log_ratio)
         token_advantages = batch.advantages.unsqueeze(-1)
         unclipped = ratio * token_advantages
         clipped_ratio = torch.clamp(
@@ -240,6 +257,7 @@ class GrpoTrainer:
 
         ref_delta = batch.reference_logprobs - new_logprobs
         kl_tokens = torch.exp(ref_delta) - ref_delta - 1.0
+        policy_kl_tokens = (ratio - 1.0) - log_ratio
         policy_loss = _masked_mean(policy_loss_tokens, batch.response_mask)
         kl_loss = self.loss_config.kl_beta * _masked_mean(kl_tokens, batch.response_mask)
         loss = policy_loss + kl_loss
@@ -252,6 +270,7 @@ class GrpoTrainer:
 
         with torch.no_grad():
             clip_mask = ((ratio - 1.0).abs() > self.loss_config.clip_epsilon).float()
+            response_ratios = _masked_values(ratio, batch.response_mask)
             trainable_tokens = int(batch.response_mask.sum().item())
             return GrpoTrainMetrics(
                 loss=float(loss.detach().cpu()),
@@ -261,6 +280,10 @@ class GrpoTrainer:
                 clip_fraction=float(_masked_mean(clip_mask, batch.response_mask).detach().cpu()),
                 mean_reward=float(batch.rewards.mean().detach().cpu()),
                 mean_advantage=float(batch.advantages.mean().detach().cpu()),
+                ratio_mean=float(response_ratios.mean().detach().cpu()) if trainable_tokens else 0.0,
+                ratio_min=float(response_ratios.min().detach().cpu()) if trainable_tokens else 0.0,
+                ratio_max=float(response_ratios.max().detach().cpu()) if trainable_tokens else 0.0,
+                policy_approx_kl=float(_masked_mean(policy_kl_tokens, batch.response_mask).detach().cpu()),
                 trainable_tokens=trainable_tokens,
             )
 
@@ -304,17 +327,17 @@ def _loss_config_from_config(config: dict[str, Any]) -> GrpoLossConfig:
     )
 
 
-def _build_models(config: dict[str, Any], batch: GrpoBatch, device: str) -> tuple[Any, Any, int]:
+def _build_models(config: dict[str, Any], batch: GrpoBatch | None, device: str) -> tuple[Any, Any, int, Any | None]:
     torch = _require_torch()
     model_config = config.get("model", {})
     backend = str(model_config.get("backend", "hf"))
     if backend == "tiny":
-        vocab_size = int(model_config.get("vocab_size") or (_max_token_id(batch) + 1))
+        vocab_size = int(model_config.get("vocab_size") or (_max_token_id(batch) + 1 if batch is not None else 1024))
         hidden_size = int(model_config.get("hidden_size", 32))
         policy = create_tiny_causal_lm(vocab_size=vocab_size, hidden_size=hidden_size).to(device)
         reference = copy.deepcopy(policy).to(device)
         pad_token_id = int(config.get("training", {}).get("pad_token_id", 0))
-        return policy, reference, pad_token_id
+        return policy, reference, pad_token_id, None
 
     if backend != "hf":
         raise ValueError(f"Unknown GRPO model backend: {backend}")
@@ -326,7 +349,9 @@ def _build_models(config: dict[str, Any], batch: GrpoBatch, device: str) -> tupl
 
     model_path = str(model_config["path"])
     reference_path = str(model_config.get("reference_path") or model_path)
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    tokenizer_config = config.get("tokenizer", {})
+    tokenizer_path = str(model_config.get("tokenizer_path") or tokenizer_config.get("path") or model_path)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
     policy = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True).to(device)
     reference = AutoModelForCausalLM.from_pretrained(reference_path, trust_remote_code=True).to(device)
     reference.eval()
@@ -335,29 +360,120 @@ def _build_models(config: dict[str, Any], batch: GrpoBatch, device: str) -> tupl
     pad_token_id = tokenizer.pad_token_id
     if pad_token_id is None:
         pad_token_id = tokenizer.eos_token_id if tokenizer.eos_token_id is not None else 0
-    return policy, reference, int(pad_token_id)
+    return policy, reference, int(pad_token_id), tokenizer
 
 
-def _save_policy(policy_model: Any, config: dict[str, Any], output_dir: str | Path) -> None:
+def _save_policy(policy_model: Any, tokenizer: Any | None, config: dict[str, Any], output_dir: str | Path) -> None:
     torch = _require_torch()
     path = Path(output_dir)
     path.mkdir(parents=True, exist_ok=True)
     if hasattr(policy_model, "save_pretrained"):
         policy_model.save_pretrained(path)
+        if tokenizer is not None and hasattr(tokenizer, "save_pretrained"):
+            tokenizer.save_pretrained(path)
     else:
         torch.save(policy_model.state_dict(), path / "tiny_policy.pt")
         (path / "tiny_config.json").write_text(json.dumps(config.get("model", {}), indent=2), encoding="utf-8")
+
+
+def _new_checkpoint_dir(base_dir: str | Path) -> Path:
+    root = Path(base_dir)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    candidate = root / timestamp
+    counter = 1
+    while candidate.exists():
+        candidate = root / f"{timestamp}_{counter:02d}"
+        counter += 1
+    return candidate
+
+
+def _task_batch_size(config: dict[str, Any]) -> int | None:
+    training = config.get("training", {})
+    rollout = config.get("rollout", {})
+    value = training.get("task_batch_size", rollout.get("task_batch_size"))
+    if value is None:
+        return None
+    size = int(value)
+    return size if size > 0 else None
+
+
+def _update_epochs(config: dict[str, Any]) -> int:
+    epochs = int(config.get("training", {}).get("update_epochs", 1))
+    if epochs <= 0:
+        raise ValueError("training.update_epochs must be positive")
+    return epochs
+
+
+def _sample_step_examples(
+    examples: list[SpiderExample],
+    *,
+    task_batch_size: int | None,
+    rng: random.Random,
+) -> list[SpiderExample]:
+    if not examples:
+        raise ValueError("training examples must be non-empty")
+    if task_batch_size is None or task_batch_size >= len(examples):
+        return list(examples)
+    return rng.sample(examples, task_batch_size)
+
+
+def _build_online_rollout_client(
+    policy_model: Any,
+    tokenizer: Any | None,
+    config: dict[str, Any],
+    device: str,
+) -> ModelClient | None:
+    if tokenizer is None:
+        return None
+
+    rollout = config.get("rollout", {})
+    return HuggingFaceInMemoryModelClient(
+        policy_model,
+        tokenizer,
+        device=device,
+        max_new_tokens=int(rollout.get("max_response_length", 256)),
+        temperature=float(rollout.get("temperature", 0.0)),
+        top_p=float(rollout["top_p"]) if rollout.get("top_p") is not None else None,
+        top_k=int(rollout["top_k"]) if rollout.get("top_k") is not None else None,
+    )
+
+
+def _write_jsonl_row(path: Path, row: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        handle.flush()
+
+
+def _write_run_config(config: dict[str, Any], checkpoint_dir: Path) -> Path:
+    path = checkpoint_dir / "run_config.yaml"
+    path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return path
 
 
 def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
     """Build rollouts, run GRPO updates, save checkpoint, and return metrics."""
 
     torch = _require_torch()
-    torch.manual_seed(int(config.get("training", {}).get("seed", 0)))
-    batch = build_grpo_batch_from_config(config)
+    seed = int(config.get("training", {}).get("seed", 0))
+    torch.manual_seed(seed)
+    rng = random.Random(seed)
+    output = config.get("output", {})
+    checkpoint_dir = _new_checkpoint_dir(output.get("checkpoint_dir", "artifacts/checkpoints/grpo"))
+    checkpoint_dir.mkdir(parents=True, exist_ok=False)
+    run_config_path = _write_run_config(config, checkpoint_dir)
+    rollouts_jsonl = Path(output.get("rollouts_jsonl", Path(checkpoint_dir) / "rollouts.jsonl"))
+    include_text = bool(output.get("include_text", True))
+    metrics_jsonl = Path(output.get("metrics_jsonl", Path(checkpoint_dir) / "metrics.jsonl"))
+    if metrics_jsonl.exists():
+        metrics_jsonl.unlink()
     device = _device_from_config(config)
-    policy_model, reference_model, pad_token_id = _build_models(config, batch, device)
+    policy_model, reference_model, pad_token_id, tokenizer = _build_models(config, None, device)
     training = config.get("training", {})
+    max_steps = int(training.get("max_steps", 1))
+    if max_steps <= 0:
+        raise ValueError("training.max_steps must be positive")
+    update_epochs = _update_epochs(config)
     optimizer = torch.optim.AdamW(policy_model.parameters(), lr=float(training.get("learning_rate", 1e-4)))
     trainer = GrpoTrainer(
         policy_model,
@@ -367,29 +483,79 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
         loss_config=_loss_config_from_config(config),
         device=device,
     )
-    prepared = trainer.prepare_batch(batch)
-    metrics_history = [
-        trainer.train_prepared_batch(prepared)
-        for _ in range(int(training.get("max_steps", 1)))
-    ]
+    rollout_client = _build_online_rollout_client(policy_model, tokenizer, config, device)
+    task_batch_size = _task_batch_size(config)
+    source = load_rollout_source_from_config(config)
+    metrics_history: list[dict[str, Any]] = []
+    rows_written = 0
+    total_trajectories = 0
+    final_batch_stats: dict[str, Any] = {}
+    final_groups = 0
+    optimizer_steps = 0
+    save_every_steps = int(training.get("save_every_steps", 0) or 0)
+    try:
+        with RolloutJsonlWriter(rollouts_jsonl, include_text=include_text) as rollout_writer:
+            for step_index in range(max_steps):
+                step = step_index + 1
+                step_examples = _sample_step_examples(
+                    source.examples,
+                    task_batch_size=task_batch_size,
+                    rng=rng,
+                )
+                batch = build_rollout_batch_from_config(
+                    config,
+                    rollout_writer=rollout_writer,
+                    model_client=rollout_client,
+                    hf_tokenizer=tokenizer,
+                    examples=step_examples,
+                    source=source,
+                )
+                batch_stats = summarize_grpo_batch(batch)
+                prepared = trainer.prepare_batch(batch)
+                for update_epoch in range(1, update_epochs + 1):
+                    optimizer_steps += 1
+                    metrics = trainer.train_prepared_batch(prepared)
+                    metric_row = {
+                        "step": step,
+                        "update_epoch": update_epoch,
+                        "optimizer_step": optimizer_steps,
+                        "groups": len(batch.groups),
+                        "trajectories": batch.num_trajectories,
+                        **batch_stats,
+                        **metrics.__dict__,
+                    }
+                    _write_jsonl_row(metrics_jsonl, metric_row)
+                    metrics_history.append(metric_row)
+                rows_written = rollout_writer.count
+                total_trajectories += batch.num_trajectories
+                final_batch_stats = batch_stats
+                final_groups = len(batch.groups)
+                if save_every_steps > 0 and step % save_every_steps == 0 and step != max_steps:
+                    _save_policy(policy_model, tokenizer, config, checkpoint_dir / f"step_{step:06d}")
+    finally:
+        source.close()
 
-    output = config.get("output", {})
-    checkpoint_dir = output.get("checkpoint_dir", "artifacts/checkpoints/grpo")
-    _save_policy(policy_model, config, checkpoint_dir)
+    _save_policy(policy_model, tokenizer, config, checkpoint_dir)
 
     metrics_path = Path(output.get("metrics_json", Path(checkpoint_dir) / "metrics.json"))
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
-    metrics_rows = [metrics.__dict__ for metrics in metrics_history]
-    metrics_path.write_text(json.dumps(metrics_rows, indent=2), encoding="utf-8")
-    final_metrics = metrics_history[-1].__dict__ if metrics_history else {}
+    metrics_path.write_text(json.dumps(metrics_history, indent=2), encoding="utf-8")
+    final_metrics = metrics_history[-1] if metrics_history else {}
     return {
-        "groups": len(batch.groups),
-        "trajectories": batch.num_trajectories,
-        "steps": len(metrics_history),
+        **final_batch_stats,
+        **final_metrics,
+        "groups": final_groups,
+        "trajectories": total_trajectories,
+        "steps": max_steps,
+        "update_epochs": update_epochs,
+        "optimizer_steps": optimizer_steps,
         "device": device,
+        "rows_written": rows_written,
+        "rollouts_jsonl": str(rollouts_jsonl),
         "checkpoint_dir": str(checkpoint_dir),
         "metrics_json": str(metrics_path),
-        **final_metrics,
+        "metrics_jsonl": str(metrics_jsonl),
+        "run_config": str(run_config_path),
     }
 
 

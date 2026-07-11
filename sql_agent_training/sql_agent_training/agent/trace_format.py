@@ -30,7 +30,7 @@ class AgentTrajectory:
 
 @dataclass(frozen=True)
 class TokenizedTrajectory:
-    """One tokenized agent trajectory for GRPO-style training."""
+    """One tokenized policy sample for GRPO-style training."""
 
     uid: str
     rollout_id: str
@@ -38,6 +38,9 @@ class TokenizedTrajectory:
     response_ids: list[int]
     response_mask: list[int]
     reward: float
+    prompt_text: str | None = None
+    response_text: str | None = None
+    group_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def validate(self) -> None:
