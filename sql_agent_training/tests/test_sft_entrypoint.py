@@ -3,10 +3,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 import yaml
 
-from sql_agent_training.train.sft import _assert_checkpoint_complete
+from sql_agent_training.train.sft import _final_checkpoint_dir, _trainer_output_dir
 
 
 def test_sft_dry_run_writes_jsonl(tmp_path: Path) -> None:
@@ -64,20 +63,17 @@ def test_sft_dry_run_writes_jsonl(tmp_path: Path) -> None:
     assert "SELECT Name FROM Singer" not in row["prompt"]
 
 
-def test_checkpoint_validation_rejects_config_only_directory(tmp_path: Path) -> None:
-    checkpoint_dir = tmp_path / "checkpoint-875"
-    checkpoint_dir.mkdir()
-    (checkpoint_dir / "config.json").write_text("{}", encoding="utf-8")
-    (checkpoint_dir / "generation_config.json").write_text("{}", encoding="utf-8")
+def test_sft_trainer_output_dir_is_separate_from_final_checkpoint(tmp_path: Path) -> None:
+    checkpoint_dir = tmp_path / "sft_model"
+    config = {"output": {"checkpoint_dir": str(checkpoint_dir)}}
 
-    with pytest.raises(RuntimeError, match="no model weights found"):
-        _assert_checkpoint_complete(checkpoint_dir, requires_tokenizer=False)
+    assert _final_checkpoint_dir(config) == checkpoint_dir
+    assert _trainer_output_dir(config) == checkpoint_dir / "trainer_checkpoints"
 
 
-def test_checkpoint_validation_accepts_weights_and_tokenizer(tmp_path: Path) -> None:
-    checkpoint_dir = tmp_path / "checkpoint"
-    checkpoint_dir.mkdir()
-    (checkpoint_dir / "model.safetensors").write_bytes(b"weights")
-    (checkpoint_dir / "tokenizer.json").write_text("{}", encoding="utf-8")
+def test_sft_trainer_output_dir_can_be_overridden(tmp_path: Path) -> None:
+    checkpoint_dir = tmp_path / "sft_model"
+    trainer_dir = tmp_path / "trainer_state"
+    config = {"output": {"checkpoint_dir": str(checkpoint_dir), "trainer_checkpoint_dir": str(trainer_dir)}}
 
-    _assert_checkpoint_complete(checkpoint_dir, requires_tokenizer=True)
+    assert _trainer_output_dir(config) == trainer_dir

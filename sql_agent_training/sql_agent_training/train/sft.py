@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import inspect
 from pathlib import Path
 
 import yaml
@@ -18,14 +17,6 @@ from sql_agent_training.train.sft_dataset import (
     load_sft_jsonl,
     tokenize_sft_records,
 )
-
-_MODEL_WEIGHT_PATTERNS = (
-    "model.safetensors",
-    "pytorch_model.bin",
-    "model-*.safetensors",
-    "pytorch_model-*.bin",
-)
-_TOKENIZER_FILE_NAMES = ("tokenizer.json", "tokenizer_config.json", "vocab.json")
 
 
 def _prepare_sft_jsonl(config: dict) -> Path:
@@ -58,66 +49,19 @@ def _build_tokenized_dataset(config: dict, sft_jsonl: Path):
     return tokenizer, SftTorchDataset(tokenized)
 
 
-def _model_weight_files(path: str | Path) -> list[Path]:
-    root = Path(path)
-    files: list[Path] = []
-    for pattern in _MODEL_WEIGHT_PATTERNS:
-        files.extend(sorted(root.glob(pattern)))
-    return [file for file in files if file.is_file()]
+def _final_checkpoint_dir(config: dict) -> Path:
+    """Return the directory that should contain the eval-ready SFT model."""
+
+    return Path(config["output"]["checkpoint_dir"])
 
 
-def _has_tokenizer_files(path: str | Path) -> bool:
-    root = Path(path)
-    return any((root / name).is_file() for name in _TOKENIZER_FILE_NAMES)
+def _trainer_output_dir(config: dict) -> Path:
+    """Return the private Hugging Face Trainer state/checkpoint directory."""
 
-
-def _assert_checkpoint_complete(path: str | Path, *, requires_tokenizer: bool) -> None:
-    root = Path(path)
-    weight_files = _model_weight_files(root)
-    if not weight_files:
-        expected = ", ".join(_MODEL_WEIGHT_PATTERNS)
-        raise RuntimeError(
-            f"SFT checkpoint at {root} is incomplete: no model weights found. "
-            f"Expected one of: {expected}. Check disk space/quota and whether saving was interrupted."
-        )
-    if requires_tokenizer and not _has_tokenizer_files(root):
-        expected = ", ".join(_TOKENIZER_FILE_NAMES)
-        raise RuntimeError(
-            f"SFT checkpoint at {root} is incomplete: no tokenizer files found. "
-            f"Expected one of: {expected}."
-        )
-
-
-def _trainer_tokenizer_kwargs(trainer_cls, tokenizer) -> dict:
-    hf_tokenizer = getattr(tokenizer, "tokenizer", None)
-    if hf_tokenizer is None:
-        return {}
-
-    parameters = inspect.signature(trainer_cls.__init__).parameters
-    if "processing_class" in parameters:
-        return {"processing_class": hf_tokenizer}
-    if "tokenizer" in parameters:
-        return {"tokenizer": hf_tokenizer}
-    return {}
-
-
-def _save_final_checkpoint(trainer, tokenizer, checkpoint_dir: str | Path) -> None:
-    checkpoint_path = Path(checkpoint_dir)
-    checkpoint_path.mkdir(parents=True, exist_ok=True)
-    print(f"Saving final SFT checkpoint to {checkpoint_path}")
-    try:
-        trainer.save_model(str(checkpoint_path))
-        hf_tokenizer = getattr(tokenizer, "tokenizer", None)
-        if hf_tokenizer is not None:
-            hf_tokenizer.save_pretrained(str(checkpoint_path))
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to save final SFT checkpoint to {checkpoint_path}. "
-            "Check disk space/quota and filesystem permissions."
-        ) from exc
-
-    _assert_checkpoint_complete(checkpoint_path, requires_tokenizer=getattr(tokenizer, "tokenizer", None) is not None)
-    print(f"Saved final SFT checkpoint to {checkpoint_path}")
+    output = config.get("output", {})
+    if output.get("trainer_checkpoint_dir"):
+        return Path(output["trainer_checkpoint_dir"])
+    return _final_checkpoint_dir(config) / "trainer_checkpoints"
 
 
 def _run_transformers_training(config: dict, tokenizer, dataset: SftTorchDataset) -> None:
@@ -129,28 +73,27 @@ def _run_transformers_training(config: dict, tokenizer, dataset: SftTorchDataset
     model = AutoModelForCausalLM.from_pretrained(config["model"]["path"], trust_remote_code=True)
     collator = SftDataCollator(pad_token_id=tokenizer.pad_token_id)
     training = config["training"]
+    save_strategy = str(training.get("save_strategy", "no"))
     args = TrainingArguments(
-        output_dir=config["output"]["checkpoint_dir"],
+        output_dir=str(_trainer_output_dir(config)),
         learning_rate=float(training["learning_rate"]),
         num_train_epochs=float(training["num_train_epochs"]),
         per_device_train_batch_size=int(training["per_device_train_batch_size"]),
         gradient_accumulation_steps=int(training["gradient_accumulation_steps"]),
         logging_steps=int(training.get("logging_steps", 10)),
+        save_strategy=save_strategy,
         save_steps=int(training.get("save_steps", 100)),
         max_steps=int(training["max_steps"]) if training.get("max_steps") is not None else -1,
         fp16=bool(training.get("fp16", False)),
         bf16=bool(training.get("bf16", False)),
         report_to=training.get("report_to", "none"),
     )
-    trainer = Trainer(
-        model=model,
-        args=args,
-        train_dataset=dataset,
-        data_collator=collator,
-        **_trainer_tokenizer_kwargs(Trainer, tokenizer),
-    )
+    trainer = Trainer(model=model, args=args, train_dataset=dataset, data_collator=collator)
     trainer.train()
-    _save_final_checkpoint(trainer, tokenizer, config["output"]["checkpoint_dir"])
+    final_checkpoint_dir = _final_checkpoint_dir(config)
+    trainer.save_model(str(final_checkpoint_dir))
+    if hasattr(tokenizer, "tokenizer"):
+        tokenizer.tokenizer.save_pretrained(str(final_checkpoint_dir))
 
 
 def main() -> None:
