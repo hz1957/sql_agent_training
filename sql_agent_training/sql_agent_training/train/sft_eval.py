@@ -126,16 +126,23 @@ def _has_tokenizer_files(path: str | Path) -> bool:
     return any((root / name).exists() for name in ("tokenizer.json", "tokenizer_config.json", "vocab.json"))
 
 
-def _checkpoint_step(path: Path) -> int:
-    match = re.fullmatch(r"checkpoint-(\d+)", path.name)
-    return int(match.group(1)) if match else -1
+def _checkpoint_sort_key(path: Path) -> tuple[int, int | str]:
+    checkpoint_match = re.fullmatch(r"checkpoint-(\d+)", path.name)
+    if checkpoint_match:
+        return (1, int(checkpoint_match.group(1)))
+    timestamp_match = re.fullmatch(r"\d{8}_\d{6}(?:_\d{2})?", path.name)
+    if timestamp_match:
+        return (2, path.name)
+    return (0, path.name)
 
 
-def _latest_checkpoint(path: Path) -> Path | None:
-    checkpoints = [child for child in path.glob("checkpoint-*") if child.is_dir() and _has_model_files(child)]
-    if not checkpoints:
+def _latest_model_dir(path: Path) -> Path | None:
+    if not path.exists():
         return None
-    return max(checkpoints, key=_checkpoint_step)
+    candidates = [child for child in path.iterdir() if child.is_dir() and _has_model_files(child)]
+    if not candidates:
+        return None
+    return max(candidates, key=_checkpoint_sort_key)
 
 
 def _resolve_model_and_tokenizer(
@@ -150,9 +157,9 @@ def _resolve_model_and_tokenizer(
 
     model_path = Path(checkpoint or output_config.get("checkpoint_dir") or model_config["path"])
     if not _has_model_files(model_path):
-        nested_checkpoint = _latest_checkpoint(model_path)
-        if nested_checkpoint is not None:
-            model_path = nested_checkpoint
+        nested_model_dir = _latest_model_dir(model_path)
+        if nested_model_dir is not None:
+            model_path = nested_model_dir
 
     resolved_tokenizer = tokenizer_path or model_config.get("tokenizer_path") or tokenizer_config.get("path")
     if not resolved_tokenizer:

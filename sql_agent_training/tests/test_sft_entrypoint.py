@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+from sql_agent_training.train.sft import _new_checkpoint_dir, _trainer_output_dir
+
 
 def test_sft_dry_run_writes_jsonl(tmp_path: Path) -> None:
     data_dir = tmp_path / "data" / "spider"
@@ -59,3 +61,28 @@ def test_sft_dry_run_writes_jsonl(tmp_path: Path) -> None:
     row = json.loads(output_path.read_text(encoding="utf-8").strip())
     assert row["completion"] == "SELECT Name FROM Singer"
     assert "SELECT Name FROM Singer" not in row["prompt"]
+
+
+def test_sft_new_checkpoint_dir_uses_timestamped_run_folder(tmp_path: Path) -> None:
+    checkpoint_root = tmp_path / "sft_model"
+
+    checkpoint_dir = _new_checkpoint_dir(checkpoint_root)
+
+    assert checkpoint_dir.parent == checkpoint_root
+    assert checkpoint_dir.name.startswith("20")
+    assert len(checkpoint_dir.name) == len("20260711_061234")
+
+
+def test_sft_trainer_output_dir_is_inside_final_checkpoint(tmp_path: Path) -> None:
+    checkpoint_dir = tmp_path / "sft_model" / "20260711_061234"
+    config = {"output": {"checkpoint_dir": str(tmp_path / "sft_model")}}
+
+    assert _trainer_output_dir(config, checkpoint_dir) == checkpoint_dir / "trainer_checkpoints"
+
+
+def test_sft_trainer_output_dir_can_be_overridden(tmp_path: Path) -> None:
+    checkpoint_dir = tmp_path / "sft_model"
+    trainer_dir = tmp_path / "trainer_state"
+    config = {"output": {"checkpoint_dir": str(checkpoint_dir), "trainer_checkpoint_dir": str(trainer_dir)}}
+
+    assert _trainer_output_dir(config, checkpoint_dir) == trainer_dir

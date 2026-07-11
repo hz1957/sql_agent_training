@@ -98,18 +98,18 @@ def test_sft_eval_cli_dry_run_gold(tmp_path: Path) -> None:
     assert output.exists()
 
 
-def test_resolve_model_and_tokenizer_uses_latest_nested_checkpoint(tmp_path: Path) -> None:
+def test_resolve_model_and_tokenizer_uses_latest_nested_model_dir(tmp_path: Path) -> None:
     base_model = tmp_path / "base_model"
     base_model.mkdir()
     (base_model / "tokenizer.json").write_text("{}", encoding="utf-8")
 
     checkpoint_root = tmp_path / "sft_checkpoint"
-    checkpoint_200 = checkpoint_root / "checkpoint-200"
     checkpoint_875 = checkpoint_root / "checkpoint-875"
-    checkpoint_200.mkdir(parents=True)
-    checkpoint_875.mkdir()
-    (checkpoint_200 / "model.safetensors").write_text("", encoding="utf-8")
+    timestamped_run = checkpoint_root / "20260711_061234"
+    checkpoint_875.mkdir(parents=True)
+    timestamped_run.mkdir()
     (checkpoint_875 / "model.safetensors").write_text("", encoding="utf-8")
+    (timestamped_run / "model.safetensors").write_text("", encoding="utf-8")
 
     model_path, tokenizer_path = _resolve_model_and_tokenizer(
         {
@@ -120,5 +120,5 @@ def test_resolve_model_and_tokenizer_uses_latest_nested_checkpoint(tmp_path: Pat
         tokenizer_path=None,
     )
 
-    assert model_path == str(checkpoint_875)
+    assert model_path == str(timestamped_run)
     assert tokenizer_path == str(base_model)
