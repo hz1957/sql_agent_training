@@ -134,6 +134,13 @@ def _run_transformers_training(config: dict, tokenizer, dataset: SftTorchDataset
     )
     trainer = Trainer(model=model, args=args, train_dataset=dataset, data_collator=collator)
     trainer.train()
+    # Free GPU memory before serializing weights to CPU RAM to avoid OOM during save.
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
     trainer.save_model(str(final_checkpoint_dir))
     if hasattr(tokenizer, "tokenizer"):
         tokenizer.tokenizer.save_pretrained(str(final_checkpoint_dir))
