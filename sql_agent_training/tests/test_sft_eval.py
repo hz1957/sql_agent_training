@@ -9,6 +9,7 @@ import yaml
 from sql_agent_training.data.schema import load_tables_json
 from sql_agent_training.data.spider_dataset import SpiderExample
 from sql_agent_training.train.sft_eval import (
+    _resolve_model_and_tokenizer,
     evaluate_predictions,
     generate_predictions,
     write_predictions_jsonl,
@@ -95,3 +96,29 @@ def test_sft_eval_cli_dry_run_gold(tmp_path: Path) -> None:
     assert summary["executable_rate"] == 1.0
     assert summary["execution_accuracy"] == 1.0
     assert output.exists()
+
+
+def test_resolve_model_and_tokenizer_uses_latest_nested_checkpoint(tmp_path: Path) -> None:
+    base_model = tmp_path / "base_model"
+    base_model.mkdir()
+    (base_model / "tokenizer.json").write_text("{}", encoding="utf-8")
+
+    checkpoint_root = tmp_path / "sft_checkpoint"
+    checkpoint_200 = checkpoint_root / "checkpoint-200"
+    checkpoint_875 = checkpoint_root / "checkpoint-875"
+    checkpoint_200.mkdir(parents=True)
+    checkpoint_875.mkdir()
+    (checkpoint_200 / "model.safetensors").write_text("", encoding="utf-8")
+    (checkpoint_875 / "model.safetensors").write_text("", encoding="utf-8")
+
+    model_path, tokenizer_path = _resolve_model_and_tokenizer(
+        {
+            "model": {"path": str(base_model)},
+            "output": {"checkpoint_dir": str(checkpoint_root)},
+        },
+        checkpoint=None,
+        tokenizer_path=None,
+    )
+
+    assert model_path == str(checkpoint_875)
+    assert tokenizer_path == str(base_model)
