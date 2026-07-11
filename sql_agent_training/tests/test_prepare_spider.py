@@ -32,7 +32,7 @@ def _write_minimal_spider_dir(root: Path) -> None:
         conn.close()
 
 
-def test_prepare_spider_verify_only_generates_schema_cache(tmp_path: Path) -> None:
+def test_prepare_spider_verify_only_reports_assets(tmp_path: Path) -> None:
     data_dir = tmp_path / "spider"
     _write_minimal_spider_dir(data_dir)
     script = Path(__file__).resolve().parents[1] / "scripts" / "prepare_spider.py"
@@ -52,6 +52,6 @@ def test_prepare_spider_verify_only_generates_schema_cache(tmp_path: Path) -> No
 
     summary = json.loads(completed.stdout)
     assert summary["ok"] is True
+    assert summary["num_schemas"] == 1
     assert summary["num_train_examples"] == 1
     assert summary["num_validation_examples"] == 1
-    assert (data_dir / "schema_cache.json").exists()

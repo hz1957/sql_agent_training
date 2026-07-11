@@ -1,6 +1,4 @@
-import json
-
-from sql_agent_training.data.schema import build_schema_prompt, load_schema_cache, schema_from_spider_record, write_schema_cache
+from sql_agent_training.data.schema import build_schema_prompt, schema_from_spider_record
 from sql_agent_training.data.sft_formatter import format_sft_record
 from sql_agent_training.data.spider_dataset import SpiderExample
 
@@ -44,21 +42,3 @@ def test_build_schema_prompt_missing_db_raises() -> None:
         assert "missing" in str(exc)
     else:
         raise AssertionError("Expected KeyError")
-
-
-def test_write_schema_cache(tmp_path) -> None:
-    tables = {
-        "music": {
-            "db_id": "music",
-            "table_names_original": ["Singer"],
-            "column_names_original": [[-1, "*"], [0, "Name"]],
-        }
-    }
-    output = tmp_path / "schema_cache.json"
-
-    count = write_schema_cache(tables, output)
-    cache = load_schema_cache(output)
-
-    assert count == 1
-    assert cache["music"] == "Database: music\n- Singer(Name)"
-    assert json.loads(output.read_text(encoding="utf-8")) == cache

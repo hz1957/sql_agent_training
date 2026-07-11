@@ -23,17 +23,6 @@ def format_sft_record(example: SpiderExample, tables_index: dict) -> dict[str, s
     }
 
 
-def format_sft_record_from_schema_prompt(example: SpiderExample, schema_prompt: str) -> dict[str, str]:
-    """Format one Spider example using a pre-rendered schema prompt."""
-
-    return {
-        "uid": example.uid,
-        "db_id": example.db_id,
-        "prompt": build_sft_prompt(example.question, schema_prompt),
-        "completion": example.gold_sql.strip(),
-    }
-
-
 def write_sft_jsonl(examples: Iterable[SpiderExample], tables_index: dict, output_path: str | Path) -> int:
     """Write SFT records as JSONL and return the number of records."""
 

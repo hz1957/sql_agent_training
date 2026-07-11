@@ -19,7 +19,7 @@ class SpiderExample:
 
 
 def example_from_mapping(row: dict[str, Any], index: int = 0) -> SpiderExample:
-    """Normalize a mapping from HF/JSON/parquet into SpiderExample."""
+    """Normalize a mapping from HF/JSON into SpiderExample."""
 
     db_id = str(row["db_id"])
     return SpiderExample(
@@ -52,21 +52,8 @@ def load_spider_jsonl(path: str | Path) -> list[SpiderExample]:
     return examples
 
 
-def load_spider_parquet(path: str | Path) -> list[SpiderExample]:
-    """Load Spider-style parquet records."""
-
-    try:
-        import pandas as pd
-    except ImportError as exc:  # pragma: no cover - dependency check
-        raise RuntimeError("Install pandas and pyarrow to load parquet Spider files.") from exc
-
-    df = pd.read_parquet(path)
-    rows = df.to_dict(orient="records")
-    return [example_from_mapping(row, index) for index, row in enumerate(rows)]
-
-
 def load_spider_file(path: str | Path) -> list[SpiderExample]:
-    """Load Spider examples from json, jsonl, or parquet."""
+    """Load Spider examples from JSON or JSONL."""
 
     file_path = Path(path)
     suffix = file_path.suffix.lower()
@@ -74,8 +61,6 @@ def load_spider_file(path: str | Path) -> list[SpiderExample]:
         return load_spider_json(file_path)
     if suffix == ".jsonl":
         return load_spider_jsonl(file_path)
-    if suffix == ".parquet":
-        return load_spider_parquet(file_path)
     raise ValueError(f"Unsupported Spider file extension: {file_path}")
 
 

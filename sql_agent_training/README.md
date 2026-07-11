@@ -1,25 +1,27 @@
 # SQL Agent Training
 
-Standalone training stack for Spider text-to-SQL agents.
+Minimal Spider text-to-SQL training stack.
 
-The project supports three modes:
-
-- SFT only: `question + schema -> gold SQL`
-- Agent GRPO only: SQL agent rollout with execution reward
-- SFT followed by Agent GRPO
-
-Default base model:
+The project now keeps only the code needed to understand one small loop:
 
 ```text
-Qwen/Qwen2.5-Coder-0.5B-Instruct
+Spider data -> schema prompt -> SFT records -> SQL agent rollout -> execution reward -> GRPO loss -> optimizer step
 ```
 
-## Local vs AutoDL
+There is no AutoDL launcher and no VERL integration in this branch. The GRPO path is local and readable: `train.grpo_rollouts` prepares rollouts, while `train.grpo_train` performs online rollout/update steps.
 
-Local RTX 3070 is for development only: data verification, unit tests, schema formatting, SQLite reward checks, and dry runs.
-Real SFT and Agent GRPO are intended to run on AutoDL.
+## Layout
 
-## Local Setup
+```text
+sql_agent_training/
+  data/       Spider examples, schema prompts, SFT formatting
+  env/        SQL safety checks and read-only SQLite execution
+  reward/     Spider execution-match reward
+  agent/      prompts, SQL extraction, rollouts, trajectory tokenization
+  train/      SFT, SFT eval, rollout grouping, minimal complete GRPO trainer
+```
+
+## Setup
 
 ```powershell
 cd sql_agent_training
@@ -27,27 +29,27 @@ uv sync --group dev
 uv run pytest
 ```
 
-Run commands from this directory so `uv`, pytest, and module imports all resolve against the subproject.
+If `uv run` hits a cache permission issue, keep the cache inside the repo:
+
+```powershell
+UV_CACHE="$(pwd)/.cache_uv" XDG_CACHE_HOME="$(pwd)/.cache_xdg" uv run pytest
+```
 
 ## Data
 
-Text samples come from Hugging Face `xlangai/spider`. Execution reward also requires official Spider SQLite databases:
+The real Spider flow expects:
 
 ```text
 data/spider/
+  train_spider.json
+  dev.json
   tables.json
   database/
     {db_id}/
       {db_id}.sqlite
 ```
 
-Verify a prepared dataset:
-
-```powershell
-python scripts/prepare_spider.py --data-dir data/spider --verify-only
-```
-
-Current local preparation workflow:
+Prepare or verify data:
 
 ```powershell
 uv run python scripts/prepare_spider.py --data-dir data/spider --download-hf-text
@@ -55,86 +57,63 @@ uv run python scripts/download_spider_assets.py --data-dir data/spider
 uv run python scripts/prepare_spider.py --data-dir data/spider --verify-only
 ```
 
-Expected verified counts:
+## Minimal Flow
 
-```text
-train examples: 7000
-validation examples: 1034
-schemas: 166
-missing db ids: 0
-```
-
-## Commands
-
-SFT formatting / dry run:
+Format SFT data without training:
 
 ```powershell
 uv run python -m sql_agent_training.train.sft --config configs/sft.local_dryrun.yaml --dry-run
 ```
 
-Local Qwen Coder 0.5B SFT smoke:
+Run the built-in local GRPO rollout demo without updating weights:
+
+```powershell
+uv run python -m sql_agent_training.train.grpo_rollouts --config configs/grpo.local_dryrun.yaml
+```
+
+Run the built-in complete GRPO trainer. This uses a tiny local causal LM, computes advantages, caches old/reference log-probs, backpropagates clipped GRPO loss, and writes a checkpoint:
+
+```powershell
+uv run python -m sql_agent_training.train.grpo_train --config configs/grpo.local_dryrun.yaml
+```
+
+Run the same trainer with Qwen2.5-Coder-0.5B for a one-step local smoke test:
+
+```powershell
+uv run python scripts/download_model.py
+uv run python -m sql_agent_training.train.grpo_train --config configs/grpo.qwen_smoke.yaml
+```
+
+Each GRPO trainer run saves a timestamped checkpoint under the configured checkpoint root, for example `artifacts/checkpoints/grpo_qwen25_coder_05b/<timestamp>/`.
+The same directory contains that run's `rollouts.jsonl`, `metrics.jsonl`, `metrics.json`, and `run_config.yaml`. Rollout JSONL files include prompt and response text by default for live debugging; set `output.include_text: false` to keep only token counts, rewards, and metadata.
+
+Run formal local GRPO training with the Qwen2.5-Coder-0.5B training config:
+
+```powershell
+uv run python -m sql_agent_training.train.grpo_train --config configs/grpo.yaml
+```
+
+`configs/grpo.yaml` uses PPO-style online GRPO: every training step samples a task batch, generates `rollout.n` rollouts from the current policy, caches old/reference log-probs, then reuses that rollout batch for `training.update_epochs` clipped actor updates.
+
+Evaluate a trained GRPO checkpoint on Spider validation:
+
+```powershell
+uv run python -m sql_agent_training.train.agent_eval --config configs/agent_eval.yaml --checkpoint artifacts/checkpoints/grpo_qwen25_coder_05b/<timestamp>
+```
+
+This writes `eval_predictions.jsonl` and `eval_metrics.json` into the checkpoint directory. Run the same command with `--checkpoint data/models/Qwen2.5-Coder-0.5B-Instruct --output-dir artifacts/eval/base_qwen` for a base-model baseline.
+
+Run SFT formatting and the tiny GRPO trainer through the pipeline:
+
+```powershell
+uv run python -m sql_agent_training.train.run_pipeline --config configs/pipeline.local_dryrun.yaml
+```
+
+For real SFT, install the SFT extra and use `configs/sft.yaml`, which points at the same Qwen2.5-Coder-0.5B checkpoint:
 
 ```powershell
 uv sync --group dev --extra sft
-uv run python scripts/download_model.py --model-id Qwen/Qwen2.5-Coder-0.5B-Instruct --output-dir data/models/Qwen2.5-Coder-0.5B-Instruct
-uv run python -m sql_agent_training.train.sft --config configs/sft.local_smoke.yaml
-uv run python -m sql_agent_training.train.sft_eval --config configs/sft.local_smoke.yaml --split validation --limit 1
-```
-
-SFT eval dry run:
-
-```powershell
-uv run python -m sql_agent_training.train.sft_eval --config configs/sft.local_dryrun.yaml --dry-run-gold
-```
-
-Agent GRPO entrypoint:
-
-```powershell
-uv run python -m sql_agent_training.train.verl_agent_grpo --config configs/agent_grpo.local_dryrun.yaml
-```
-
-Agent rollout protocol:
-
-```text
-model writes one SQLite SELECT/WITH query
-runner executes it
-if execution reward passes, the SQL is final
-otherwise the execution feedback is returned and the model rewrites SQL
-max_turns falls back to the last candidate SQL
-```
-
-Pipeline:
-
-```powershell
-uv run python -m sql_agent_training.train.run_pipeline --config configs/pipeline.yaml --stages sft,grpo
-```
-
-Print local dry-run commands without running training:
-
-```powershell
-uv run python -m sql_agent_training.train.run_pipeline --config configs/pipeline.local_dryrun.yaml --print-commands
-```
-
-Run one stage only:
-
-```powershell
-uv run python -m sql_agent_training.train.run_pipeline --config configs/pipeline.yaml --stages sft --print-commands
-uv run python -m sql_agent_training.train.run_pipeline --config configs/pipeline.yaml --stages grpo --print-commands
-```
-
-AutoDL full sequence, assuming VERL/CUDA environment is ready:
-
-```bash
-uv run python -m sql_agent_training.train.run_pipeline --config configs/pipeline.autodl.yaml
-```
-
-## AutoDL
-
-See [docs/autodl-runbook.md](docs/autodl-runbook.md).
-
-Useful probes:
-
-```bash
-bash scripts/autodl_bootstrap.sh
-python scripts/probe_verl_agent_loop.py
+uv run python scripts/download_model.py
+uv run python -m sql_agent_training.train.sft --config configs/sft.yaml
+uv run python -m sql_agent_training.train.sft_eval --config configs/sft.yaml --split validation --limit 10
 ```

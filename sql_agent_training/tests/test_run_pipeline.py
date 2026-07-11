@@ -39,12 +39,10 @@ def test_build_stage_commands_supports_sft_only() -> None:
     ]
 
 
-def test_build_stage_commands_supports_grpo_only_prepare() -> None:
+def test_build_stage_commands_supports_grpo_only() -> None:
     commands = build_stage_commands(
         {
-            "grpo_config": "configs/agent_grpo.yaml",
-            "grpo_prepare_only": True,
-            "grpo_run_verl": False,
+            "grpo_config": "configs/grpo.yaml",
         },
         ["grpo"],
     )
@@ -53,20 +51,20 @@ def test_build_stage_commands_supports_grpo_only_prepare() -> None:
         [
             sys.executable,
             "-m",
-            "sql_agent_training.train.verl_agent_grpo",
+            "sql_agent_training.train.grpo_train",
             "--config",
-            "configs/agent_grpo.yaml",
-            "--prepare-only",
+            "configs/grpo.yaml",
         ]
     ]
 
 
-def test_build_stage_commands_supports_sft_then_grpo_autodl() -> None:
+def test_build_stage_commands_supports_sft_then_grpo_dry_run() -> None:
     commands = build_stage_commands(
         {
-            "sft_config": "configs/sft.autodl.yaml",
-            "grpo_config": "configs/agent_grpo.autodl.yaml",
-            "grpo_run_verl": True,
+            "sft_config": "configs/sft.local_dryrun.yaml",
+            "sft_dry_run": True,
+            "grpo_config": "configs/grpo.local_dryrun.yaml",
+            "grpo_dry_run": True,
         },
         ["sft", "grpo"],
     )
@@ -77,14 +75,15 @@ def test_build_stage_commands_supports_sft_then_grpo_autodl() -> None:
             "-m",
             "sql_agent_training.train.sft",
             "--config",
-            "configs/sft.autodl.yaml",
+            "configs/sft.local_dryrun.yaml",
+            "--dry-run",
         ],
         [
             sys.executable,
             "-m",
-            "sql_agent_training.train.verl_agent_grpo",
+            "sql_agent_training.train.grpo_train",
             "--config",
-            "configs/agent_grpo.autodl.yaml",
-            "--run-verl",
+            "configs/grpo.local_dryrun.yaml",
+            "--dry-run",
         ],
     ]

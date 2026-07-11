@@ -1,4 +1,0 @@
-- name: sql_agent
-  _target_: sql_agent_training.train.verl_sql_agent_loop.SqlAgentVerlLoop
-  max_turns: 3
-  sqlite_timeout_steps: 100000

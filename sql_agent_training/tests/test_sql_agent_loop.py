@@ -38,12 +38,35 @@ def test_rollout_plain_sql_scores_reward_and_finalizes(tmp_path: Path) -> None:
     )
 
     assert trajectory.final_sql == "SELECT Name FROM Singer"
-    assert trajectory.final_sql_source == "passed_execution_reward"
+    assert trajectory.final_sql_source == "executed_successfully"
     assert trajectory.reward == 1.0
     assert trajectory.metadata["ran_out_of_turns"] is False
 
 
-def test_rollout_rewrites_until_sql_passes(tmp_path: Path) -> None:
+def test_rollout_rewrites_until_sql_executes(tmp_path: Path) -> None:
+    db_path = tmp_path / "music.sqlite"
+    _make_db(db_path)
+
+    trajectory = SqlAgentLoop(max_turns=3).run_with_responses(
+        _sample(),
+        [
+            "SELECT Missing FROM Singer",
+            "SELECT Name FROM Singer",
+        ],
+        db_path,
+    )
+
+    assert trajectory.final_sql == "SELECT Name FROM Singer"
+    assert trajectory.final_sql_source == "executed_successfully"
+    assert trajectory.metadata["num_execute_calls"] == 2
+    assert trajectory.reward == 1.0
+    assert "no such column" in trajectory.turns[2].content
+    assert [turn.role for turn in trajectory.turns] == ["user", "assistant", "tool", "user", "assistant", "tool"]
+    assert "## Previous failed SQL\nSELECT Missing FROM Singer" in trajectory.turns[3].content
+    assert "## Previous error\nno such column: Missing" in trajectory.turns[3].content
+
+
+def test_rollout_stops_after_executable_wrong_answer(tmp_path: Path) -> None:
     db_path = tmp_path / "music.sqlite"
     _make_db(db_path)
 
@@ -56,28 +79,31 @@ def test_rollout_rewrites_until_sql_passes(tmp_path: Path) -> None:
         db_path,
     )
 
-    assert trajectory.final_sql == "SELECT Name FROM Singer"
-    assert trajectory.final_sql_source == "passed_execution_reward"
-    assert trajectory.metadata["num_execute_calls"] == 2
-    assert trajectory.reward == 1.0
+    assert trajectory.final_sql == "SELECT COUNT(*) FROM Singer"
+    assert trajectory.final_sql_source == "executed_successfully"
+    assert trajectory.metadata["num_execute_calls"] == 1
+    assert trajectory.metadata["ran_out_of_turns"] is False
+    assert trajectory.reward == 0.0
+    assert [turn.role for turn in trajectory.turns] == ["user", "assistant", "tool"]
 
 
-def test_rollout_max_turns_uses_last_candidate_sql(tmp_path: Path) -> None:
+def test_rollout_max_turns_without_executable_sql_returns_no_final_sql(tmp_path: Path) -> None:
     db_path = tmp_path / "music.sqlite"
     _make_db(db_path)
 
     trajectory = SqlAgentLoop(max_turns=1).run_with_responses(
         _sample(),
         [
-            "SELECT COUNT(*) FROM Singer",
+            "SELECT Missing FROM Singer",
             "SELECT Name FROM Singer",
         ],
         db_path,
     )
 
-    assert trajectory.final_sql == "SELECT COUNT(*) FROM Singer"
-    assert trajectory.final_sql_source == "last_candidate_sql"
+    assert trajectory.final_sql is None
+    assert trajectory.final_sql_source == "none"
     assert trajectory.metadata["ran_out_of_turns"] is True
+    assert trajectory.metadata["num_execute_calls"] == 1
     assert trajectory.reward == 0.0
 
 
@@ -112,7 +138,7 @@ def test_interactive_rollout_rewrites_with_scripted_model_client(tmp_path: Path)
     _make_db(db_path)
     client = ScriptedModelClient(
         [
-            "SELECT COUNT(*) FROM Singer",
+            "SELECT Missing FROM Singer",
             "SELECT Name FROM Singer",
         ]
     )
@@ -120,9 +146,9 @@ def test_interactive_rollout_rewrites_with_scripted_model_client(tmp_path: Path)
     trajectory = SqlAgentLoop(max_turns=3).run(_sample(), client, db_path)
 
     assert client.calls == 2
-    assert trajectory.final_sql_source == "passed_execution_reward"
+    assert trajectory.final_sql_source == "executed_successfully"
     assert trajectory.reward == 1.0
-    assert [turn.role for turn in trajectory.turns] == ["user", "assistant", "tool", "assistant", "tool"]
+    assert [turn.role for turn in trajectory.turns] == ["user", "assistant", "tool", "user", "assistant", "tool"]
 
 
 class InspectingClient:
@@ -132,11 +158,11 @@ class InspectingClient:
     def generate(self, request: ModelRequest) -> ModelResponse:
         self.requests.append(request)
         if len(self.requests) == 1:
-            return ModelResponse(content="SELECT COUNT(*) FROM Singer")
+            return ModelResponse(content="SELECT Missing FROM Singer")
         return ModelResponse(content="SELECT Name FROM Singer")
 
 
-def test_model_client_receives_tool_observation(tmp_path: Path) -> None:
+def test_model_client_receives_compact_failure_prompt(tmp_path: Path) -> None:
     db_path = tmp_path / "music.sqlite"
     _make_db(db_path)
     client = InspectingClient()
@@ -145,4 +171,6 @@ def test_model_client_receives_tool_observation(tmp_path: Path) -> None:
 
     assert len(client.requests) == 2
     assert [turn.role for turn in client.requests[0].turns] == ["user"]
-    assert [turn.role for turn in client.requests[1].turns] == ["user", "assistant", "tool"]
+    assert [turn.role for turn in client.requests[1].turns] == ["user"]
+    assert "## Previous failed SQL\nSELECT Missing FROM Singer" in client.requests[1].turns[0].content
+    assert "## Previous error\nno such column: Missing" in client.requests[1].turns[0].content

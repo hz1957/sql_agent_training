@@ -45,12 +45,10 @@ def build_stage_commands(config: dict[str, Any], stages: list[str]) -> list[list
                 sft_command.append("--dry-run")
             commands.append(sft_command)
         elif stage == "grpo":
-            grpo_config = str(config.get("grpo_config", "configs/agent_grpo.yaml"))
-            grpo_command = [sys.executable, "-m", "sql_agent_training.train.verl_agent_grpo", "--config", grpo_config]
-            if bool(config.get("grpo_run_verl", False)):
-                grpo_command.append("--run-verl")
-            elif bool(config.get("grpo_prepare_only", False)):
-                grpo_command.append("--prepare-only")
+            grpo_config = str(config.get("grpo_config", "configs/grpo.yaml"))
+            grpo_command = [sys.executable, "-m", "sql_agent_training.train.grpo_train", "--config", grpo_config]
+            if bool(config.get("grpo_dry_run", False)):
+                grpo_command.append("--dry-run")
             commands.append(grpo_command)
 
     return commands
