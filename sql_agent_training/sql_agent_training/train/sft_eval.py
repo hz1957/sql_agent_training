@@ -220,10 +220,10 @@ def main() -> None:
     if args.limit is not None:
         examples = examples[: args.limit]
     tables_index = load_tables_json(data_dir / "tables.json")
-    output_path = Path(args.output or config["output"].get("predictions_jsonl", "artifacts/eval/predictions.jsonl"))
 
     if args.dry_run_gold:
         generator: SqlGenerator | None = None
+        model_path = None
     else:
         training = config.get("training", {})
         model_path, tokenizer_path = _resolve_model_and_tokenizer(
@@ -237,6 +237,15 @@ def main() -> None:
             max_input_tokens=int(training.get("max_prompt_length", 1024)),
             max_new_tokens=int(training.get("max_response_length", 256)),
         )
+
+    # Default: write eval results into <checkpoint>/eval/ so each run is self-contained.
+    # Explicit --output or the legacy config key override this.
+    _eval_base = Path(model_path) / "eval" if model_path else Path("artifacts/eval/sft")
+    output_path = Path(
+        args.output
+        or config.get("output", {}).get("predictions_jsonl")
+        or _eval_base / "predictions.jsonl"
+    )
 
     rows = generate_predictions(examples, tables_index, generator, dry_run_gold=args.dry_run_gold)
     write_predictions_jsonl(rows, output_path)

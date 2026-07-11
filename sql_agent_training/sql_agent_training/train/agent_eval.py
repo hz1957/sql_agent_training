@@ -220,7 +220,9 @@ def main() -> None:
         examples = examples[: args.limit]
     tables_index = load_tables_json(data_dir / "tables.json")
 
-    output_dir = Path(args.output_dir or args.checkpoint or "artifacts/eval/agent")
+    output_dir = Path(args.output_dir) if args.output_dir else (
+        Path(args.checkpoint) / "eval" if args.checkpoint else Path("artifacts/eval/agent")
+    )
     predictions_jsonl = Path(args.predictions_jsonl or output_dir / "eval_predictions.jsonl")
     metrics_json = Path(args.metrics_json or output_dir / "eval_metrics.json")
 

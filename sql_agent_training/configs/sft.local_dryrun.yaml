@@ -12,7 +12,6 @@ data:
 output:
   sft_jsonl: artifacts/sft/train.jsonl
   checkpoint_dir: artifacts/checkpoints/sft
-  predictions_jsonl: artifacts/eval/sft_predictions.jsonl
 
 training:
   max_prompt_length: 1024
