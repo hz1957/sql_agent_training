@@ -51,6 +51,7 @@ class GrpoLossConfig:
     kl_beta: float = 0.02
     advantage_epsilon: float = 1e-6
     normalize_advantages: bool = True
+    drop_zero_advantage_samples: bool = False
     max_grad_norm: float | None = 1.0
 
 
@@ -61,11 +62,13 @@ class GrpoTrainingBatch:
     input_ids: Any
     attention_mask: Any
     response_mask: Any
+    loss_sample_mask: Any
     advantages: Any
     rewards: Any
     old_logprobs: Any
     reference_logprobs: Any
     rollout_ids: list[str]
+    skipped_zero_advantage_samples: int = 0
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,8 @@ class GrpoTrainMetrics:
     ratio_max: float
     policy_approx_kl: float
     trainable_tokens: int
+    skipped_zero_advantage_samples: int = 0
+    optimizer_skipped: bool = False
 
 
 def compute_group_advantages(
@@ -228,6 +233,12 @@ class GrpoTrainer:
             pad_token_id=self.pad_token_id,
             device=self.device,
         )
+        loss_sample_mask = torch.ones_like(tensors["advantages"], dtype=torch.float32)
+        skipped_zero_advantage_samples = 0
+        if self.loss_config.drop_zero_advantage_samples:
+            keep_mask = tensors["advantages"].abs() > self.loss_config.advantage_epsilon
+            loss_sample_mask = keep_mask.float()
+            skipped_zero_advantage_samples = int((~keep_mask).sum().detach().cpu().item())
         self.policy_model.eval()
         self.reference_model.eval()
         with torch.no_grad():
@@ -248,11 +259,13 @@ class GrpoTrainer:
             input_ids=tensors["input_ids"],
             attention_mask=tensors["attention_mask"],
             response_mask=tensors["response_mask"],
+            loss_sample_mask=loss_sample_mask,
             advantages=tensors["advantages"],
             rewards=tensors["rewards"],
             old_logprobs=old_logprobs,
             reference_logprobs=reference_logprobs,
             rollout_ids=tensors["rollout_ids"],
+            skipped_zero_advantage_samples=skipped_zero_advantage_samples,
         )
 
     def train_prepared_batch(self, batch: GrpoTrainingBatch) -> GrpoTrainMetrics:
@@ -261,7 +274,8 @@ class GrpoTrainer:
         torch = _require_torch()
         self.policy_model.train()
         self.optimizer.zero_grad(set_to_none=True)
-        total_tokens = batch.response_mask.sum().clamp_min(1.0)
+        loss_response_mask = batch.response_mask * batch.loss_sample_mask.unsqueeze(-1)
+        total_tokens = loss_response_mask.sum()
         micro_batch_size = self.logprob_micro_batch_size
         batch_size = int(batch.input_ids.shape[0])
 
@@ -274,7 +288,25 @@ class GrpoTrainer:
         }
         ratio_min: float | None = None
         ratio_max: float | None = None
-        trainable_tokens = int(batch.response_mask.sum().detach().cpu().item())
+        trainable_tokens = int(total_tokens.detach().cpu().item())
+        if trainable_tokens == 0:
+            return GrpoTrainMetrics(
+                loss=0.0,
+                policy_loss=0.0,
+                kl_loss=0.0,
+                approx_kl=0.0,
+                clip_fraction=0.0,
+                mean_reward=float(batch.rewards.mean().detach().cpu()),
+                mean_advantage=float(batch.advantages.mean().detach().cpu()),
+                ratio_mean=0.0,
+                ratio_min=0.0,
+                ratio_max=0.0,
+                policy_approx_kl=0.0,
+                trainable_tokens=0,
+                skipped_zero_advantage_samples=batch.skipped_zero_advantage_samples,
+                optimizer_skipped=True,
+            )
+        total_tokens = total_tokens.clamp_min(1.0)
 
         for start in range(0, batch_size, micro_batch_size if micro_batch_size > 0 else batch_size):
             stop = start + (micro_batch_size if micro_batch_size > 0 else batch_size)
@@ -285,7 +317,7 @@ class GrpoTrainer:
             )
             old_logprobs = batch.old_logprobs[start:stop]
             reference_logprobs = batch.reference_logprobs[start:stop]
-            response_mask = batch.response_mask[start:stop]
+            response_mask = loss_response_mask[start:stop]
             token_advantages = batch.advantages[start:stop].unsqueeze(-1)
 
             log_ratio = new_logprobs - old_logprobs
@@ -342,6 +374,8 @@ class GrpoTrainer:
                 ratio_max=ratio_max if ratio_max is not None else 0.0,
                 policy_approx_kl=metric_sums["policy_approx_kl"] / denominator,
                 trainable_tokens=trainable_tokens,
+                skipped_zero_advantage_samples=batch.skipped_zero_advantage_samples,
+                optimizer_skipped=False,
             )
 
 
@@ -395,6 +429,7 @@ def _loss_config_from_config(config: dict[str, Any]) -> GrpoLossConfig:
         kl_beta=float(training.get("kl_beta", 0.02)),
         advantage_epsilon=float(training.get("advantage_epsilon", 1e-6)),
         normalize_advantages=bool(training.get("normalize_advantages", True)),
+        drop_zero_advantage_samples=bool(training.get("drop_zero_advantage_samples", False)),
         max_grad_norm=(float(training["max_grad_norm"]) if training.get("max_grad_norm") is not None else None),
     )
 

@@ -31,9 +31,10 @@ training:
   max_steps: 200
   update_epochs: 2
   task_batch_size: 8
-  logprob_micro_batch_size: 2
+  logprob_micro_batch_size: 8
   learning_rate: 0.000005
   clip_epsilon: 0.2
   kl_beta: 0.01
+  drop_zero_advantage_samples: true
   max_grad_norm: 1.0
   save_every_steps: 50
