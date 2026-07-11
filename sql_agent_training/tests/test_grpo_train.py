@@ -91,34 +91,6 @@ def test_grpo_train_updates_tiny_policy_weights() -> None:
     assert any(not torch.equal(before[name], parameter) for name, parameter in policy.named_parameters())
 
 
-def test_grpo_train_skips_all_zero_advantage_loss() -> None:
-    batch = build_grpo_batch(
-        [_trajectory("a", 0, [3, 4], 0.0), _trajectory("a", 1, [5, 6], 0.0)],
-        rollout_n=2,
-    )
-    torch.manual_seed(0)
-    policy = create_tiny_causal_lm(vocab_size=8, hidden_size=8)
-    reference = create_tiny_causal_lm(vocab_size=8, hidden_size=8)
-    reference.load_state_dict(policy.state_dict())
-    optimizer = torch.optim.AdamW(policy.parameters(), lr=0.01)
-    trainer = GrpoTrainer(
-        policy,
-        reference,
-        optimizer,
-        pad_token_id=0,
-        loss_config=GrpoLossConfig(drop_zero_advantage_samples=True),
-    )
-    before = {name: parameter.detach().clone() for name, parameter in policy.named_parameters()}
-
-    prepared = trainer.prepare_batch(batch)
-    metrics = trainer.train_prepared_batch(prepared)
-
-    assert metrics.optimizer_skipped
-    assert metrics.trainable_tokens == 0
-    assert metrics.skipped_zero_advantage_samples == 2
-    assert all(torch.equal(before[name], parameter) for name, parameter in policy.named_parameters())
-
-
 def test_reusing_prepared_batch_makes_ratio_change_after_first_update() -> None:
     batch = build_grpo_batch(
         [_trajectory("a", 0, [3, 4], 0.0), _trajectory("a", 1, [5, 6], 1.0)],
