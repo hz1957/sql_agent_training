@@ -1,0 +1,39 @@
+dry_run: false
+
+model:
+  backend: hf
+  path: data/models/Qwen2.5-Coder-0.5B-Instruct
+  torch_dtype: auto
+
+tokenizer:
+  kind: hf
+
+data:
+  data_dir: data/spider
+  train_file: train_spider.json
+  validation_file: dev.json
+
+rollout:
+  n: 8
+  max_turns: 3
+  max_prompt_length: 2048
+  max_response_length: 512
+  temperature: 0.8
+  top_p: 0.95
+
+output:
+  include_text: true
+  checkpoint_dir: artifacts/checkpoints/grpo_qwen25_coder_05b_200steps_a100
+
+training:
+  seed: 0
+  device: auto
+  max_steps: 200
+  update_epochs: 2
+  task_batch_size: 8
+  logprob_micro_batch_size: 2
+  learning_rate: 0.000005
+  clip_epsilon: 0.2
+  kl_beta: 0.01
+  max_grad_norm: 1.0
+  save_every_steps: 50

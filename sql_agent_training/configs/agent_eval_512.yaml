@@ -1,0 +1,13 @@
+model:
+  backend: hf
+  path: data/models/Qwen2.5-Coder-0.5B-Instruct
+
+data:
+  data_dir: data/spider
+  train_file: train_spider.json
+  validation_file: dev.json
+
+rollout:
+  max_turns: 3
+  max_response_length: 512
+  temperature: 0.0
