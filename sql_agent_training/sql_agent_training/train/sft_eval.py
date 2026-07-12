@@ -63,12 +63,34 @@ class TransformersSqlGenerator:
         )
         if self.torch.cuda.is_available():
             inputs = {key: value.cuda() for key, value in inputs.items()}
+
+        # Collect all token IDs that should terminate generation.
+        # Qwen2.5 uses <|im_end|> (151645) as the EOS during SFT but the
+        # checkpoint's generation_config may store a different default; always
+        # set both eos_token_id and pad_token_id explicitly so generation stops
+        # as soon as the model emits <|im_end|> or <|endoftext|>.
+        stop_ids: list[int] = []
+        for token_id in (self.tokenizer.eos_token_id, self.tokenizer.pad_token_id):
+            if token_id is not None and token_id not in stop_ids:
+                stop_ids.append(token_id)
+        # Also stop on <|im_end|> if the tokenizer knows it (Qwen2.5 family).
+        im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        if (
+            isinstance(im_end_id, int)
+            and im_end_id != self.tokenizer.unk_token_id
+            and im_end_id not in stop_ids
+        ):
+            stop_ids.append(im_end_id)
+        eos_token_id: int | list[int] | None = stop_ids if len(stop_ids) > 1 else (stop_ids[0] if stop_ids else None)
+        pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else self.tokenizer.eos_token_id
+
         with self.torch.no_grad():
             output_ids = self.model.generate(
                 **inputs,
                 max_new_tokens=self.max_new_tokens,
                 do_sample=False,
-                pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=eos_token_id,
+                pad_token_id=pad_token_id,
             )
         generated = output_ids[0][inputs["input_ids"].shape[-1] :]
         return normalize_generated_sql(self.tokenizer.decode(generated, skip_special_tokens=True))
