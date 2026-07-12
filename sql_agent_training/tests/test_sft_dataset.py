@@ -7,6 +7,12 @@ from sql_agent_training.train.sft_dataset import (
 )
 
 
+class EosTokenizer(WhitespaceTokenizer):
+    @property
+    def eos_token_id(self) -> int | None:
+        return 99
+
+
 def test_tokenize_sft_record_masks_prompt_labels() -> None:
     tokenizer = WhitespaceTokenizer()
     record = SftRecord(uid="1", db_id="music", prompt="schema question SQL:", completion="SELECT name")
@@ -27,6 +33,26 @@ def test_tokenize_sft_record_truncates_prompt_from_left_and_completion_from_righ
 
     assert tokenized.input_ids == [3, 4, 5, 6]
     assert tokenized.labels == [IGNORE_INDEX, IGNORE_INDEX, 5, 6]
+
+
+def test_tokenize_sft_record_appends_eos_when_available() -> None:
+    tokenizer = EosTokenizer()
+    record = SftRecord(uid="1", db_id="music", prompt="schema question SQL:", completion="SELECT name")
+
+    tokenized = tokenize_sft_record(record, tokenizer, max_prompt_length=10, max_response_length=3)
+
+    assert tokenized.input_ids == [1, 2, 3, 4, 5, 99]
+    assert tokenized.labels == [IGNORE_INDEX, IGNORE_INDEX, IGNORE_INDEX, 4, 5, 99]
+
+
+def test_tokenize_sft_record_keeps_eos_inside_response_limit() -> None:
+    tokenizer = EosTokenizer()
+    record = SftRecord(uid="1", db_id="music", prompt="a", completion="b c d")
+
+    tokenized = tokenize_sft_record(record, tokenizer, max_prompt_length=10, max_response_length=2)
+
+    assert tokenized.input_ids == [1, 2, 99]
+    assert tokenized.labels == [IGNORE_INDEX, 2, 99]
 
 
 def test_sft_collator_pads_inputs_and_labels() -> None:

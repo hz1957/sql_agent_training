@@ -16,6 +16,10 @@ class TextTokenizer(Protocol):
     def pad_token_id(self) -> int:
         """Token id used for padding."""
 
+    @property
+    def eos_token_id(self) -> int | None:
+        """Optional token id used to terminate generation."""
+
 
 class WhitespaceTokenizer:
     """Deterministic toy tokenizer for tests and local dry runs."""
@@ -38,6 +42,12 @@ class WhitespaceTokenizer:
         """Return toy pad token id."""
 
         return 0
+
+    @property
+    def eos_token_id(self) -> int | None:
+        """Return no EOS token for the toy tokenizer."""
+
+        return None
 
 
 class HuggingFaceTokenizer:
@@ -69,6 +79,13 @@ class HuggingFaceTokenizer:
             return int(eos_token_id)
         return 0
 
+    @property
+    def eos_token_id(self) -> int | None:
+        """Return the Hugging Face EOS token id if available."""
+
+        token_id = self.tokenizer.eos_token_id
+        return int(token_id) if token_id is not None else None
+
 
 class ExistingHuggingFaceTokenizer:
     """Adapter around an already-loaded Hugging Face tokenizer."""
@@ -92,6 +109,13 @@ class ExistingHuggingFaceTokenizer:
         if eos_token_id is not None:
             return int(eos_token_id)
         return 0
+
+    @property
+    def eos_token_id(self) -> int | None:
+        """Return the Hugging Face EOS token id if available."""
+
+        token_id = self.tokenizer.eos_token_id
+        return int(token_id) if token_id is not None else None
 
 
 def load_tokenizer(kind: str, model_name_or_path: str | None = None) -> TextTokenizer:

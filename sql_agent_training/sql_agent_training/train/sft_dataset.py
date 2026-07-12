@@ -63,7 +63,12 @@ def tokenize_sft_record(
     """Tokenize one SFT record with prompt labels masked out."""
 
     prompt_ids = tokenizer.encode(record.prompt)[-max_prompt_length:]
-    completion_ids = tokenizer.encode(record.completion)[:max_response_length]
+    completion_ids = tokenizer.encode(record.completion)
+    eos_token_id = tokenizer.eos_token_id
+    if eos_token_id is not None:
+        completion_ids = completion_ids[: max(max_response_length - 1, 0)] + [eos_token_id]
+    else:
+        completion_ids = completion_ids[:max_response_length]
     input_ids = prompt_ids + completion_ids
     labels = [IGNORE_INDEX] * len(prompt_ids) + completion_ids
     return TokenizedSftRecord(

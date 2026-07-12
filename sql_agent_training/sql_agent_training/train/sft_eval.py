@@ -71,7 +71,28 @@ class TransformersSqlGenerator:
                 pad_token_id=self.tokenizer.eos_token_id,
             )
         generated = output_ids[0][inputs["input_ids"].shape[-1] :]
-        return self.tokenizer.decode(generated, skip_special_tokens=True).strip()
+        return normalize_generated_sql(self.tokenizer.decode(generated, skip_special_tokens=True))
+
+
+def normalize_generated_sql(text: str) -> str:
+    """Return a single SQL statement from generated text."""
+
+    stripped = text.strip()
+    fence = re.fullmatch(r"```(?:sql)?\s*(.*?)\s*```", stripped, flags=re.DOTALL | re.IGNORECASE)
+    if fence:
+        stripped = fence.group(1).strip()
+    for prefix in ("FINAL:", "Final:", "final:", "SQL:", "Sql:", "sql:"):
+        if stripped.startswith(prefix):
+            stripped = stripped[len(prefix) :].strip()
+            break
+    match = re.search(r"\b(select|with)\b", stripped, flags=re.IGNORECASE)
+    if match:
+        stripped = stripped[match.start() :].strip()
+    if "```" in stripped:
+        stripped = stripped.split("```", 1)[0].strip()
+    if ";" in stripped:
+        stripped = stripped.split(";", 1)[0].strip()
+    return stripped
 
 
 @dataclass(frozen=True)

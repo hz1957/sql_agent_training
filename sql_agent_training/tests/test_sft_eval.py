@@ -12,6 +12,7 @@ from sql_agent_training.train.sft_eval import (
     _resolve_model_and_tokenizer,
     evaluate_predictions,
     generate_predictions,
+    normalize_generated_sql,
     write_predictions_jsonl,
 )
 
@@ -58,6 +59,13 @@ def test_generate_and_evaluate_predictions(tmp_path: Path) -> None:
     assert count == 1
     assert output.exists()
     assert metrics == {"total": 1, "executable_rate": 1.0, "execution_accuracy": 1.0}
+
+
+def test_normalize_generated_sql_keeps_first_statement() -> None:
+    assert normalize_generated_sql("SQL: SELECT Name FROM Singer; SELECT COUNT(*) FROM Singer;") == (
+        "SELECT Name FROM Singer"
+    )
+    assert normalize_generated_sql("```sql\nSELECT Name FROM Singer;\n```") == "SELECT Name FROM Singer"
 
 
 def test_sft_eval_cli_dry_run_gold(tmp_path: Path) -> None:
