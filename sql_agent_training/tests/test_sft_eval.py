@@ -18,7 +18,7 @@ from sql_agent_training.train.sft_eval import (
 )
 
 
-def _write_eval_spider_dir(root: Path) -> None:
+def _write_eval_spider_dir(root: Path, *, row_count: int = 1) -> None:
     root.mkdir(parents=True)
     (root / "tables.json").write_text(
         json.dumps(
@@ -32,7 +32,10 @@ def _write_eval_spider_dir(root: Path) -> None:
         ),
         encoding="utf-8",
     )
-    rows = [{"db_id": "music", "question": "List names.", "query": "SELECT Name FROM Singer"}]
+    rows = [
+        {"uid": f"music:{index}", "db_id": "music", "question": "List names.", "query": "SELECT Name FROM Singer"}
+        for index in range(row_count)
+    ]
     (root / "dev.json").write_text(json.dumps(rows), encoding="utf-8")
     (root / "train_spider.json").write_text(json.dumps(rows), encoding="utf-8")
     db_dir = root / "database" / "music"
@@ -105,6 +108,43 @@ def test_sft_eval_cli_dry_run_gold(tmp_path: Path) -> None:
     assert summary["executable_rate"] == 1.0
     assert summary["execution_accuracy"] == 1.0
     assert output.exists()
+
+
+def test_sft_eval_cli_uses_configured_random_sample_size(tmp_path: Path) -> None:
+    data_dir = tmp_path / "spider"
+    _write_eval_spider_dir(data_dir, row_count=3)
+    output = tmp_path / "predictions.jsonl"
+    config_path = tmp_path / "sft_eval.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "model": {"path": "dummy"},
+                "data": {"data_dir": str(data_dir), "train_file": "train_spider.json", "validation_file": "dev.json"},
+                "output": {"checkpoint_dir": "dummy", "predictions_jsonl": str(output)},
+                "eval": {"sample_size": 2, "sample_seed": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "sql_agent_training.train.sft_eval",
+            "--config",
+            str(config_path),
+            "--dry-run-gold",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    summary = json.loads(completed.stdout)
+    assert summary["total"] == 2
+    assert len(output.read_text(encoding="utf-8").splitlines()) == 2
 
 
 def test_resolve_model_and_tokenizer_uses_latest_nested_model_dir(tmp_path: Path) -> None:

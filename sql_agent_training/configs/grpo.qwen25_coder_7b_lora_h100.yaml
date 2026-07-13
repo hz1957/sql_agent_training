@@ -17,24 +17,33 @@ data:
 rollout:
   n: 4
   max_turns: 3
-  max_prompt_length: 2048
-  max_response_length: 256
-  temperature: 0.7
+  max_prompt_length: 4096
+  max_response_length: 2048
+  temperature: 0.8
   top_p: 0.95
 
 output:
   include_text: true
   checkpoint_dir: artifacts/checkpoints/grpo_qwen25_coder_7b_lora_h100
 
+eval:
+  sample_size: 500
+  sample_seed: 0
+
 training:
   seed: 0
   device: cuda
   max_steps: 500
   update_epochs: 4
-  task_batch_size: 4
+  task_batch_size: 16
+  hard_example_mining: true
+  hard_example_candidate_multiplier: 4
+  hard_example_variance_epsilon: 0.000000000001
+  transition_reward_mode: discounted_final
+  transition_reward_gamma: 0.4
   learning_rate: 0.000001
   clip_epsilon: 0.2
-  kl_beta: 0.02
+  kl_beta: 0.0
   max_grad_norm: 1.0
   logprob_micro_batch_size: 2
   save_every_steps: 25

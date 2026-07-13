@@ -17,8 +17,18 @@ def test_trajectory_to_tokenized_transitions_splits_assistant_actions() -> None:
                 content="no such column: Missing",
                 metadata={"ok": False, "sql": "SELECT Missing FROM Singer", "reward": None},
             ),
+            AgentTurn(role="user", content="Check query"),
+            AgentTurn(
+                role="assistant",
+                content="The query is wrong.\nTHE QUERY IS INCORRECT.",
+                metadata={"agent_step": "check_query", "trainable": False, "turn_index": 0},
+            ),
             AgentTurn(role="user", content="Question\nPrevious error: no such column: Missing"),
-            AgentTurn(role="assistant", content="SELECT Name FROM Singer", metadata={"turn_index": 1}),
+            AgentTurn(
+                role="assistant",
+                content="SELECT Name FROM Singer",
+                metadata={"agent_step": "rewrite_query", "trainable": True, "turn_index": 1},
+            ),
             AgentTurn(
                 role="tool",
                 content="rows=[('Ada',)]; row_count=1",
@@ -41,6 +51,94 @@ def test_trajectory_to_tokenized_transitions_splits_assistant_actions() -> None:
     assert transitions[1].metadata["tool_ok"] is True
     assert [transition.group_id for transition in transitions] == ["music:0", "music:0"]
     assert all(set(transition.response_mask) == {1} for transition in transitions)
+
+
+def test_trajectory_to_tokenized_transitions_can_discount_final_reward() -> None:
+    trajectory = AgentTrajectory(
+        uid="music:0",
+        rollout_id="music:0:0",
+        turns=[
+            AgentTurn(role="user", content="Question"),
+            AgentTurn(role="assistant", content="SELECT Missing FROM Singer", metadata={"turn_index": 0}),
+            AgentTurn(
+                role="tool",
+                content="no such column: Missing",
+                metadata={"ok": False, "sql": "SELECT Missing FROM Singer", "reward": None},
+            ),
+            AgentTurn(role="user", content="Check query"),
+            AgentTurn(
+                role="assistant",
+                content="The query is wrong.\nTHE QUERY IS INCORRECT.",
+                metadata={"agent_step": "check_query", "trainable": False, "turn_index": 0},
+            ),
+            AgentTurn(role="user", content="Question\nPrevious error: no such column: Missing"),
+            AgentTurn(
+                role="assistant",
+                content="SELECT Name FROM Singer",
+                metadata={"agent_step": "rewrite_query", "trainable": True, "turn_index": 1},
+            ),
+            AgentTurn(
+                role="tool",
+                content="rows=[('Ada',)]; row_count=1",
+                metadata={"ok": True, "sql": "SELECT Name FROM Singer", "reward": 1.0},
+            ),
+        ],
+        final_sql="SELECT Name FROM Singer",
+        final_sql_source="checker_approved",
+        reward=1.0,
+    )
+
+    transitions = trajectory_to_tokenized_transitions(
+        trajectory,
+        WhitespaceTokenizer(),
+        reward_mode="discounted_final",
+        reward_gamma=0.4,
+    )
+
+    assert [transition.reward for transition in transitions] == [0.4, 1.0]
+    assert transitions[0].metadata["trajectory_reward"] == 1.0
+    assert transitions[0].metadata["own_sql_reward"] == 0.0
+    assert transitions[0].metadata["transition_reward_mode"] == "discounted_final"
+    assert transitions[0].metadata["transition_reward_gamma"] == 0.4
+
+
+def test_discounted_final_reward_preserves_correct_intermediate_sql() -> None:
+    trajectory = AgentTrajectory(
+        uid="music:0",
+        rollout_id="music:0:0",
+        turns=[
+            AgentTurn(role="user", content="Question"),
+            AgentTurn(role="assistant", content="SELECT Name FROM Singer", metadata={"turn_index": 0}),
+            AgentTurn(
+                role="tool",
+                content="rows=[('Ada',)]; row_count=1",
+                metadata={"ok": True, "sql": "SELECT Name FROM Singer", "reward": 1.0},
+            ),
+            AgentTurn(role="user", content="Question\nChecker was wrong"),
+            AgentTurn(
+                role="assistant",
+                content="SELECT COUNT(*) FROM Singer",
+                metadata={"agent_step": "rewrite_query", "trainable": True, "turn_index": 1},
+            ),
+            AgentTurn(
+                role="tool",
+                content="rows=[(1,)]; row_count=1",
+                metadata={"ok": True, "sql": "SELECT COUNT(*) FROM Singer", "reward": 0.0},
+            ),
+        ],
+        final_sql="SELECT COUNT(*) FROM Singer",
+        final_sql_source="ran_out_of_turns",
+        reward=0.0,
+    )
+
+    transitions = trajectory_to_tokenized_transitions(
+        trajectory,
+        WhitespaceTokenizer(),
+        reward_mode="discounted_final",
+        reward_gamma=0.4,
+    )
+
+    assert [transition.reward for transition in transitions] == [1.0, 0.0]
 
 
 def test_trajectory_to_tokenized_transitions_prefers_model_token_ids() -> None:

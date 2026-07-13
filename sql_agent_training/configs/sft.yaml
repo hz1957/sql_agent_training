@@ -13,6 +13,10 @@ output:
   sft_jsonl: artifacts/sft/train.jsonl
   checkpoint_dir: artifacts/checkpoints/sft
 
+eval:
+  sample_size: 500
+  sample_seed: 0
+
 training:
   max_prompt_length: 1024
   max_response_length: 256

@@ -13,6 +13,10 @@ output:
   sft_jsonl: artifacts/sft/train_qwen25_coder_7b_lora.jsonl
   checkpoint_dir: artifacts/checkpoints/sft_qwen25_coder_7b_lora_a100
 
+eval:
+  sample_size: 500
+  sample_seed: 0
+
 training:
   max_prompt_length: 2048
   max_response_length: 512

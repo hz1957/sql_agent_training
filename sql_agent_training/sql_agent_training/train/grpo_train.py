@@ -32,7 +32,7 @@ from sql_agent_training.train.grpo_rollouts import (
     build_rollout_batch_from_config,
     load_rollout_source_from_config,
 )
-from sql_agent_training.train.grpo_batch import GrpoBatch, summarize_grpo_batch
+from sql_agent_training.train.grpo_batch import GrpoBatch, GrpoGroup, summarize_grpo_batch
 
 
 def _require_torch():
@@ -518,6 +518,65 @@ def _logprob_micro_batch_size(config: dict[str, Any]) -> int:
     return size
 
 
+def _hard_example_mining_enabled(config: dict[str, Any]) -> bool:
+    return bool(config.get("training", {}).get("hard_example_mining", False))
+
+
+def _hard_example_candidate_batch_size(config: dict[str, Any], task_batch_size: int | None) -> int | None:
+    if not _hard_example_mining_enabled(config) or task_batch_size is None:
+        return task_batch_size
+    training = config.get("training", {})
+    multiplier = int(training.get("hard_example_candidate_multiplier", 2))
+    if multiplier <= 0:
+        raise ValueError("training.hard_example_candidate_multiplier must be positive")
+    return task_batch_size * multiplier
+
+
+def _hard_example_variance_epsilon(config: dict[str, Any]) -> float:
+    return float(config.get("training", {}).get("hard_example_variance_epsilon", 1e-12))
+
+
+def _group_reward_variance(group: GrpoGroup) -> float:
+    rewards = [float(trajectory.reward) for trajectory in group.trajectories]
+    if not rewards:
+        return 0.0
+    mean_reward = sum(rewards) / len(rewards)
+    return sum((reward - mean_reward) ** 2 for reward in rewards) / len(rewards)
+
+
+def select_hard_example_batch(
+    batch: GrpoBatch,
+    *,
+    target_groups: int | None,
+    variance_epsilon: float = 1e-12,
+) -> tuple[GrpoBatch, dict[str, Any]]:
+    """Keep groups with non-zero reward variance for stronger GRPO signal."""
+
+    variances = {group.uid: _group_reward_variance(group) for group in batch.groups}
+    hard_groups = [group for group in batch.groups if variances[group.uid] > variance_epsilon]
+    hard_groups.sort(key=lambda group: (-variances[group.uid], group.uid))
+    if target_groups is not None and target_groups > 0:
+        selected_groups = hard_groups[:target_groups]
+    else:
+        selected_groups = hard_groups
+
+    selected_batch = GrpoBatch(groups=selected_groups)
+    candidate_groups = len(batch.groups)
+    return selected_batch, {
+        "hard_mining_enabled": True,
+        "candidate_groups": candidate_groups,
+        "candidate_trajectories": batch.num_trajectories,
+        "hard_groups": len(hard_groups),
+        "hard_example_ratio": len(hard_groups) / candidate_groups if candidate_groups else 0.0,
+        "selected_groups": len(selected_groups),
+        "selected_trajectories": selected_batch.num_trajectories,
+        "hard_example_variance_epsilon": variance_epsilon,
+        "hard_reward_variance_per_group": {
+            group.uid: variances[group.uid] for group in selected_groups
+        },
+    }
+
+
 def _sample_step_examples(
     examples: list[SpiderExample],
     *,
@@ -600,6 +659,9 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
     )
     rollout_client = _build_online_rollout_client(policy_model, tokenizer, config, device)
     task_batch_size = _task_batch_size(config)
+    candidate_task_batch_size = _hard_example_candidate_batch_size(config, task_batch_size)
+    hard_mining_enabled = _hard_example_mining_enabled(config)
+    hard_variance_epsilon = _hard_example_variance_epsilon(config)
     source = load_rollout_source_from_config(config)
     metrics_history: list[dict[str, Any]] = []
     rows_written = 0
@@ -614,7 +676,7 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
                 step = step_index + 1
                 step_examples = _sample_step_examples(
                     source.examples,
-                    task_batch_size=task_batch_size,
+                    task_batch_size=candidate_task_batch_size,
                     rng=rng,
                 )
                 batch = build_rollout_batch_from_config(
@@ -625,6 +687,33 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
                     examples=step_examples,
                     source=source,
                 )
+                hard_mining_stats: dict[str, Any] = {"hard_mining_enabled": False}
+                if hard_mining_enabled:
+                    candidate_batch = batch
+                    batch, hard_mining_stats = select_hard_example_batch(
+                        candidate_batch,
+                        target_groups=task_batch_size,
+                        variance_epsilon=hard_variance_epsilon,
+                    )
+                    if not batch.groups:
+                        candidate_stats = summarize_grpo_batch(candidate_batch)
+                        metric_row = {
+                            "step": step,
+                            "update_epoch": 0,
+                            "optimizer_step": optimizer_steps,
+                            "groups": 0,
+                            "trajectories": 0,
+                            "skipped_update": True,
+                            "skip_reason": "no_hard_example_groups",
+                            **candidate_stats,
+                            **hard_mining_stats,
+                        }
+                        _write_jsonl_row(metrics_jsonl, metric_row)
+                        metrics_history.append(metric_row)
+                        rows_written = rollout_writer.count
+                        final_batch_stats = candidate_stats
+                        final_groups = 0
+                        continue
                 batch_stats = summarize_grpo_batch(batch)
                 prepared = trainer.prepare_batch(batch)
                 for update_epoch in range(1, update_epochs + 1):
@@ -636,7 +725,9 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
                         "optimizer_step": optimizer_steps,
                         "groups": len(batch.groups),
                         "trajectories": batch.num_trajectories,
+                        "skipped_update": False,
                         **batch_stats,
+                        **hard_mining_stats,
                         **metrics.__dict__,
                     }
                     _write_jsonl_row(metrics_jsonl, metric_row)

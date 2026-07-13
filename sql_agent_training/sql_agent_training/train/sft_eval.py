@@ -17,6 +17,7 @@ from sql_agent_training.data.sft_formatter import format_sft_record
 from sql_agent_training.data.spider_dataset import SpiderExample, expected_sqlite_path, load_spider_file
 from sql_agent_training.env.sqlite_tool import SQLiteTool
 from sql_agent_training.reward.spider_reward import spider_execution_reward
+from sql_agent_training.train.eval_sampling import select_eval_examples
 
 
 class SqlGenerator(Protocol):
@@ -254,6 +255,19 @@ def _resolve_model_and_tokenizer(
     return str(model_path), str(resolved_tokenizer)
 
 
+def _eval_sample_size(config: dict[str, Any], cli_value: int | None) -> int | None:
+    if cli_value is not None:
+        return cli_value
+    value = config.get("eval", {}).get("sample_size")
+    return int(value) if value is not None else None
+
+
+def _eval_sample_seed(config: dict[str, Any], cli_value: int | None) -> int:
+    if cli_value is not None:
+        return cli_value
+    return int(config.get("eval", {}).get("sample_seed", 0))
+
+
 def generate_predictions(
     examples: list[SpiderExample],
     tables_index: dict,
@@ -297,6 +311,8 @@ def main() -> None:
     )
     parser.add_argument("--split", default="validation", choices=["train", "validation"])
     parser.add_argument("--limit", type=int, default=None, help="Limit number of examples for local smoke tests.")
+    parser.add_argument("--sample-size", type=int, default=None, help="Randomly sample this many examples for eval.")
+    parser.add_argument("--sample-seed", type=int, default=None, help="Seed used with --sample-size/config eval.sample_size.")
     parser.add_argument("--dry-run-gold", action="store_true", help="Emit gold SQL as predictions for plumbing tests.")
     parser.add_argument("--output", default=None, help="Override predictions JSONL path.")
     args = parser.parse_args()
@@ -307,8 +323,12 @@ def main() -> None:
     data_dir = Path(config["data"]["data_dir"])
     split_file = config["data"]["validation_file"] if args.split == "validation" else config["data"]["train_file"]
     examples = load_spider_file(data_dir / split_file)
-    if args.limit is not None:
-        examples = examples[: args.limit]
+    examples = select_eval_examples(
+        examples,
+        limit=args.limit,
+        sample_size=_eval_sample_size(config, args.sample_size),
+        sample_seed=_eval_sample_seed(config, args.sample_seed),
+    )
     tables_index = load_tables_json(data_dir / "tables.json")
 
     if args.dry_run_gold:

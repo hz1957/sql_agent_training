@@ -15,6 +15,7 @@ from sql_agent_training.agent.sql_agent_loop import SqlAgentInput, SqlAgentLoop
 from sql_agent_training.agent.trace_format import AgentTrajectory
 from sql_agent_training.data.schema import build_schema_prompt, load_tables_json
 from sql_agent_training.data.spider_dataset import SpiderExample, expected_sqlite_path, load_spider_file
+from sql_agent_training.train.eval_sampling import select_eval_examples
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,9 @@ class AgentEvalResult:
 
 def _trajectory_to_result(example: SpiderExample, trajectory: AgentTrajectory) -> AgentEvalResult:
     metadata = trajectory.metadata
-    assistant_turns = sum(1 for turn in trajectory.turns if turn.role == "assistant")
+    assistant_turns = sum(
+        1 for turn in trajectory.turns if turn.role == "assistant" and turn.metadata.get("trainable") is not False
+    )
 
     def clean_turn(turn: Any) -> dict[str, Any]:
         row = asdict(turn)
@@ -174,6 +177,19 @@ def _split_file(config: dict[str, Any], split: str) -> str:
     return str(data.get("train_file", "train_spider.json"))
 
 
+def _eval_sample_size(config: dict[str, Any], cli_value: int | None) -> int | None:
+    if cli_value is not None:
+        return cli_value
+    value = config.get("eval", {}).get("sample_size")
+    return int(value) if value is not None else None
+
+
+def _eval_sample_seed(config: dict[str, Any], cli_value: int | None) -> int:
+    if cli_value is not None:
+        return cli_value
+    return int(config.get("eval", {}).get("sample_seed", 0))
+
+
 def _has_tokenizer_files(path: str | Path) -> bool:
     root = Path(path)
     return any((root / name).exists() for name in ("tokenizer.json", "tokenizer_config.json", "vocab.json"))
@@ -207,6 +223,8 @@ def main() -> None:
     parser.add_argument("--tokenizer", default=None, help="Tokenizer path. Defaults to checkpoint tokenizer or model.path.")
     parser.add_argument("--split", default="validation", choices=["train", "validation"])
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--sample-size", type=int, default=None, help="Randomly sample this many examples for eval.")
+    parser.add_argument("--sample-seed", type=int, default=None, help="Seed used with --sample-size/config eval.sample_size.")
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--predictions-jsonl", default=None)
     parser.add_argument("--metrics-json", default=None)
@@ -216,8 +234,12 @@ def main() -> None:
     config = _load_config(args.config)
     data_dir = Path(config["data"]["data_dir"])
     examples = load_spider_file(data_dir / _split_file(config, args.split))
-    if args.limit is not None:
-        examples = examples[: args.limit]
+    examples = select_eval_examples(
+        examples,
+        limit=args.limit,
+        sample_size=_eval_sample_size(config, args.sample_size),
+        sample_seed=_eval_sample_seed(config, args.sample_seed),
+    )
     tables_index = load_tables_json(data_dir / "tables.json")
 
     output_dir = Path(args.output_dir) if args.output_dir else (

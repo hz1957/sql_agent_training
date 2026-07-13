@@ -59,6 +59,14 @@ def _max_turns(config: dict[str, Any]) -> int:
     return int(config.get("rollout", {}).get("max_turns", 2))
 
 
+def _transition_reward_mode(config: dict[str, Any]) -> str:
+    return str(config.get("training", {}).get("transition_reward_mode", "final"))
+
+
+def _transition_reward_gamma(config: dict[str, Any]) -> float:
+    return float(config.get("training", {}).get("transition_reward_gamma", 0.4))
+
+
 def _trim_tokenized_trajectory(trajectory: TokenizedTrajectory, config: dict[str, Any]) -> TokenizedTrajectory:
     rollout = config.get("rollout", {})
     max_prompt_length = int(rollout.get("max_prompt_length", len(trajectory.prompt_ids)))
@@ -230,6 +238,8 @@ def _build_batch_from_examples(
     top_p = float(top_p) if top_p is not None else None
     top_k = config.get("rollout", {}).get("top_k")
     top_k = int(top_k) if top_k is not None else None
+    transition_reward_mode = _transition_reward_mode(config)
+    transition_reward_gamma = _transition_reward_gamma(config)
 
     tokenized = []
     for example in examples:
@@ -251,7 +261,12 @@ def _build_batch_from_examples(
             )
             transitions = [
                 _trim_tokenized_trajectory(transition, config)
-                for transition in trajectory_to_tokenized_transitions(trajectory, text_tokenizer)
+                for transition in trajectory_to_tokenized_transitions(
+                    trajectory,
+                    text_tokenizer,
+                    reward_mode=transition_reward_mode,
+                    reward_gamma=transition_reward_gamma,
+                )
             ]
             for transition in transitions:
                 if rollout_writer is not None:

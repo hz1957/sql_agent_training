@@ -138,9 +138,44 @@ def _metadata_token_ids(value: object) -> list[int] | None:
     return list(value)
 
 
+def _metadata_reward(value: object) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, int | float):
+        return float(value)
+    return 0.0
+
+
+def _transition_rewards(
+    *,
+    final_reward: float,
+    own_rewards: list[float],
+    reward_mode: str,
+    reward_gamma: float,
+) -> list[float]:
+    """Assign trainable action rewards while preserving final execution reward semantics."""
+
+    if reward_mode == "final":
+        return [final_reward] * len(own_rewards)
+    if reward_mode != "discounted_final":
+        raise ValueError(f"Unknown transition reward mode: {reward_mode}")
+    if not 0.0 <= reward_gamma <= 1.0:
+        raise ValueError("transition reward gamma must be between 0 and 1")
+
+    last_index = len(own_rewards) - 1
+    rewards: list[float] = []
+    for index, own_reward in enumerate(own_rewards):
+        discounted_final = final_reward * (reward_gamma ** (last_index - index))
+        rewards.append(max(own_reward, discounted_final))
+    return rewards
+
+
 def trajectory_to_tokenized_transitions(
     trajectory: AgentTrajectory,
     tokenizer: TextTokenizer,
+    *,
+    reward_mode: str = "final",
+    reward_gamma: float = 0.4,
 ) -> list[TokenizedTrajectory]:
     """Convert each assistant SQL action into an independent GRPO sample.
 
@@ -153,7 +188,7 @@ def trajectory_to_tokenized_transitions(
     if not trajectory.turns:
         raise ValueError("trajectory must contain at least one turn")
 
-    transitions: list[TokenizedTrajectory] = []
+    transition_rows = []
     current_prompt: str | None = None
     action_index = 0
     for index, turn in enumerate(trajectory.turns):
@@ -161,6 +196,8 @@ def trajectory_to_tokenized_transitions(
             current_prompt = f"{turn.role}: {turn.content}"
             continue
         if turn.role != "assistant":
+            continue
+        if turn.metadata.get("trainable") is False or turn.metadata.get("agent_step") == "check_query":
             continue
         if current_prompt is None:
             raise ValueError("assistant turn must have a preceding user prompt")
@@ -172,35 +209,66 @@ def trajectory_to_tokenized_transitions(
         response_ids = _metadata_token_ids(turn.metadata.get("response_ids")) or tokenizer.encode(response_text)
         turn_index = int(turn.metadata.get("turn_index", action_index))
         prompt_text = str(turn.metadata.get("prompt_text") or current_prompt)
+        own_reward = _metadata_reward(tool_metadata.get("reward"))
+        transition_rows.append(
+            {
+                "turn_index": turn_index,
+                "prompt_ids": prompt_ids,
+                "response_ids": response_ids,
+                "prompt_text": prompt_text,
+                "response_text": response_text,
+                "own_reward": own_reward,
+                "tool_metadata": tool_metadata,
+                "turn_metadata": turn.metadata,
+            }
+        )
+        action_index += 1
+
+    if not transition_rows:
+        raise ValueError("trajectory must contain at least one assistant action")
+
+    final_reward = float(trajectory.reward or 0.0)
+    assigned_rewards = _transition_rewards(
+        final_reward=final_reward,
+        own_rewards=[row["own_reward"] for row in transition_rows],
+        reward_mode=reward_mode,
+        reward_gamma=reward_gamma,
+    )
+
+    transitions: list[TokenizedTrajectory] = []
+    for row, assigned_reward in zip(transition_rows, assigned_rewards, strict=True):
+        turn_metadata = row["turn_metadata"]
+        tool_metadata = row["tool_metadata"]
         transitions.append(
             TokenizedTrajectory(
                 uid=trajectory.uid,
-                rollout_id=f"{trajectory.rollout_id}:turn{turn_index}",
-                prompt_ids=prompt_ids,
-                response_ids=response_ids,
-                response_mask=[1] * len(response_ids),
-                reward=float(trajectory.reward or 0.0),
-                prompt_text=prompt_text,
-                response_text=response_text,
+                rollout_id=f"{trajectory.rollout_id}:turn{row['turn_index']}",
+                prompt_ids=row["prompt_ids"],
+                response_ids=row["response_ids"],
+                response_mask=[1] * len(row["response_ids"]),
+                reward=assigned_reward,
+                prompt_text=row["prompt_text"],
+                response_text=row["response_text"],
                 group_id=trajectory.uid,
                 metadata={
                     **trajectory.metadata,
                     "parent_rollout_id": trajectory.rollout_id,
-                    "turn_index": turn_index,
+                    "agent_step": turn_metadata.get("agent_step", "write_query"),
+                    "turn_index": row["turn_index"],
                     "final_sql": trajectory.final_sql,
                     "final_sql_source": trajectory.final_sql_source,
                     "used_model_token_ids": bool(
-                        _metadata_token_ids(turn.metadata.get("prompt_ids"))
-                        and _metadata_token_ids(turn.metadata.get("response_ids"))
+                        _metadata_token_ids(turn_metadata.get("prompt_ids"))
+                        and _metadata_token_ids(turn_metadata.get("response_ids"))
                     ),
                     "tool_ok": bool(tool_metadata.get("ok", False)),
                     "tool_error": tool_metadata.get("error"),
                     "tool_reward": tool_metadata.get("reward"),
+                    "own_sql_reward": row["own_reward"],
+                    "trajectory_reward": final_reward,
+                    "transition_reward_mode": reward_mode,
+                    "transition_reward_gamma": reward_gamma,
                 },
             )
         )
-        action_index += 1
-
-    if not transitions:
-        raise ValueError("trajectory must contain at least one assistant action")
     return transitions

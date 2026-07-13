@@ -16,6 +16,7 @@ from sql_agent_training.train.grpo_train import (
     build_training_tensors,
     compute_group_advantages,
     create_tiny_causal_lm,
+    select_hard_example_batch,
     train_grpo_from_config,
 )
 
@@ -48,6 +49,29 @@ def test_compute_group_advantages_normalizes_within_uid() -> None:
     assert advantages["a:1"] == pytest.approx(1.0, abs=1e-5)
     assert advantages["b:0"] == 0.0
     assert advantages["b:1"] == 0.0
+
+
+def test_select_hard_example_batch_keeps_nonzero_variance_groups() -> None:
+    batch = build_grpo_batch(
+        [
+            _trajectory("a", 0, [3], 0.0),
+            _trajectory("a", 1, [4], 1.0),
+            _trajectory("b", 0, [5], 0.0),
+            _trajectory("b", 1, [6], 0.0),
+            _trajectory("c", 0, [7], 0.25),
+            _trajectory("c", 1, [8], 0.75),
+        ],
+        rollout_n=2,
+    )
+
+    hard_batch, stats = select_hard_example_batch(batch, target_groups=1)
+
+    assert [group.uid for group in hard_batch.groups] == ["a"]
+    assert stats["candidate_groups"] == 3
+    assert stats["hard_groups"] == 2
+    assert stats["selected_groups"] == 1
+    assert stats["hard_example_ratio"] == pytest.approx(2 / 3)
+    assert stats["hard_reward_variance_per_group"]["a"] == pytest.approx(0.25)
 
 
 def test_build_training_tensors_aligns_response_mask_to_shifted_labels() -> None:
@@ -183,6 +207,42 @@ def test_train_grpo_from_config_runs_tiny_checkpoint(tmp_path: Path) -> None:
     assert len(rollout_rows) == 2
     assert "prompt" in rollout_rows[0]
     assert "response" in rollout_rows[0]
+
+
+def test_train_grpo_from_config_can_mine_hard_examples(tmp_path: Path) -> None:
+    checkpoint_root = tmp_path / "checkpoint"
+
+    summary = train_grpo_from_config(
+        {
+            "dry_run": True,
+            "model": {"backend": "tiny", "hidden_size": 8},
+            "tokenizer": {"kind": "whitespace"},
+            "rollout": {
+                "n": 2,
+                "max_turns": 1,
+                "scripted_responses": ["SELECT COUNT(*) FROM Singer", "SELECT Name FROM Singer"],
+            },
+            "training": {
+                "seed": 0,
+                "device": "cpu",
+                "max_steps": 1,
+                "learning_rate": 0.01,
+                "hard_example_mining": True,
+                "hard_example_candidate_multiplier": 2,
+            },
+            "output": {
+                "checkpoint_dir": str(checkpoint_root),
+            },
+        }
+    )
+
+    rows = [json.loads(line) for line in Path(summary["metrics_jsonl"]).read_text(encoding="utf-8").splitlines()]
+    assert summary["hard_mining_enabled"] is True
+    assert summary["candidate_groups"] == 1
+    assert summary["hard_groups"] == 1
+    assert summary["selected_groups"] == 1
+    assert summary["skipped_update"] is False
+    assert rows[0]["hard_example_ratio"] == pytest.approx(1.0)
 
 
 def test_train_grpo_from_config_runs_update_epochs(tmp_path: Path) -> None:

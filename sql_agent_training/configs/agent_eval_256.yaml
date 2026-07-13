@@ -11,3 +11,7 @@ rollout:
   max_turns: 3
   max_response_length: 256
   temperature: 0.0
+
+eval:
+  sample_size: 500
+  sample_seed: 0

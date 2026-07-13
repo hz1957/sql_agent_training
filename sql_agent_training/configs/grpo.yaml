@@ -24,6 +24,10 @@ output:
   include_text: true
   checkpoint_dir: artifacts/checkpoints/grpo_qwen25_coder_05b
 
+eval:
+  sample_size: 500
+  sample_seed: 0
+
 training:
   seed: 0
   device: auto

@@ -38,9 +38,10 @@ def test_rollout_plain_sql_scores_reward_and_finalizes(tmp_path: Path) -> None:
     )
 
     assert trajectory.final_sql == "SELECT Name FROM Singer"
-    assert trajectory.final_sql_source == "executed_successfully"
+    assert trajectory.final_sql_source == "checker_approved"
     assert trajectory.reward == 1.0
     assert trajectory.metadata["ran_out_of_turns"] is False
+    assert trajectory.metadata["num_check_calls"] == 1
 
 
 def test_rollout_rewrites_until_sql_executes(tmp_path: Path) -> None:
@@ -57,16 +58,29 @@ def test_rollout_rewrites_until_sql_executes(tmp_path: Path) -> None:
     )
 
     assert trajectory.final_sql == "SELECT Name FROM Singer"
-    assert trajectory.final_sql_source == "executed_successfully"
+    assert trajectory.final_sql_source == "checker_approved"
     assert trajectory.metadata["num_execute_calls"] == 2
+    assert trajectory.metadata["num_check_calls"] == 2
     assert trajectory.reward == 1.0
     assert "no such column" in trajectory.turns[2].content
-    assert [turn.role for turn in trajectory.turns] == ["user", "assistant", "tool", "user", "assistant", "tool"]
-    assert "## Previous failed SQL\nSELECT Missing FROM Singer" in trajectory.turns[3].content
-    assert "## Previous error\nno such column: Missing" in trajectory.turns[3].content
+    assert [turn.role for turn in trajectory.turns] == [
+        "user",
+        "assistant",
+        "tool",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "tool",
+        "user",
+        "assistant",
+    ]
+    assert "## Previous query\nSELECT Missing FROM Singer" in trajectory.turns[5].content
+    assert "## Previous execution result\nno such column: Missing" in trajectory.turns[5].content
+    assert "THE QUERY IS INCORRECT." in trajectory.turns[5].content
 
 
-def test_rollout_stops_after_executable_wrong_answer(tmp_path: Path) -> None:
+def test_rollout_rewrites_after_checker_rejects_executable_wrong_answer(tmp_path: Path) -> None:
     db_path = tmp_path / "music.sqlite"
     _make_db(db_path)
 
@@ -77,14 +91,19 @@ def test_rollout_stops_after_executable_wrong_answer(tmp_path: Path) -> None:
             "SELECT Name FROM Singer",
         ],
         db_path,
+        checker_responses=[
+            "The query returns a count, not the singer names.\nTHE QUERY IS INCORRECT.",
+            "The query returns the requested names.\nTHE QUERY IS CORRECT.",
+        ],
     )
 
-    assert trajectory.final_sql == "SELECT COUNT(*) FROM Singer"
-    assert trajectory.final_sql_source == "executed_successfully"
-    assert trajectory.metadata["num_execute_calls"] == 1
+    assert trajectory.final_sql == "SELECT Name FROM Singer"
+    assert trajectory.final_sql_source == "checker_approved"
+    assert trajectory.metadata["num_execute_calls"] == 2
+    assert trajectory.metadata["num_check_calls"] == 2
     assert trajectory.metadata["ran_out_of_turns"] is False
-    assert trajectory.reward == 0.0
-    assert [turn.role for turn in trajectory.turns] == ["user", "assistant", "tool"]
+    assert trajectory.reward == 1.0
+    assert "The query returns a count" in trajectory.turns[4].content
 
 
 def test_rollout_max_turns_without_executable_sql_returns_no_final_sql(tmp_path: Path) -> None:
@@ -104,6 +123,7 @@ def test_rollout_max_turns_without_executable_sql_returns_no_final_sql(tmp_path:
     assert trajectory.final_sql_source == "none"
     assert trajectory.metadata["ran_out_of_turns"] is True
     assert trajectory.metadata["num_execute_calls"] == 1
+    assert trajectory.metadata["num_check_calls"] == 1
     assert trajectory.reward == 0.0
 
 
@@ -139,16 +159,29 @@ def test_interactive_rollout_rewrites_with_scripted_model_client(tmp_path: Path)
     client = ScriptedModelClient(
         [
             "SELECT Missing FROM Singer",
+            "The query references a missing column.\nTHE QUERY IS INCORRECT.",
             "SELECT Name FROM Singer",
+            "The query is valid.\nTHE QUERY IS CORRECT.",
         ]
     )
 
     trajectory = SqlAgentLoop(max_turns=3).run(_sample(), client, db_path)
 
-    assert client.calls == 2
-    assert trajectory.final_sql_source == "executed_successfully"
+    assert client.calls == 4
+    assert trajectory.final_sql_source == "checker_approved"
     assert trajectory.reward == 1.0
-    assert [turn.role for turn in trajectory.turns] == ["user", "assistant", "tool", "user", "assistant", "tool"]
+    assert [turn.role for turn in trajectory.turns] == [
+        "user",
+        "assistant",
+        "tool",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "tool",
+        "user",
+        "assistant",
+    ]
 
 
 class InspectingClient:
@@ -159,7 +192,11 @@ class InspectingClient:
         self.requests.append(request)
         if len(self.requests) == 1:
             return ModelResponse(content="SELECT Missing FROM Singer")
-        return ModelResponse(content="SELECT Name FROM Singer")
+        if len(self.requests) == 2:
+            return ModelResponse(content="The query references a missing column.\nTHE QUERY IS INCORRECT.")
+        if len(self.requests) == 3:
+            return ModelResponse(content="SELECT Name FROM Singer")
+        return ModelResponse(content="The query is valid.\nTHE QUERY IS CORRECT.")
 
 
 def test_model_client_receives_compact_failure_prompt(tmp_path: Path) -> None:
@@ -169,8 +206,11 @@ def test_model_client_receives_compact_failure_prompt(tmp_path: Path) -> None:
 
     SqlAgentLoop(max_turns=3).run(_sample(), client, db_path)
 
-    assert len(client.requests) == 2
+    assert len(client.requests) == 4
     assert [turn.role for turn in client.requests[0].turns] == ["user"]
-    assert [turn.role for turn in client.requests[1].turns] == ["user"]
-    assert "## Previous failed SQL\nSELECT Missing FROM Singer" in client.requests[1].turns[0].content
-    assert "## Previous error\nno such column: Missing" in client.requests[1].turns[0].content
+    assert [turn.role for turn in client.requests[2].turns] == ["user"]
+    assert client.requests[0].turns[0].metadata["agent_step"] == "write_query"
+    assert client.requests[1].turns[0].metadata["agent_step"] == "check_query"
+    assert client.requests[2].turns[0].metadata["agent_step"] == "rewrite_query"
+    assert "## Previous query\nSELECT Missing FROM Singer" in client.requests[2].turns[0].content
+    assert "## Previous execution result\nno such column: Missing" in client.requests[2].turns[0].content
