@@ -36,5 +36,5 @@ training:
   clip_epsilon: 0.2
   kl_beta: 0.02
   max_grad_norm: 1.0
-  logprob_micro_batch_size: 1
+  logprob_micro_batch_size: 2
   save_every_steps: 25
