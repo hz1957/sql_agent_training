@@ -7,7 +7,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import yaml
 
@@ -34,18 +34,18 @@ class TransformersSqlGenerator:
         model_name_or_path: str,
         *,
         tokenizer_name_or_path: str | None = None,
+        base_model_name_or_path: str | None = None,
         max_input_tokens: int = 1024,
         max_new_tokens: int = 256,
     ) -> None:
         try:
             import torch
-            from transformers import AutoModelForCausalLM
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise RuntimeError("Install the train extra to run generation: pip install -e '.[train]'") from exc
 
         self.torch = torch
         self.tokenizer = HuggingFaceTokenizer(tokenizer_name_or_path or model_name_or_path).tokenizer
-        self.model = AutoModelForCausalLM.from_pretrained(model_name_or_path, trust_remote_code=True)
+        self.model = _load_model(model_name_or_path, fallback_base_model_name_or_path=base_model_name_or_path)
         if torch.cuda.is_available():
             self.model = self.model.cuda()
         self.model.eval()
@@ -75,14 +75,12 @@ class TransformersSqlGenerator:
                 stop_ids.append(token_id)
         # Also stop on <|im_end|> if the tokenizer knows it (Qwen2.5 family).
         im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
-        if (
-            isinstance(im_end_id, int)
-            and im_end_id != self.tokenizer.unk_token_id
-            and im_end_id not in stop_ids
-        ):
+        if isinstance(im_end_id, int) and im_end_id != self.tokenizer.unk_token_id and im_end_id not in stop_ids:
             stop_ids.append(im_end_id)
         eos_token_id: int | list[int] | None = stop_ids if len(stop_ids) > 1 else (stop_ids[0] if stop_ids else None)
-        pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else self.tokenizer.eos_token_id
+        pad_token_id = (
+            self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else self.tokenizer.eos_token_id
+        )
 
         with self.torch.no_grad():
             output_ids = self.model.generate(
@@ -115,6 +113,49 @@ def normalize_generated_sql(text: str) -> str:
     if ";" in stripped:
         stripped = stripped.split(";", 1)[0].strip()
     return stripped
+
+
+def _adapter_config_path(path: str | Path) -> Path:
+    return Path(path) / "adapter_config.json"
+
+
+def _has_adapter_files(path: str | Path) -> bool:
+    return _adapter_config_path(path).exists()
+
+
+def _resolve_adapter_base_model_path(
+    adapter_config_path: str | Path,
+    *,
+    fallback_base_model_name_or_path: str | None = None,
+) -> str:
+    config = json.loads(Path(adapter_config_path).read_text(encoding="utf-8"))
+    base_model_name_or_path = str(config["base_model_name_or_path"])
+    if fallback_base_model_name_or_path and not Path(base_model_name_or_path).exists():
+        return fallback_base_model_name_or_path
+    return base_model_name_or_path
+
+
+def _load_model(model_path: str | Path, *, fallback_base_model_name_or_path: str | None = None) -> Any:
+    try:
+        from transformers import AutoModelForCausalLM
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("Install the train extra to run generation: pip install -e '.[train]'") from exc
+
+    adapter_config = _adapter_config_path(model_path)
+    if adapter_config.exists():
+        try:
+            from peft import PeftModel
+        except ImportError as exc:
+            raise RuntimeError("Install the train extra with PEFT to evaluate LoRA checkpoints.") from exc
+
+        base_model_path = _resolve_adapter_base_model_path(
+            adapter_config,
+            fallback_base_model_name_or_path=fallback_base_model_name_or_path,
+        )
+        base_model = AutoModelForCausalLM.from_pretrained(base_model_path, trust_remote_code=True, torch_dtype="auto")
+        return PeftModel.from_pretrained(base_model, model_path)
+
+    return AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, torch_dtype="auto")
 
 
 @dataclass(frozen=True)
@@ -161,7 +202,9 @@ def evaluate_predictions(rows: list[PredictionResult], data_dir: str | Path) -> 
 
 def _has_model_files(path: str | Path) -> bool:
     root = Path(path)
-    return any((root / name).exists() for name in ("model.safetensors", "pytorch_model.bin"))
+    return any((root / name).exists() for name in ("model.safetensors", "pytorch_model.bin")) or _has_adapter_files(
+        root
+    )
 
 
 def _has_tokenizer_files(path: str | Path) -> bool:
@@ -246,8 +289,12 @@ def generate_predictions(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate and evaluate SFT SQL predictions.")
     parser.add_argument("--config", default="configs/sft.yaml")
-    parser.add_argument("--checkpoint", default=None, help="Model checkpoint to evaluate. Defaults to output.checkpoint_dir.")
-    parser.add_argument("--tokenizer", default=None, help="Tokenizer path. Defaults to checkpoint tokenizer or model.path.")
+    parser.add_argument(
+        "--checkpoint", default=None, help="Model checkpoint to evaluate. Defaults to output.checkpoint_dir."
+    )
+    parser.add_argument(
+        "--tokenizer", default=None, help="Tokenizer path. Defaults to checkpoint tokenizer or model.path."
+    )
     parser.add_argument("--split", default="validation", choices=["train", "validation"])
     parser.add_argument("--limit", type=int, default=None, help="Limit number of examples for local smoke tests.")
     parser.add_argument("--dry-run-gold", action="store_true", help="Emit gold SQL as predictions for plumbing tests.")
@@ -274,9 +321,11 @@ def main() -> None:
             checkpoint=args.checkpoint,
             tokenizer_path=args.tokenizer,
         )
+        base_model_name_or_path = config.get("model", {}).get("path")
         generator = TransformersSqlGenerator(
             model_path,
             tokenizer_name_or_path=tokenizer_path,
+            base_model_name_or_path=str(base_model_name_or_path) if base_model_name_or_path else None,
             max_input_tokens=int(training.get("max_prompt_length", 1024)),
             max_new_tokens=int(training.get("max_response_length", 256)),
         )
@@ -285,9 +334,7 @@ def main() -> None:
     # Explicit --output or the legacy config key override this.
     _eval_base = Path(model_path) / "eval" if model_path else Path("artifacts/eval/sft")
     output_path = Path(
-        args.output
-        or config.get("output", {}).get("predictions_jsonl")
-        or _eval_base / "predictions.jsonl"
+        args.output or config.get("output", {}).get("predictions_jsonl") or _eval_base / "predictions.jsonl"
     )
 
     rows = generate_predictions(examples, tables_index, generator, dry_run_gold=args.dry_run_gold)

@@ -9,6 +9,7 @@ import yaml
 from sql_agent_training.data.schema import load_tables_json
 from sql_agent_training.data.spider_dataset import SpiderExample
 from sql_agent_training.train.sft_eval import (
+    _resolve_adapter_base_model_path,
     _resolve_model_and_tokenizer,
     evaluate_predictions,
     generate_predictions,
@@ -130,3 +131,50 @@ def test_resolve_model_and_tokenizer_uses_latest_nested_model_dir(tmp_path: Path
 
     assert model_path == str(timestamped_run)
     assert tokenizer_path == str(base_model)
+
+
+def test_resolve_model_and_tokenizer_uses_latest_nested_lora_adapter_dir(tmp_path: Path) -> None:
+    base_model = tmp_path / "base_model"
+    base_model.mkdir()
+    (base_model / "tokenizer.json").write_text("{}", encoding="utf-8")
+
+    checkpoint_root = tmp_path / "sft_lora_checkpoint"
+    older_run = checkpoint_root / "20260711_061234"
+    latest_run = checkpoint_root / "20260711_071234"
+    older_run.mkdir(parents=True)
+    latest_run.mkdir()
+    (older_run / "adapter_config.json").write_text(
+        json.dumps({"base_model_name_or_path": str(base_model)}),
+        encoding="utf-8",
+    )
+    (latest_run / "adapter_config.json").write_text(
+        json.dumps({"base_model_name_or_path": str(base_model)}),
+        encoding="utf-8",
+    )
+
+    model_path, tokenizer_path = _resolve_model_and_tokenizer(
+        {
+            "model": {"path": str(base_model)},
+            "output": {"checkpoint_dir": str(checkpoint_root)},
+        },
+        checkpoint=None,
+        tokenizer_path=None,
+    )
+
+    assert model_path == str(latest_run)
+    assert tokenizer_path == str(base_model)
+
+
+def test_resolve_adapter_base_model_path_prefers_fallback_when_recorded_path_is_missing(tmp_path: Path) -> None:
+    adapter_config = tmp_path / "adapter_config.json"
+    fallback_model = tmp_path / "base_model"
+    fallback_model.mkdir()
+    adapter_config.write_text(
+        json.dumps({"base_model_name_or_path": str(tmp_path / "missing_model")}),
+        encoding="utf-8",
+    )
+
+    assert _resolve_adapter_base_model_path(
+        adapter_config,
+        fallback_base_model_name_or_path=str(fallback_model),
+    ) == str(fallback_model)

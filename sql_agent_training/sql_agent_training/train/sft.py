@@ -6,6 +6,7 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -13,12 +14,7 @@ from sql_agent_training.agent.tokenization import load_tokenizer
 from sql_agent_training.data.schema import load_tables_json
 from sql_agent_training.data.sft_formatter import write_sft_jsonl
 from sql_agent_training.data.spider_dataset import load_spider_file
-from sql_agent_training.train.sft_dataset import (
-    SftDataCollator,
-    SftTorchDataset,
-    load_sft_jsonl,
-    tokenize_sft_records,
-)
+from sql_agent_training.train.sft_dataset import SftDataCollator, SftTorchDataset, load_sft_jsonl, tokenize_sft_records
 
 
 def _prepare_sft_jsonl(config: dict) -> Path:
@@ -92,10 +88,7 @@ def _normalize_save_strategy(value) -> str:
             return "no"
         if normalized in {"no", "steps", "epoch", "best"}:
             return normalized
-    raise ValueError(
-        "training.save_strategy must be one of 'no', 'steps', 'epoch', or 'best'; "
-        f"got {value!r}"
-    )
+    raise ValueError("training.save_strategy must be one of 'no', 'steps', 'epoch', or 'best'; " f"got {value!r}")
 
 
 def _write_run_config(config: dict, checkpoint_dir: str | Path) -> Path:
@@ -104,15 +97,75 @@ def _write_run_config(config: dict, checkpoint_dir: str | Path) -> Path:
     return path
 
 
+def _lora_config_kwargs(config: dict) -> dict:
+    """Return PEFT LoRA kwargs from config, filling stable defaults."""
+
+    lora = config.get("lora", {})
+    return {
+        "r": int(lora.get("r", 16)),
+        "lora_alpha": int(lora.get("alpha", lora.get("lora_alpha", 32))),
+        "lora_dropout": float(lora.get("dropout", lora.get("lora_dropout", 0.05))),
+        "bias": str(lora.get("bias", "none")),
+        "target_modules": list(
+            lora.get(
+                "target_modules",
+                ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            )
+        ),
+    }
+
+
+def _apply_lora_if_enabled(model: Any, config: dict) -> Any:
+    """Wrap the model with PEFT LoRA adapters when configured."""
+
+    if not config.get("lora", {}).get("enabled", False):
+        return model
+
+    try:
+        from peft import LoraConfig, TaskType, get_peft_model
+    except ImportError as exc:
+        raise RuntimeError("Install the train extra with PEFT to run LoRA SFT: pip install -e '.[train]'") from exc
+
+    peft_config = LoraConfig(task_type=TaskType.CAUSAL_LM, **_lora_config_kwargs(config))
+    lora_model = get_peft_model(model, peft_config)
+    lora_model.print_trainable_parameters()
+    return lora_model
+
+
+def _model_load_kwargs(training: dict) -> dict[str, object]:
+    """Return model loading kwargs that match the requested precision."""
+
+    kwargs = {"trust_remote_code": True}
+    if bool(training.get("bf16", False)):
+        try:
+            import torch
+        except ImportError as exc:  # pragma: no cover - torch is required for training
+            raise RuntimeError("Install torch to run SFT training.") from exc
+        kwargs["torch_dtype"] = torch.bfloat16
+    elif bool(training.get("fp16", False)):
+        try:
+            import torch
+        except ImportError as exc:  # pragma: no cover - torch is required for training
+            raise RuntimeError("Install torch to run SFT training.") from exc
+        kwargs["torch_dtype"] = torch.float16
+    return kwargs
+
+
 def _run_transformers_training(config: dict, tokenizer, dataset: SftTorchDataset) -> dict[str, str]:
     try:
         from transformers import AutoModelForCausalLM, Trainer, TrainingArguments
     except ImportError as exc:
         raise RuntimeError("Install the train extra to run SFT: pip install -e '.[train]'") from exc
 
-    model = AutoModelForCausalLM.from_pretrained(config["model"]["path"], trust_remote_code=True)
-    collator = SftDataCollator(pad_token_id=tokenizer.pad_token_id)
     training = config["training"]
+    gradient_checkpointing = bool(training.get("gradient_checkpointing", False))
+    model = AutoModelForCausalLM.from_pretrained(config["model"]["path"], **_model_load_kwargs(training))
+    if bool(training.get("gradient_checkpointing", False)) and hasattr(model.config, "use_cache"):
+        model.config.use_cache = False
+    model = _apply_lora_if_enabled(model, config)
+    if gradient_checkpointing and hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
+    collator = SftDataCollator(pad_token_id=tokenizer.pad_token_id)
     save_strategy = _normalize_save_strategy(training.get("save_strategy", "no"))
     run_config = {**config, "training": {**training, "save_strategy": save_strategy}}
     final_checkpoint_dir = _new_final_checkpoint_dir(config)
@@ -130,6 +183,9 @@ def _run_transformers_training(config: dict, tokenizer, dataset: SftTorchDataset
         max_steps=int(training["max_steps"]) if training.get("max_steps") is not None else -1,
         fp16=bool(training.get("fp16", False)),
         bf16=bool(training.get("bf16", False)),
+        gradient_checkpointing=gradient_checkpointing,
+        warmup_ratio=float(training.get("warmup_ratio", 0.0)),
+        weight_decay=float(training.get("weight_decay", 0.0)),
         report_to=training.get("report_to", "none"),
     )
     trainer = Trainer(model=model, args=args, train_dataset=dataset, data_collator=collator)
@@ -137,6 +193,7 @@ def _run_transformers_training(config: dict, tokenizer, dataset: SftTorchDataset
     # Free GPU memory before serializing weights to CPU RAM to avoid OOM during save.
     try:
         import torch
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     except Exception:

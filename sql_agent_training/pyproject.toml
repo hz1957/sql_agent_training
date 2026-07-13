@@ -17,12 +17,14 @@ sft = [
   "torch",
   "transformers>=4.45,<5",
   "accelerate",
+  "peft",
   "protobuf",
 ]
 train = [
   "torch",
   "transformers>=4.45,<5",
   "accelerate",
+  "peft",
   "protobuf",
 ]
 

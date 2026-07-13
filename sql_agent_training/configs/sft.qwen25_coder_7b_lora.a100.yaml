@@ -1,0 +1,46 @@
+model:
+  path: data/models/Qwen2.5-Coder-7B-Instruct
+
+tokenizer:
+  kind: hf
+
+data:
+  data_dir: data/spider
+  train_file: train_spider.json
+  validation_file: dev.json
+
+output:
+  sft_jsonl: artifacts/sft/train_qwen25_coder_7b_lora.jsonl
+  checkpoint_dir: artifacts/checkpoints/sft_qwen25_coder_7b_lora_a100
+
+training:
+  max_prompt_length: 2048
+  max_response_length: 512
+  learning_rate: 0.0001
+  num_train_epochs: 2
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16
+  gradient_checkpointing: true
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  logging_steps: 10
+  save_strategy: "no"
+  save_steps: 1000
+  bf16: true
+  fp16: false
+  report_to: none
+
+lora:
+  enabled: true
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  bias: none
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj

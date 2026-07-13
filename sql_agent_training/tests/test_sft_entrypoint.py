@@ -5,7 +5,12 @@ from pathlib import Path
 
 import yaml
 
-from sql_agent_training.train.sft import _new_checkpoint_dir, _normalize_save_strategy, _trainer_output_dir
+from sql_agent_training.train.sft import (
+    _lora_config_kwargs,
+    _new_checkpoint_dir,
+    _normalize_save_strategy,
+    _trainer_output_dir,
+)
 
 
 def test_sft_dry_run_writes_jsonl(tmp_path: Path) -> None:
@@ -103,3 +108,37 @@ def test_sft_save_strategy_rejects_invalid_values() -> None:
         assert "training.save_strategy" in str(exc)
     else:
         raise AssertionError("Expected invalid save_strategy to raise ValueError")
+
+
+def test_lora_config_kwargs_uses_qwen_defaults() -> None:
+    kwargs = _lora_config_kwargs({"lora": {"enabled": True}})
+
+    assert kwargs == {
+        "r": 16,
+        "lora_alpha": 32,
+        "lora_dropout": 0.05,
+        "bias": "none",
+        "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    }
+
+
+def test_lora_config_kwargs_accepts_overrides() -> None:
+    kwargs = _lora_config_kwargs(
+        {
+            "lora": {
+                "r": 32,
+                "alpha": 64,
+                "dropout": 0.1,
+                "bias": "lora_only",
+                "target_modules": ["q_proj", "v_proj"],
+            }
+        }
+    )
+
+    assert kwargs == {
+        "r": 32,
+        "lora_alpha": 64,
+        "lora_dropout": 0.1,
+        "bias": "lora_only",
+        "target_modules": ["q_proj", "v_proj"],
+    }
