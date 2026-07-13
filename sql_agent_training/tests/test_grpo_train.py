@@ -1,4 +1,6 @@
 import json
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,7 @@ from sql_agent_training.train.grpo_batch import build_grpo_batch
 from sql_agent_training.train.grpo_train import (
     GrpoLossConfig,
     GrpoTrainer,
+    _apply_peft_adapter_if_configured,
     build_training_tensors,
     compute_group_advantages,
     create_tiny_causal_lm,
@@ -116,6 +119,30 @@ def test_reusing_prepared_batch_makes_ratio_change_after_first_update() -> None:
     assert first.ratio_mean == pytest.approx(1.0)
     assert second.policy_approx_kl > 0.0
     assert second.ratio_min != pytest.approx(1.0) or second.ratio_max != pytest.approx(1.0)
+
+
+def test_apply_peft_adapter_returns_base_model_without_adapter_path() -> None:
+    model = object()
+
+    assert _apply_peft_adapter_if_configured(model, None, is_trainable=True) is model
+
+
+def test_apply_peft_adapter_loads_trainable_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+
+    class FakePeftModel:
+        @staticmethod
+        def from_pretrained(model, adapter_path, *, is_trainable):
+            calls.append((model, adapter_path, is_trainable))
+            return {"wrapped": model, "adapter_path": adapter_path, "is_trainable": is_trainable}
+
+    monkeypatch.setitem(sys.modules, "peft", types.SimpleNamespace(PeftModel=FakePeftModel))
+    model = object()
+
+    wrapped = _apply_peft_adapter_if_configured(model, "adapter/checkpoint", is_trainable=True)
+
+    assert wrapped == {"wrapped": model, "adapter_path": "adapter/checkpoint", "is_trainable": True}
+    assert calls == [(model, "adapter/checkpoint", True)]
 
 
 def test_train_grpo_from_config_runs_tiny_checkpoint(tmp_path: Path) -> None:

@@ -399,6 +399,20 @@ def _loss_config_from_config(config: dict[str, Any]) -> GrpoLossConfig:
     )
 
 
+def _apply_peft_adapter_if_configured(model: Any, adapter_path: str | None, *, is_trainable: bool) -> Any:
+    """Attach a PEFT adapter to a base model when an adapter path is configured."""
+
+    if not adapter_path:
+        return model
+
+    try:
+        from peft import PeftModel
+    except ImportError as exc:  # pragma: no cover - optional dependency check
+        raise RuntimeError("Install the train extra with PEFT to run GRPO from a LoRA adapter.") from exc
+
+    return PeftModel.from_pretrained(model, adapter_path, is_trainable=is_trainable)
+
+
 def _build_models(config: dict[str, Any], batch: GrpoBatch | None, device: str) -> tuple[Any, Any, int, Any | None]:
     torch = _require_torch()
     model_config = config.get("model", {})
@@ -421,19 +435,31 @@ def _build_models(config: dict[str, Any], batch: GrpoBatch | None, device: str) 
 
     model_path = str(model_config["path"])
     reference_path = str(model_config.get("reference_path") or model_path)
+    adapter_path = str(model_config["adapter_path"]) if model_config.get("adapter_path") else None
+    reference_adapter_path = (
+        str(model_config["reference_adapter_path"])
+        if model_config.get("reference_adapter_path")
+        else adapter_path
+    )
     tokenizer_config = config.get("tokenizer", {})
     tokenizer_path = str(model_config.get("tokenizer_path") or tokenizer_config.get("path") or model_path)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
     torch_dtype = _torch_dtype_from_config(config, device)
-    policy = AutoModelForCausalLM.from_pretrained(
+    policy_base = AutoModelForCausalLM.from_pretrained(
         model_path,
         trust_remote_code=True,
         torch_dtype=torch_dtype,
-    ).to(device)
-    reference = AutoModelForCausalLM.from_pretrained(
+    )
+    policy = _apply_peft_adapter_if_configured(policy_base, adapter_path, is_trainable=True).to(device)
+    reference_base = AutoModelForCausalLM.from_pretrained(
         reference_path,
         trust_remote_code=True,
         torch_dtype=torch_dtype,
+    )
+    reference = _apply_peft_adapter_if_configured(
+        reference_base,
+        reference_adapter_path,
+        is_trainable=False,
     ).to(device)
     reference.eval()
     for parameter in reference.parameters():
