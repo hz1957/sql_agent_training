@@ -34,11 +34,8 @@ training:
   seed: 0
   device: cuda
   max_steps: 500
-  update_epochs: 4
+  update_epochs: 3
   task_batch_size: 16
-  hard_example_mining: true
-  hard_example_candidate_multiplier: 4
-  hard_example_variance_epsilon: 0.000000000001
   transition_reward_mode: discounted_final
   transition_reward_gamma: 0.4
   learning_rate: 0.000001
