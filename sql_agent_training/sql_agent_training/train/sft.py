@@ -14,6 +14,7 @@ from sql_agent_training.agent.tokenization import load_tokenizer
 from sql_agent_training.data.schema import load_tables_json
 from sql_agent_training.data.sft_formatter import write_sft_jsonl
 from sql_agent_training.data.spider_dataset import load_spider_file
+from sql_agent_training.train.distributed import DistributedContext, barrier, broadcast_object, init_distributed
 from sql_agent_training.train.sft_dataset import SftDataCollator, SftTorchDataset, load_sft_jsonl, tokenize_sft_records
 
 
@@ -91,9 +92,10 @@ def _normalize_save_strategy(value) -> str:
     raise ValueError("training.save_strategy must be one of 'no', 'steps', 'epoch', or 'best'; " f"got {value!r}")
 
 
-def _write_run_config(config: dict, checkpoint_dir: str | Path) -> Path:
+def _write_run_config(config: dict, checkpoint_dir: str | Path, *, is_main_process: bool = True) -> Path:
     path = Path(checkpoint_dir) / "run_config.yaml"
-    path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    if is_main_process:
+        path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return path
 
 
@@ -151,12 +153,19 @@ def _model_load_kwargs(training: dict) -> dict[str, object]:
     return kwargs
 
 
-def _run_transformers_training(config: dict, tokenizer, dataset: SftTorchDataset) -> dict[str, str]:
+def _run_transformers_training(
+    config: dict,
+    tokenizer,
+    dataset: SftTorchDataset,
+    *,
+    context: DistributedContext | None = None,
+) -> dict[str, str]:
     try:
         from transformers import AutoModelForCausalLM, Trainer, TrainingArguments
     except ImportError as exc:
         raise RuntimeError("Install the train extra to run SFT: pip install -e '.[train]'") from exc
 
+    context = context or init_distributed("auto")
     training = config["training"]
     gradient_checkpointing = bool(training.get("gradient_checkpointing", False))
     model = AutoModelForCausalLM.from_pretrained(config["model"]["path"], **_model_load_kwargs(training))
@@ -168,9 +177,16 @@ def _run_transformers_training(config: dict, tokenizer, dataset: SftTorchDataset
     collator = SftDataCollator(pad_token_id=tokenizer.pad_token_id)
     save_strategy = _normalize_save_strategy(training.get("save_strategy", "no"))
     run_config = {**config, "training": {**training, "save_strategy": save_strategy}}
-    final_checkpoint_dir = _new_final_checkpoint_dir(config)
-    final_checkpoint_dir.mkdir(parents=True, exist_ok=False)
-    run_config_path = _write_run_config(run_config, final_checkpoint_dir)
+    checkpoint_dir_value = str(_new_final_checkpoint_dir(config)) if context.is_main_process else None
+    final_checkpoint_dir = Path(broadcast_object(checkpoint_dir_value, context))
+    if context.is_main_process:
+        final_checkpoint_dir.mkdir(parents=True, exist_ok=False)
+    barrier(context)
+    run_config_path = _write_run_config(
+        run_config,
+        final_checkpoint_dir,
+        is_main_process=context.is_main_process,
+    )
     args = TrainingArguments(
         output_dir=str(_trainer_output_dir(config, final_checkpoint_dir)),
         learning_rate=float(training["learning_rate"]),
@@ -199,8 +215,9 @@ def _run_transformers_training(config: dict, tokenizer, dataset: SftTorchDataset
     except Exception:
         pass
     trainer.save_model(str(final_checkpoint_dir))
-    if hasattr(tokenizer, "tokenizer"):
+    if context.is_main_process and hasattr(tokenizer, "tokenizer"):
         tokenizer.tokenizer.save_pretrained(str(final_checkpoint_dir))
+    barrier(context)
     return {
         "checkpoint_dir": str(final_checkpoint_dir),
         "trainer_output_dir": str(_trainer_output_dir(config, final_checkpoint_dir)),
@@ -217,12 +234,18 @@ def main() -> None:
     with Path(args.config).open("r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
 
-    output_file = _prepare_sft_jsonl(config)
+    context = init_distributed("auto")
+    if context.is_main_process:
+        output_file = _prepare_sft_jsonl(config)
+    else:
+        output_file = Path(config["output"]["sft_jsonl"])
+    barrier(context)
     tokenizer, dataset = _build_tokenized_dataset(config, output_file)
 
     if not args.dry_run:
-        summary = _run_transformers_training(config, tokenizer, dataset)
-        print(json.dumps(summary, indent=2, ensure_ascii=False))
+        summary = _run_transformers_training(config, tokenizer, dataset, context=context)
+        if context.is_main_process:
+            print(json.dumps(summary, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

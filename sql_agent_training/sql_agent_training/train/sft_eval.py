@@ -182,6 +182,21 @@ def write_predictions_jsonl(rows: list[PredictionResult], output_path: str | Pat
     return len(rows)
 
 
+def write_eval_outputs(
+    rows: list[PredictionResult],
+    metrics: dict[str, float | int],
+    *,
+    predictions_jsonl: str | Path,
+    metrics_json: str | Path,
+) -> None:
+    """Write prediction rows and aggregate metrics."""
+
+    write_predictions_jsonl(rows, predictions_jsonl)
+    metrics_path = Path(metrics_json)
+    metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    metrics_path.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def evaluate_predictions(rows: list[PredictionResult], data_dir: str | Path) -> dict[str, float | int]:
     """Evaluate prediction rows with Spider execution reward."""
 
@@ -314,7 +329,9 @@ def main() -> None:
     parser.add_argument("--sample-size", type=int, default=None, help="Randomly sample this many examples for eval.")
     parser.add_argument("--sample-seed", type=int, default=None, help="Seed used with --sample-size/config eval.sample_size.")
     parser.add_argument("--dry-run-gold", action="store_true", help="Emit gold SQL as predictions for plumbing tests.")
+    parser.add_argument("--output-dir", default=None, help="Directory for eval_predictions.jsonl and eval_metrics.json.")
     parser.add_argument("--output", default=None, help="Override predictions JSONL path.")
+    parser.add_argument("--metrics-json", default=None, help="Override metrics JSON path.")
     args = parser.parse_args()
 
     with Path(args.config).open("r", encoding="utf-8") as handle:
@@ -351,16 +368,24 @@ def main() -> None:
         )
 
     # Default: write eval results into <checkpoint>/eval/ so each run is self-contained.
-    # Explicit --output or the legacy config key override this.
-    _eval_base = Path(model_path) / "eval" if model_path else Path("artifacts/eval/sft")
-    output_path = Path(
-        args.output or config.get("output", {}).get("predictions_jsonl") or _eval_base / "predictions.jsonl"
+    # Explicit --output overrides only the predictions file; --metrics-json overrides only metrics.
+    eval_base = Path(args.output_dir) if args.output_dir else (
+        Path(model_path) / "eval" if model_path else Path("artifacts/eval/sft")
     )
+    configured_predictions = None if args.output_dir else config.get("output", {}).get("predictions_jsonl")
+    default_predictions_name = "eval_predictions.jsonl" if args.output_dir else "predictions.jsonl"
+    output_path = Path(args.output or configured_predictions or eval_base / default_predictions_name)
+    metrics_path = Path(args.metrics_json or eval_base / "eval_metrics.json")
 
     rows = generate_predictions(examples, tables_index, generator, dry_run_gold=args.dry_run_gold)
-    write_predictions_jsonl(rows, output_path)
     metrics = evaluate_predictions(rows, data_dir)
-    print(json.dumps({"predictions": str(output_path), **metrics}, indent=2))
+    write_eval_outputs(rows, metrics, predictions_jsonl=output_path, metrics_json=metrics_path)
+    print(
+        json.dumps(
+            {"predictions": str(output_path), "metrics_json": str(metrics_path), **metrics},
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

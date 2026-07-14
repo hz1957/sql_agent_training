@@ -115,9 +115,11 @@ For real SFT, install the SFT extra and use `configs/sft.yaml`, which points at 
 uv sync --group dev --extra sft
 uv run python scripts/download_model.py
 uv run python -m sql_agent_training.train.sft --config configs/sft.yaml
-uv run python -m sql_agent_training.train.sft_eval --config configs/sft.yaml --checkpoint artifacts/checkpoints/sft/<timestamp> --split validation --limit 10
+uv run python -m sql_agent_training.train.sft_eval --config configs/sft.yaml --checkpoint artifacts/checkpoints/sft/<timestamp> --split validation --limit 10 --output-dir artifacts/eval/sft_<timestamp>
 ```
 
 Each SFT run saves an eval-ready model and tokenizer under a timestamped directory below `output.checkpoint_dir`,
 for example `artifacts/checkpoints/sft/<timestamp>/`. If intermediate Hugging Face Trainer checkpoints are enabled,
 they are written as `checkpoint-*` subdirectories inside that same timestamped run directory.
+SFT eval writes `eval_predictions.jsonl` and `eval_metrics.json` into `--output-dir`; without `--output-dir`, it writes
+to the checkpoint's `eval/` directory.

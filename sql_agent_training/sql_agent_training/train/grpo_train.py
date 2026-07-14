@@ -18,6 +18,7 @@ import argparse
 import copy
 import json
 import random
+from contextlib import nullcontext
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,15 @@ from sql_agent_training.train.grpo_rollouts import (
     RolloutJsonlWriter,
     build_rollout_batch_from_config,
     load_rollout_source_from_config,
+)
+from sql_agent_training.train.distributed import (
+    DistributedContext,
+    all_ranks_true,
+    barrier,
+    broadcast_object,
+    init_distributed,
+    rank_suffix_path,
+    unwrap_distributed_model,
 )
 from sql_agent_training.train.grpo_batch import GrpoBatch, summarize_grpo_batch
 
@@ -276,49 +286,56 @@ class GrpoTrainer:
         ratio_max: float | None = None
         trainable_tokens = int(batch.response_mask.sum().detach().cpu().item())
 
-        for start in range(0, batch_size, micro_batch_size if micro_batch_size > 0 else batch_size):
+        starts = list(range(0, batch_size, micro_batch_size if micro_batch_size > 0 else batch_size))
+        for micro_index, start in enumerate(starts):
             stop = start + (micro_batch_size if micro_batch_size > 0 else batch_size)
-            new_logprobs = _sequence_logprobs(
-                self.policy_model,
-                batch.input_ids[start:stop],
-                batch.attention_mask[start:stop],
+            sync_context = (
+                nullcontext()
+                if micro_index == len(starts) - 1 or not hasattr(self.policy_model, "no_sync")
+                else self.policy_model.no_sync()
             )
-            old_logprobs = batch.old_logprobs[start:stop]
-            reference_logprobs = batch.reference_logprobs[start:stop]
-            response_mask = batch.response_mask[start:stop]
-            token_advantages = batch.advantages[start:stop].unsqueeze(-1)
+            with sync_context:
+                new_logprobs = _sequence_logprobs(
+                    self.policy_model,
+                    batch.input_ids[start:stop],
+                    batch.attention_mask[start:stop],
+                )
+                old_logprobs = batch.old_logprobs[start:stop]
+                reference_logprobs = batch.reference_logprobs[start:stop]
+                response_mask = batch.response_mask[start:stop]
+                token_advantages = batch.advantages[start:stop].unsqueeze(-1)
 
-            log_ratio = new_logprobs - old_logprobs
-            ratio = torch.exp(log_ratio)
-            unclipped = ratio * token_advantages
-            clipped_ratio = torch.clamp(
-                ratio,
-                1.0 - self.loss_config.clip_epsilon,
-                1.0 + self.loss_config.clip_epsilon,
-            )
-            clipped = clipped_ratio * token_advantages
-            policy_loss_tokens = -torch.minimum(unclipped, clipped)
+                log_ratio = new_logprobs - old_logprobs
+                ratio = torch.exp(log_ratio)
+                unclipped = ratio * token_advantages
+                clipped_ratio = torch.clamp(
+                    ratio,
+                    1.0 - self.loss_config.clip_epsilon,
+                    1.0 + self.loss_config.clip_epsilon,
+                )
+                clipped = clipped_ratio * token_advantages
+                policy_loss_tokens = -torch.minimum(unclipped, clipped)
 
-            ref_delta = reference_logprobs - new_logprobs
-            kl_tokens = torch.exp(ref_delta) - ref_delta - 1.0
-            policy_kl_tokens = (ratio - 1.0) - log_ratio
-            micro_policy_loss = (policy_loss_tokens * response_mask).sum() / total_tokens
-            micro_kl_loss = self.loss_config.kl_beta * (kl_tokens * response_mask).sum() / total_tokens
-            (micro_policy_loss + micro_kl_loss).backward()
+                ref_delta = reference_logprobs - new_logprobs
+                kl_tokens = torch.exp(ref_delta) - ref_delta - 1.0
+                policy_kl_tokens = (ratio - 1.0) - log_ratio
+                micro_policy_loss = (policy_loss_tokens * response_mask).sum() / total_tokens
+                micro_kl_loss = self.loss_config.kl_beta * (kl_tokens * response_mask).sum() / total_tokens
+                (micro_policy_loss + micro_kl_loss).backward()
 
-            with torch.no_grad():
-                response_ratios = _masked_values(ratio, response_mask)
-                metric_sums["policy_loss"] += float((policy_loss_tokens * response_mask).sum().detach().cpu())
-                metric_sums["kl"] += float((kl_tokens * response_mask).sum().detach().cpu())
-                clip_mask = ((ratio - 1.0).abs() > self.loss_config.clip_epsilon).float()
-                metric_sums["clip_fraction"] += float((clip_mask * response_mask).sum().detach().cpu())
-                metric_sums["policy_approx_kl"] += float((policy_kl_tokens * response_mask).sum().detach().cpu())
-                if response_ratios.numel() > 0:
-                    metric_sums["ratio"] += float(response_ratios.sum().detach().cpu())
-                    current_min = float(response_ratios.min().detach().cpu())
-                    current_max = float(response_ratios.max().detach().cpu())
-                    ratio_min = current_min if ratio_min is None else min(ratio_min, current_min)
-                    ratio_max = current_max if ratio_max is None else max(ratio_max, current_max)
+                with torch.no_grad():
+                    response_ratios = _masked_values(ratio, response_mask)
+                    metric_sums["policy_loss"] += float((policy_loss_tokens * response_mask).sum().detach().cpu())
+                    metric_sums["kl"] += float((kl_tokens * response_mask).sum().detach().cpu())
+                    clip_mask = ((ratio - 1.0).abs() > self.loss_config.clip_epsilon).float()
+                    metric_sums["clip_fraction"] += float((clip_mask * response_mask).sum().detach().cpu())
+                    metric_sums["policy_approx_kl"] += float((policy_kl_tokens * response_mask).sum().detach().cpu())
+                    if response_ratios.numel() > 0:
+                        metric_sums["ratio"] += float(response_ratios.sum().detach().cpu())
+                        current_min = float(response_ratios.min().detach().cpu())
+                        current_max = float(response_ratios.max().detach().cpu())
+                        ratio_min = current_min if ratio_min is None else min(ratio_min, current_min)
+                        ratio_max = current_max if ratio_max is None else max(ratio_max, current_max)
 
         if self.loss_config.max_grad_norm is not None:
             torch.nn.utils.clip_grad_norm_(self.policy_model.parameters(), self.loss_config.max_grad_norm)
@@ -474,6 +491,7 @@ def _save_policy(policy_model: Any, tokenizer: Any | None, config: dict[str, Any
     torch = _require_torch()
     path = Path(output_dir)
     path.mkdir(parents=True, exist_ok=True)
+    policy_model = unwrap_distributed_model(policy_model)
     if hasattr(policy_model, "save_pretrained"):
         policy_model.save_pretrained(path)
         if tokenizer is not None and hasattr(tokenizer, "save_pretrained"):
@@ -531,6 +549,17 @@ def _sample_step_examples(
     return rng.sample(examples, task_batch_size)
 
 
+def _shard_examples_for_rank(
+    examples: list[SpiderExample],
+    context: DistributedContext,
+) -> list[SpiderExample]:
+    """Split the global task batch across ranks while keeping task groups intact."""
+
+    if not context.is_distributed:
+        return examples
+    return examples[context.rank :: context.world_size]
+
+
 def _build_online_rollout_client(
     policy_model: Any,
     tokenizer: Any | None,
@@ -540,9 +569,10 @@ def _build_online_rollout_client(
     if tokenizer is None:
         return None
 
+    rollout_model = unwrap_distributed_model(policy_model)
     rollout = config.get("rollout", {})
     return HuggingFaceInMemoryModelClient(
-        policy_model,
+        rollout_model,
         tokenizer,
         device=device,
         max_new_tokens=int(rollout.get("max_response_length", 256)),
@@ -572,18 +602,44 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
     seed = int(config.get("training", {}).get("seed", 0))
     torch.manual_seed(seed)
     rng = random.Random(seed)
+    training = config.get("training", {})
+    context = init_distributed(str(training.get("device", "auto")))
     output = config.get("output", {})
-    checkpoint_dir = _new_checkpoint_dir(output.get("checkpoint_dir", "artifacts/checkpoints/grpo"))
-    checkpoint_dir.mkdir(parents=True, exist_ok=False)
-    run_config_path = _write_run_config(config, checkpoint_dir)
-    rollouts_jsonl = Path(output.get("rollouts_jsonl", Path(checkpoint_dir) / "rollouts.jsonl"))
+    checkpoint_dir_value = (
+        str(_new_checkpoint_dir(output.get("checkpoint_dir", "artifacts/checkpoints/grpo")))
+        if context.is_main_process
+        else None
+    )
+    checkpoint_dir = Path(broadcast_object(checkpoint_dir_value, context))
+    if context.is_main_process:
+        checkpoint_dir.mkdir(parents=True, exist_ok=False)
+    barrier(context)
+    run_config_path = checkpoint_dir / "run_config.yaml"
+    if context.is_main_process:
+        run_config_path = _write_run_config(config, checkpoint_dir)
+    barrier(context)
+    rollouts_jsonl = rank_suffix_path(
+        output.get("rollouts_jsonl", Path(checkpoint_dir) / "rollouts.jsonl"),
+        context,
+    )
     include_text = bool(output.get("include_text", True))
-    metrics_jsonl = Path(output.get("metrics_jsonl", Path(checkpoint_dir) / "metrics.jsonl"))
+    metrics_jsonl = rank_suffix_path(
+        output.get("metrics_jsonl", Path(checkpoint_dir) / "metrics.jsonl"),
+        context,
+    )
     if metrics_jsonl.exists():
         metrics_jsonl.unlink()
-    device = _device_from_config(config)
+    device = context.device
     policy_model, reference_model, pad_token_id, tokenizer = _build_models(config, None, device)
-    training = config.get("training", {})
+    if context.is_distributed:
+        from torch.nn.parallel import DistributedDataParallel
+
+        policy_model = DistributedDataParallel(
+            policy_model,
+            device_ids=[context.local_rank] if device.startswith("cuda") else None,
+            output_device=context.local_rank if device.startswith("cuda") else None,
+            find_unused_parameters=False,
+        )
     max_steps = int(training.get("max_steps", 1))
     if max_steps <= 0:
         raise ValueError("training.max_steps must be positive")
@@ -600,6 +656,8 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
     )
     rollout_client = _build_online_rollout_client(policy_model, tokenizer, config, device)
     task_batch_size = _task_batch_size(config)
+    if context.is_distributed and task_batch_size is not None and task_batch_size < context.world_size:
+        raise ValueError("training.task_batch_size must be at least WORLD_SIZE for distributed GRPO")
     source = load_rollout_source_from_config(config)
     metrics_history: list[dict[str, Any]] = []
     rows_written = 0
@@ -612,11 +670,14 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
         with RolloutJsonlWriter(rollouts_jsonl, include_text=include_text) as rollout_writer:
             for step_index in range(max_steps):
                 step = step_index + 1
-                step_examples = _sample_step_examples(
+                global_step_examples = _sample_step_examples(
                     source.examples,
                     task_batch_size=task_batch_size,
                     rng=rng,
                 )
+                step_examples = _shard_examples_for_rank(global_step_examples, context)
+                if not step_examples:
+                    raise ValueError("Each distributed rank must receive at least one task")
                 batch = build_rollout_batch_from_config(
                     config,
                     rollout_writer=rollout_writer,
@@ -625,6 +686,24 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
                     examples=step_examples,
                     source=source,
                 )
+                if not all_ranks_true(bool(batch.groups), context):
+                    metric_row = {
+                        "step": step,
+                        "update_epoch": 0,
+                        "optimizer_step": optimizer_steps,
+                        "rank": context.rank,
+                        "world_size": context.world_size,
+                        "groups": len(batch.groups),
+                        "trajectories": batch.num_trajectories,
+                        "skipped_update": True,
+                        "skip_reason": "empty_batch_on_at_least_one_rank",
+                        "global_task_batch_size": len(global_step_examples),
+                        "local_task_batch_size": len(step_examples),
+                    }
+                    _write_jsonl_row(metrics_jsonl, metric_row)
+                    metrics_history.append(metric_row)
+                    rows_written = rollout_writer.count
+                    continue
                 batch_stats = summarize_grpo_batch(batch)
                 prepared = trainer.prepare_batch(batch)
                 for update_epoch in range(1, update_epochs + 1):
@@ -634,8 +713,12 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
                         "step": step,
                         "update_epoch": update_epoch,
                         "optimizer_step": optimizer_steps,
+                        "rank": context.rank,
+                        "world_size": context.world_size,
                         "groups": len(batch.groups),
                         "trajectories": batch.num_trajectories,
+                        "global_task_batch_size": len(global_step_examples),
+                        "local_task_batch_size": len(step_examples),
                         **batch_stats,
                         **metrics.__dict__,
                     }
@@ -646,13 +729,17 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
                 final_batch_stats = batch_stats
                 final_groups = len(batch.groups)
                 if save_every_steps > 0 and step % save_every_steps == 0 and step != max_steps:
-                    _save_policy(policy_model, tokenizer, config, checkpoint_dir / f"step_{step:06d}")
+                    if context.is_main_process:
+                        _save_policy(policy_model, tokenizer, config, checkpoint_dir / f"step_{step:06d}")
+                    barrier(context)
     finally:
         source.close()
 
-    _save_policy(policy_model, tokenizer, config, checkpoint_dir)
+    if context.is_main_process:
+        _save_policy(policy_model, tokenizer, config, checkpoint_dir)
+    barrier(context)
 
-    metrics_path = Path(output.get("metrics_json", Path(checkpoint_dir) / "metrics.json"))
+    metrics_path = rank_suffix_path(output.get("metrics_json", Path(checkpoint_dir) / "metrics.json"), context)
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
     metrics_path.write_text(json.dumps(metrics_history, indent=2), encoding="utf-8")
     final_metrics = metrics_history[-1] if metrics_history else {}
@@ -665,6 +752,8 @@ def train_grpo_from_config(config: dict[str, Any]) -> dict[str, Any]:
         "update_epochs": update_epochs,
         "optimizer_steps": optimizer_steps,
         "device": device,
+        "rank": context.rank,
+        "world_size": context.world_size,
         "rows_written": rows_written,
         "rollouts_jsonl": str(rollouts_jsonl),
         "checkpoint_dir": str(checkpoint_dir),
@@ -690,7 +779,8 @@ def main() -> None:
     if args.dry_run:
         config["dry_run"] = True
     summary = train_grpo_from_config(config)
-    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    if int(summary.get("rank", 0)) == 0:
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

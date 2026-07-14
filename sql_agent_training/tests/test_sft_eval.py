@@ -75,14 +75,14 @@ def test_normalize_generated_sql_keeps_first_statement() -> None:
 def test_sft_eval_cli_dry_run_gold(tmp_path: Path) -> None:
     data_dir = tmp_path / "spider"
     _write_eval_spider_dir(data_dir)
-    output = tmp_path / "predictions.jsonl"
+    output_dir = tmp_path / "eval"
     config_path = tmp_path / "sft_eval.yaml"
     config_path.write_text(
         yaml.safe_dump(
             {
                 "model": {"path": "dummy"},
                 "data": {"data_dir": str(data_dir), "train_file": "train_spider.json", "validation_file": "dev.json"},
-                "output": {"checkpoint_dir": "dummy", "predictions_jsonl": str(output)},
+                "output": {"checkpoint_dir": "dummy"},
             }
         ),
         encoding="utf-8",
@@ -96,6 +96,8 @@ def test_sft_eval_cli_dry_run_gold(tmp_path: Path) -> None:
             "--config",
             str(config_path),
             "--dry-run-gold",
+            "--output-dir",
+            str(output_dir),
         ],
         cwd=Path(__file__).resolve().parents[1],
         check=True,
@@ -107,20 +109,23 @@ def test_sft_eval_cli_dry_run_gold(tmp_path: Path) -> None:
     assert summary["total"] == 1
     assert summary["executable_rate"] == 1.0
     assert summary["execution_accuracy"] == 1.0
-    assert output.exists()
+    assert summary["predictions"] == str(output_dir / "eval_predictions.jsonl")
+    assert summary["metrics_json"] == str(output_dir / "eval_metrics.json")
+    assert (output_dir / "eval_predictions.jsonl").exists()
+    assert json.loads((output_dir / "eval_metrics.json").read_text(encoding="utf-8"))["total"] == 1
 
 
 def test_sft_eval_cli_uses_configured_random_sample_size(tmp_path: Path) -> None:
     data_dir = tmp_path / "spider"
     _write_eval_spider_dir(data_dir, row_count=3)
-    output = tmp_path / "predictions.jsonl"
+    output_dir = tmp_path / "eval"
     config_path = tmp_path / "sft_eval.yaml"
     config_path.write_text(
         yaml.safe_dump(
             {
                 "model": {"path": "dummy"},
                 "data": {"data_dir": str(data_dir), "train_file": "train_spider.json", "validation_file": "dev.json"},
-                "output": {"checkpoint_dir": "dummy", "predictions_jsonl": str(output)},
+                "output": {"checkpoint_dir": "dummy"},
                 "eval": {"sample_size": 2, "sample_seed": 0},
             }
         ),
@@ -135,6 +140,8 @@ def test_sft_eval_cli_uses_configured_random_sample_size(tmp_path: Path) -> None
             "--config",
             str(config_path),
             "--dry-run-gold",
+            "--output-dir",
+            str(output_dir),
         ],
         cwd=Path(__file__).resolve().parents[1],
         check=True,
@@ -143,8 +150,10 @@ def test_sft_eval_cli_uses_configured_random_sample_size(tmp_path: Path) -> None
     )
 
     summary = json.loads(completed.stdout)
+    output = output_dir / "eval_predictions.jsonl"
     assert summary["total"] == 2
     assert len(output.read_text(encoding="utf-8").splitlines()) == 2
+    assert json.loads((output_dir / "eval_metrics.json").read_text(encoding="utf-8"))["total"] == 2
 
 
 def test_resolve_model_and_tokenizer_uses_latest_nested_model_dir(tmp_path: Path) -> None:
