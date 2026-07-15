@@ -1,0 +1,19 @@
+model:
+  backend: hf
+  path: data/models/Qwen2.5-Coder-7B-Instruct
+  device: cuda
+  torch_dtype: bf16
+
+data:
+  data_dir: data/spider
+  train_file: train_spider.json
+  validation_file: dev.json
+
+rollout:
+  max_turns: 3
+  max_response_length: 256
+  temperature: 0.0
+
+eval:
+  sample_size: 250
+  sample_seed: 0

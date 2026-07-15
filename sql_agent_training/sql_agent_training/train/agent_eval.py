@@ -208,7 +208,9 @@ def _load_model_client(config: dict[str, Any], checkpoint: str | None, tokenizer
     return HuggingFaceModelClient(
         model_path,
         tokenizer_name_or_path=resolved_tokenizer,
+        base_model_name_or_path=str(model_config["path"]) if model_config.get("path") else None,
         device=str(model_config.get("device", training_config.get("device", "auto"))),
+        torch_dtype=str(model_config["torch_dtype"]) if model_config.get("torch_dtype") else None,
         max_new_tokens=int(rollout_config.get("max_response_length", 256)),
         temperature=float(rollout_config.get("temperature", 0.0)),
         top_p=float(rollout_config["top_p"]) if rollout_config.get("top_p") is not None else None,

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 from sql_agent_training.agent.trace_format import AgentTurn
@@ -94,6 +96,70 @@ def _ensure_pad_token(tokenizer: Any) -> None:
         tokenizer.pad_token = tokenizer.eos_token
 
 
+def _adapter_config_path(path: str | Path) -> Path:
+    return Path(path) / "adapter_config.json"
+
+
+def _has_adapter_files(path: str | Path) -> bool:
+    return _adapter_config_path(path).exists()
+
+
+def _resolve_adapter_base_model_path(
+    adapter_config_path: str | Path,
+    *,
+    fallback_base_model_name_or_path: str | None = None,
+) -> str:
+    config = json.loads(Path(adapter_config_path).read_text(encoding="utf-8"))
+    base_model_name_or_path = str(config["base_model_name_or_path"])
+    if fallback_base_model_name_or_path and not Path(base_model_name_or_path).exists():
+        return fallback_base_model_name_or_path
+    return base_model_name_or_path
+
+
+def _resolve_torch_dtype(torch: Any, value: str | None) -> Any | None:
+    if value is None:
+        return None
+    requested = str(value).lower()
+    if requested in {"auto", "none"}:
+        return requested if requested == "auto" else None
+    if requested in {"bfloat16", "bf16"}:
+        return torch.bfloat16
+    if requested in {"float16", "fp16", "half"}:
+        return torch.float16
+    if requested in {"float32", "fp32"}:
+        return torch.float32
+    raise ValueError(f"Unknown torch dtype: {value}")
+
+
+def _load_causal_lm(
+    AutoModelForCausalLM: Any,
+    model_name_or_path: str,
+    *,
+    trust_remote_code: bool,
+    torch_dtype: Any | None,
+    fallback_base_model_name_or_path: str | None = None,
+) -> Any:
+    load_kwargs: dict[str, Any] = {"trust_remote_code": trust_remote_code}
+    if torch_dtype is not None:
+        load_kwargs["torch_dtype"] = torch_dtype
+
+    adapter_config = _adapter_config_path(model_name_or_path)
+    if not adapter_config.exists():
+        return AutoModelForCausalLM.from_pretrained(model_name_or_path, **load_kwargs)
+
+    try:
+        from peft import PeftModel
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("Install the train extra with PEFT to evaluate LoRA adapter checkpoints.") from exc
+
+    base_model_path = _resolve_adapter_base_model_path(
+        adapter_config,
+        fallback_base_model_name_or_path=fallback_base_model_name_or_path,
+    )
+    base_model = AutoModelForCausalLM.from_pretrained(base_model_path, **load_kwargs)
+    return PeftModel.from_pretrained(base_model, model_name_or_path)
+
+
 class HuggingFaceInMemoryModelClient:
     """Hugging Face client backed by an already-loaded policy model."""
 
@@ -175,8 +241,10 @@ class HuggingFaceModelClient(HuggingFaceInMemoryModelClient):
         model_name_or_path: str,
         *,
         tokenizer_name_or_path: str | None = None,
+        base_model_name_or_path: str | None = None,
         device: str = "auto",
         trust_remote_code: bool = True,
+        torch_dtype: str | None = None,
         max_new_tokens: int = 256,
         temperature: float = 0.0,
         top_p: float | None = None,
@@ -196,9 +264,12 @@ class HuggingFaceModelClient(HuggingFaceInMemoryModelClient):
             self.tokenizer_name_or_path,
             trust_remote_code=trust_remote_code,
         )
-        model: Any = AutoModelForCausalLM.from_pretrained(
+        model: Any = _load_causal_lm(
+            AutoModelForCausalLM,
             model_name_or_path,
             trust_remote_code=trust_remote_code,
+            torch_dtype=_resolve_torch_dtype(torch, torch_dtype),
+            fallback_base_model_name_or_path=base_model_name_or_path,
         ).to(resolved_device)
         super().__init__(
             model,
