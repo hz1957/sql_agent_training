@@ -1,5 +1,7 @@
 model:
   backend: hf
+  # Base model path. When evaluating a LoRA adapter, pass the adapter directory via
+  # --checkpoint <lora_dir>; this path is used as the fallback base model.
   path: data/models/Qwen2.5-Coder-7B-Instruct
   device: cuda
   torch_dtype: bf16

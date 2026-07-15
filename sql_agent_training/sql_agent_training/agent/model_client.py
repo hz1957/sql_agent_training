@@ -100,9 +100,6 @@ def _adapter_config_path(path: str | Path) -> Path:
     return Path(path) / "adapter_config.json"
 
 
-def _has_adapter_files(path: str | Path) -> bool:
-    return _adapter_config_path(path).exists()
-
 
 def _resolve_adapter_base_model_path(
     adapter_config_path: str | Path,
