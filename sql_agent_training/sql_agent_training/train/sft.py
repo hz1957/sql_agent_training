@@ -92,6 +92,20 @@ def _normalize_save_strategy(value) -> str:
     raise ValueError("training.save_strategy must be one of 'no', 'steps', 'epoch', or 'best'; " f"got {value!r}")
 
 
+def _deepspeed_config(training: dict) -> str | dict | None:
+    """Return a Trainer-compatible DeepSpeed config value from training settings."""
+
+    value = training.get("deepspeed")
+    if value is None or value is False:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped if stripped else None
+    if isinstance(value, dict):
+        return value
+    raise ValueError("training.deepspeed must be a config path, inline config dict, false, or null")
+
+
 def _write_run_config(config: dict, checkpoint_dir: str | Path, *, is_main_process: bool = True) -> Path:
     path = Path(checkpoint_dir) / "run_config.yaml"
     if is_main_process:
@@ -168,13 +182,6 @@ def _run_transformers_training(
     context = context or init_distributed("auto")
     training = config["training"]
     gradient_checkpointing = bool(training.get("gradient_checkpointing", False))
-    model = AutoModelForCausalLM.from_pretrained(config["model"]["path"], **_model_load_kwargs(training))
-    if bool(training.get("gradient_checkpointing", False)) and hasattr(model.config, "use_cache"):
-        model.config.use_cache = False
-    model = _apply_lora_if_enabled(model, config)
-    if gradient_checkpointing and hasattr(model, "enable_input_require_grads"):
-        model.enable_input_require_grads()
-    collator = SftDataCollator(pad_token_id=tokenizer.pad_token_id)
     save_strategy = _normalize_save_strategy(training.get("save_strategy", "no"))
     run_config = {**config, "training": {**training, "save_strategy": save_strategy}}
     checkpoint_dir_value = str(_new_final_checkpoint_dir(config)) if context.is_main_process else None
@@ -203,7 +210,15 @@ def _run_transformers_training(
         warmup_ratio=float(training.get("warmup_ratio", 0.0)),
         weight_decay=float(training.get("weight_decay", 0.0)),
         report_to=training.get("report_to", "none"),
+        deepspeed=_deepspeed_config(training),
     )
+    model = AutoModelForCausalLM.from_pretrained(config["model"]["path"], **_model_load_kwargs(training))
+    if bool(training.get("gradient_checkpointing", False)) and hasattr(model.config, "use_cache"):
+        model.config.use_cache = False
+    model = _apply_lora_if_enabled(model, config)
+    if gradient_checkpointing and hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
+    collator = SftDataCollator(pad_token_id=tokenizer.pad_token_id)
     trainer = Trainer(model=model, args=args, train_dataset=dataset, data_collator=collator)
     trainer.train()
     # Free GPU memory before serializing weights to CPU RAM to avoid OOM during save.

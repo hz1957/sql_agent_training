@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from sql_agent_training.train.sft import (
+    _deepspeed_config,
     _lora_config_kwargs,
     _new_checkpoint_dir,
     _normalize_save_strategy,
@@ -108,6 +109,25 @@ def test_sft_save_strategy_rejects_invalid_values() -> None:
         assert "training.save_strategy" in str(exc)
     else:
         raise AssertionError("Expected invalid save_strategy to raise ValueError")
+
+
+def test_deepspeed_config_accepts_disabled_path_and_inline_config() -> None:
+    assert _deepspeed_config({}) is None
+    assert _deepspeed_config({"deepspeed": False}) is None
+    assert _deepspeed_config({"deepspeed": ""}) is None
+    assert _deepspeed_config({"deepspeed": "configs/ds_zero3.json"}) == "configs/ds_zero3.json"
+    assert _deepspeed_config({"deepspeed": {"zero_optimization": {"stage": 3}}}) == {
+        "zero_optimization": {"stage": 3}
+    }
+
+
+def test_deepspeed_config_rejects_invalid_values() -> None:
+    try:
+        _deepspeed_config({"deepspeed": 3})
+    except ValueError as exc:
+        assert "training.deepspeed" in str(exc)
+    else:
+        raise AssertionError("Expected invalid deepspeed config to raise ValueError")
 
 
 def test_lora_config_kwargs_uses_qwen_defaults() -> None:
