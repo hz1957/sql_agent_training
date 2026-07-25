@@ -3,15 +3,20 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import yaml
 
 from sql_agent_training.train.sft import (
+    _compute_token_accuracy,
     _deepspeed_config,
+    _eval_strategy,
     _lora_config_kwargs,
     _new_checkpoint_dir,
     _normalize_save_strategy,
+    _optional_positive_int,
     _trainer_output_dir,
 )
+from sql_agent_training.train.sft_dataset import IGNORE_INDEX
 
 
 def test_sft_dry_run_writes_jsonl(tmp_path: Path) -> None:
@@ -128,6 +133,45 @@ def test_deepspeed_config_rejects_invalid_values() -> None:
         assert "training.deepspeed" in str(exc)
     else:
         raise AssertionError("Expected invalid deepspeed config to raise ValueError")
+
+
+def test_eval_strategy_normalizes_values() -> None:
+    assert _eval_strategy({}) == "no"
+    assert _eval_strategy({"eval_strategy": "steps"}) == "steps"
+    assert _eval_strategy({"eval_strategy": "epoch"}) == "epoch"
+    assert _eval_strategy({"eval_strategy": "false"}) == "no"
+
+
+def test_eval_strategy_rejects_invalid_values() -> None:
+    try:
+        _eval_strategy({"eval_strategy": "sometimes"})
+    except ValueError as exc:
+        assert "training.eval_strategy" in str(exc)
+    else:
+        raise AssertionError("Expected invalid eval_strategy to raise ValueError")
+
+
+def test_optional_positive_int_accepts_missing_and_positive_values() -> None:
+    assert _optional_positive_int({}, "eval_steps") is None
+    assert _optional_positive_int({"eval_steps": "100"}, "eval_steps") == 100
+
+
+def test_optional_positive_int_rejects_non_positive_values() -> None:
+    try:
+        _optional_positive_int({"eval_steps": 0}, "eval_steps")
+    except ValueError as exc:
+        assert "training.eval_steps" in str(exc)
+    else:
+        raise AssertionError("Expected non-positive optional integer to raise ValueError")
+
+
+def test_compute_token_accuracy_uses_next_token_shift_and_ignores_prompt_labels() -> None:
+    predictions = np.array([[9, 5, 9, 6, 7]])
+    labels = np.array([[IGNORE_INDEX, IGNORE_INDEX, 5, 8, IGNORE_INDEX]])
+
+    metrics = _compute_token_accuracy((predictions, labels))
+
+    assert metrics["token_accuracy"] == 0.5
 
 
 def test_lora_config_kwargs_uses_qwen_defaults() -> None:

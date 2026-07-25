@@ -12,10 +12,18 @@ import yaml
 
 from sql_agent_training.agent.tokenization import load_tokenizer
 from sql_agent_training.data.schema import load_tables_json
-from sql_agent_training.data.sft_formatter import write_sft_jsonl
+from sql_agent_training.data.sft_formatter import format_sft_record, write_sft_jsonl
 from sql_agent_training.data.spider_dataset import load_spider_file
 from sql_agent_training.train.distributed import DistributedContext, barrier, broadcast_object, init_distributed
-from sql_agent_training.train.sft_dataset import SftDataCollator, SftTorchDataset, load_sft_jsonl, tokenize_sft_records
+from sql_agent_training.train.eval_sampling import select_eval_examples
+from sql_agent_training.train.sft_dataset import (
+    IGNORE_INDEX,
+    SftDataCollator,
+    SftRecord,
+    SftTorchDataset,
+    load_sft_jsonl,
+    tokenize_sft_records,
+)
 
 
 def _prepare_sft_jsonl(config: dict) -> Path:
@@ -46,6 +54,44 @@ def _build_tokenized_dataset(config: dict, sft_jsonl: Path):
     )
     print(f"Tokenized {len(tokenized)} SFT records")
     return tokenizer, SftTorchDataset(tokenized)
+
+
+def _build_tokenized_eval_dataset(config: dict, tokenizer) -> SftTorchDataset:
+    """Build the validation split used for periodic Trainer eval metrics."""
+
+    data = config["data"]
+    data_dir = Path(data["data_dir"])
+    validation_file = data.get("validation_file")
+    if not validation_file:
+        raise ValueError("data.validation_file is required when training.eval_strategy is not 'no'")
+
+    examples = load_spider_file(data_dir / validation_file)
+    eval_config = config.get("eval", {})
+    examples = select_eval_examples(
+        examples,
+        sample_size=eval_config.get("sample_size"),
+        sample_seed=int(eval_config.get("sample_seed", 0)),
+    )
+    tables_index = load_tables_json(data_dir / "tables.json")
+    records = []
+    for example in examples:
+        row = format_sft_record(example, tables_index)
+        records.append(
+            SftRecord(
+                uid=str(row["uid"]),
+                db_id=str(row["db_id"]),
+                prompt=str(row["prompt"]),
+                completion=str(row["completion"]),
+            )
+        )
+    tokenized = tokenize_sft_records(
+        records,
+        tokenizer,
+        max_prompt_length=int(config["training"]["max_prompt_length"]),
+        max_response_length=int(config["training"]["max_response_length"]),
+    )
+    print(f"Tokenized {len(tokenized)} validation SFT records")
+    return SftTorchDataset(tokenized)
 
 
 def _new_checkpoint_dir(base_dir: str | Path) -> Path:
@@ -104,6 +150,60 @@ def _deepspeed_config(training: dict) -> str | dict | None:
     if isinstance(value, dict):
         return value
     raise ValueError("training.deepspeed must be a config path, inline config dict, false, or null")
+
+
+def _eval_strategy(training: dict) -> str:
+    """Return the normalized Hugging Face Trainer eval strategy."""
+
+    value = str(training.get("eval_strategy", "no")).strip().lower()
+    if value in {"false", "none"}:
+        return "no"
+    if value not in {"no", "steps", "epoch"}:
+        raise ValueError("training.eval_strategy must be one of 'no', 'steps', or 'epoch'")
+    return value
+
+
+def _optional_positive_int(training: dict, key: str) -> int | None:
+    """Return an optional positive integer training setting."""
+
+    value = training.get(key)
+    if value is None:
+        return None
+    parsed = int(value)
+    if parsed <= 0:
+        raise ValueError(f"training.{key} must be positive when set")
+    return parsed
+
+
+def _preprocess_logits_for_metrics(logits: Any, labels: Any) -> Any:
+    """Convert full-vocab logits to token predictions before metric gathering."""
+
+    del labels
+    if isinstance(logits, tuple):
+        logits = logits[0]
+    return logits.argmax(dim=-1)
+
+
+def _compute_token_accuracy(eval_pred: Any) -> dict[str, float]:
+    """Compute next-token accuracy on unmasked SFT completion labels."""
+
+    import numpy as np
+
+    predictions, labels = eval_pred
+    predictions = np.asarray(predictions)
+    labels = np.asarray(labels)
+    if predictions.ndim == 3:
+        predictions = predictions.argmax(axis=-1)
+    if predictions.shape[1] < 2 or labels.shape[1] < 2:
+        return {"token_accuracy": 0.0}
+    shifted_predictions = predictions[:, :-1]
+    shifted_labels = labels[:, 1:]
+    mask = shifted_labels != IGNORE_INDEX
+    total = int(mask.sum())
+    if total == 0:
+        return {"token_accuracy": 0.0}
+    correct = int((shifted_predictions[mask] == shifted_labels[mask]).sum())
+    return {"token_accuracy": correct / total}
 
 
 def _write_run_config(config: dict, checkpoint_dir: str | Path, *, is_main_process: bool = True) -> Path:
@@ -183,6 +283,7 @@ def _run_transformers_training(
     training = config["training"]
     gradient_checkpointing = bool(training.get("gradient_checkpointing", False))
     save_strategy = _normalize_save_strategy(training.get("save_strategy", "no"))
+    eval_strategy = _eval_strategy(training)
     run_config = {**config, "training": {**training, "save_strategy": save_strategy}}
     checkpoint_dir_value = str(_new_final_checkpoint_dir(config)) if context.is_main_process else None
     final_checkpoint_dir = Path(broadcast_object(checkpoint_dir_value, context))
@@ -203,6 +304,10 @@ def _run_transformers_training(
         logging_steps=int(training.get("logging_steps", 10)),
         save_strategy=save_strategy,
         save_steps=int(training.get("save_steps", 100)),
+        eval_strategy=eval_strategy,
+        eval_steps=_optional_positive_int(training, "eval_steps"),
+        per_device_eval_batch_size=int(training.get("per_device_eval_batch_size", 1)),
+        eval_accumulation_steps=_optional_positive_int(training, "eval_accumulation_steps"),
         max_steps=int(training["max_steps"]) if training.get("max_steps") is not None else -1,
         fp16=bool(training.get("fp16", False)),
         bf16=bool(training.get("bf16", False)),
@@ -219,7 +324,16 @@ def _run_transformers_training(
     if gradient_checkpointing and hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
     collator = SftDataCollator(pad_token_id=tokenizer.pad_token_id)
-    trainer = Trainer(model=model, args=args, train_dataset=dataset, data_collator=collator)
+    eval_dataset = _build_tokenized_eval_dataset(config, tokenizer) if eval_strategy != "no" else None
+    trainer = Trainer(
+        model=model,
+        args=args,
+        train_dataset=dataset,
+        eval_dataset=eval_dataset,
+        data_collator=collator,
+        compute_metrics=_compute_token_accuracy if eval_dataset is not None else None,
+        preprocess_logits_for_metrics=_preprocess_logits_for_metrics if eval_dataset is not None else None,
+    )
     trainer.train()
     # Free GPU memory before serializing weights to CPU RAM to avoid OOM during save.
     try:

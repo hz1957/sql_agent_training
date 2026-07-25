@@ -11,7 +11,7 @@ data:
 
 output:
   sft_jsonl: artifacts/sft/train_qwen25_coder_14b_lora.jsonl
-  checkpoint_dir: artifacts/checkpoints/sft_qwen25_coder_14b_lora_l40s_zero3
+  checkpoint_dir: artifacts/checkpoints/sft_qwen25_coder_14b_lora_l40s_zero2
 
 eval:
   sample_size: 500
@@ -37,7 +37,7 @@ training:
   bf16: true
   fp16: false
   report_to: none
-  deepspeed: configs/deepspeed_zero3_l40s.json
+  deepspeed: configs/deepspeed_zero2_l40s.json
 
 lora:
   enabled: true
