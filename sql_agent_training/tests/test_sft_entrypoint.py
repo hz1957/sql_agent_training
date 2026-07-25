@@ -62,6 +62,7 @@ def test_sft_dry_run_writes_jsonl(tmp_path: Path) -> None:
             "--config",
             str(config_path),
             "--dry-run",
+            "--local_rank=0",
         ],
         cwd=Path(__file__).resolve().parents[1],
         check=True,

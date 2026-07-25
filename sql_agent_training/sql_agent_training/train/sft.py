@@ -379,6 +379,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare or run Spider SFT.")
     parser.add_argument("--config", default="configs/sft.yaml")
     parser.add_argument("--dry-run", action="store_true", help="Format data only; do not train.")
+    parser.add_argument("--local_rank", "--local-rank", type=int, default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     with Path(args.config).open("r", encoding="utf-8") as handle:
