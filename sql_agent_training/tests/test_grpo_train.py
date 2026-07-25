@@ -18,7 +18,7 @@ from sql_agent_training.train.grpo_train import (
     create_tiny_causal_lm,
     train_grpo_from_config,
 )
-from sql_agent_training.train.grpo_trainer import train_grpo_with_hf_trainer_from_config
+from sql_agent_training.train.grpo_trainer import _should_sync_lora_adapter, train_grpo_with_hf_trainer_from_config
 
 
 def _trajectory(uid: str, rollout: int, response_ids: list[int], reward: float) -> TokenizedTrajectory:
@@ -144,6 +144,17 @@ def test_apply_peft_adapter_loads_trainable_adapter(monkeypatch: pytest.MonkeyPa
 
     assert wrapped == {"wrapped": model, "adapter_path": "adapter/checkpoint", "is_trainable": True}
     assert calls == [(model, "adapter/checkpoint", True)]
+
+
+def test_should_sync_lora_adapter_syncs_initial_rollout_before_interval() -> None:
+    assert _should_sync_lora_adapter(rollout_step=1, sync_every=4, adapter_loaded=False)
+    assert not _should_sync_lora_adapter(rollout_step=1, sync_every=4, adapter_loaded=True)
+    assert _should_sync_lora_adapter(rollout_step=4, sync_every=4, adapter_loaded=True)
+
+
+def test_should_sync_lora_adapter_rejects_invalid_interval() -> None:
+    with pytest.raises(ValueError, match="sync_every_rollout_steps"):
+        _should_sync_lora_adapter(rollout_step=1, sync_every=0, adapter_loaded=False)
 
 
 def test_train_grpo_from_config_runs_tiny_checkpoint(tmp_path: Path) -> None:

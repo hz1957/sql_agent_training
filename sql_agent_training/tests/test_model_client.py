@@ -3,13 +3,23 @@ import sys
 import types
 from pathlib import Path
 
-from sql_agent_training.agent.model_client import HuggingFaceModelClient, _resolve_adapter_base_model_path
+from sql_agent_training.agent.model_client import (
+    HuggingFaceModelClient,
+    ModelRequest,
+    VllmOpenAIModelClient,
+    _resolve_adapter_base_model_path,
+)
+from sql_agent_training.agent.trace_format import AgentTurn
 
 
 class DummyTokenizer:
     pad_token_id = None
     eos_token = "<eos>"
     eos_token_id = 0
+
+    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+        del add_special_tokens
+        return [len(text)]
 
 
 class DummyModel:
@@ -88,3 +98,61 @@ def test_resolve_adapter_base_model_path_uses_existing_recorded_path(tmp_path: P
         adapter_config,
         fallback_base_model_name_or_path=str(tmp_path / "fallback"),
     ) == str(base_model)
+
+
+def test_vllm_openai_client_generates_and_loads_lora(monkeypatch, tmp_path: Path) -> None:
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, body: str) -> None:
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return self.body.encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        calls.append(
+            {
+                "url": request.full_url,
+                "payload": json.loads(request.data.decode("utf-8")),
+                "timeout": timeout,
+            }
+        )
+        if request.full_url.endswith("/v1/completions"):
+            return FakeResponse(json.dumps({"choices": [{"text": "SELECT 1"}]}))
+        return FakeResponse("Success")
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    client = VllmOpenAIModelClient(
+        base_url="http://127.0.0.1:8000/v1",
+        model_name="current_policy",
+        tokenizer=DummyTokenizer(),
+        timeout_seconds=12.0,
+        max_new_tokens=32,
+        temperature=0.7,
+        top_p=0.95,
+        top_k=40,
+    )
+
+    response = client.generate(ModelRequest(turns=[AgentTurn(role="user", content="Write SQL")]))
+    client.load_lora_adapter(lora_name="current_policy", lora_path=tmp_path / "adapter", load_inplace=True)
+
+    assert response.content == "SELECT 1"
+    assert response.prompt_ids == [len("user: Write SQL\nassistant:")]
+    assert response.response_ids == [len("SELECT 1")]
+    assert calls[0]["url"] == "http://127.0.0.1:8000/v1/completions"
+    assert calls[0]["payload"]["model"] == "current_policy"
+    assert calls[0]["payload"]["temperature"] == 0.7
+    assert calls[0]["payload"]["top_k"] == 40
+    assert calls[1]["url"] == "http://127.0.0.1:8000/v1/load_lora_adapter"
+    assert calls[1]["payload"] == {
+        "lora_name": "current_policy",
+        "lora_path": str(tmp_path / "adapter"),
+        "load_inplace": True,
+    }

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import urllib.error
+import urllib.request
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -96,9 +98,34 @@ def _ensure_pad_token(tokenizer: Any) -> None:
         tokenizer.pad_token = tokenizer.eos_token
 
 
+def _join_url(base_url: str, path: str) -> str:
+    return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _post_json(
+    url: str, payload: dict[str, Any], *, api_key: str | None, timeout_seconds: float
+) -> dict[str, Any] | str:
+    body = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            raw = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code} from {url}: {error_body}") from exc
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+
 def _adapter_config_path(path: str | Path) -> Path:
     return Path(path) / "adapter_config.json"
-
 
 
 def _resolve_adapter_base_model_path(
@@ -276,4 +303,100 @@ class HuggingFaceModelClient(HuggingFaceInMemoryModelClient):
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
+        )
+
+
+class VllmOpenAIModelClient:
+    """OpenAI-compatible vLLM completions client for rollout generation."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        model_name: str,
+        tokenizer: Any | None = None,
+        api_key: str | None = None,
+        timeout_seconds: float = 300.0,
+        max_new_tokens: int = 256,
+        temperature: float = 0.0,
+        top_p: float | None = None,
+        top_k: int | None = None,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.model_name = model_name
+        self.tokenizer = tokenizer
+        self.api_key = api_key
+        self.timeout_seconds = timeout_seconds
+        self.default_max_new_tokens = max_new_tokens
+        self.default_temperature = temperature
+        self.default_top_p = top_p
+        self.default_top_k = top_k
+        if self.tokenizer is not None:
+            _ensure_pad_token(self.tokenizer)
+
+    def _format_prompt(self, turns: Sequence[AgentTurn]) -> str:
+        if self.tokenizer is not None:
+            return format_hf_prompt(self.tokenizer, turns)
+        lines = [f"{turn.role}: {turn.content}" for turn in turns]
+        lines.append("assistant:")
+        return "\n".join(lines)
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        """Generate the next assistant message through vLLM's OpenAI-compatible API."""
+
+        prompt = self._format_prompt(request.turns)
+        max_new_tokens = request.max_tokens or self.default_max_new_tokens
+        temperature = self.default_temperature if request.temperature is None else request.temperature
+        top_p = self.default_top_p if request.top_p is None else request.top_p
+        top_k = self.default_top_k if request.top_k is None else request.top_k
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "max_tokens": max_new_tokens,
+            "temperature": temperature,
+        }
+        if top_p is not None:
+            payload["top_p"] = top_p
+        if top_k is not None:
+            payload["top_k"] = top_k
+
+        response = _post_json(
+            _join_url(self.base_url, "completions"),
+            payload,
+            api_key=self.api_key,
+            timeout_seconds=self.timeout_seconds,
+        )
+        if not isinstance(response, dict):
+            raise RuntimeError(f"Unexpected vLLM completions response: {response!r}")
+        choices = response.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise RuntimeError(f"vLLM completions response did not contain choices: {response!r}")
+        text = str(choices[0].get("text", "")).strip()
+        prompt_ids = None
+        response_ids = None
+        if self.tokenizer is not None:
+            prompt_ids = list(self.tokenizer.encode(prompt, add_special_tokens=False))
+            response_ids = list(self.tokenizer.encode(text, add_special_tokens=False))
+        return ModelResponse(
+            content=text,
+            prompt_ids=prompt_ids,
+            response_ids=response_ids,
+            prompt_text=prompt,
+            response_text=text,
+        )
+
+    def load_lora_adapter(self, *, lora_name: str, lora_path: str | Path, load_inplace: bool = True) -> None:
+        """Load or replace a LoRA adapter in a trusted vLLM server."""
+
+        payload: dict[str, Any] = {
+            "lora_name": lora_name,
+            "lora_path": str(lora_path),
+        }
+        if load_inplace:
+            payload["load_inplace"] = True
+        _post_json(
+            _join_url(self.base_url, "load_lora_adapter"),
+            payload,
+            api_key=self.api_key,
+            timeout_seconds=self.timeout_seconds,
         )

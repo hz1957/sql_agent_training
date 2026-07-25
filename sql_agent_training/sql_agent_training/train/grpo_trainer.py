@@ -6,13 +6,14 @@ import argparse
 import json
 import os
 import random
+import shutil
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from sql_agent_training.agent.model_client import HuggingFaceInMemoryModelClient, ModelClient
+from sql_agent_training.agent.model_client import HuggingFaceInMemoryModelClient, ModelClient, VllmOpenAIModelClient
 from sql_agent_training.data.spider_dataset import SpiderExample
 from sql_agent_training.train.distributed import (
     DistributedContext,
@@ -117,6 +118,23 @@ def _save_steps(config: dict[str, Any]) -> int:
     return max(1, save_every_rollout_steps * _update_epochs(config)) if save_every_rollout_steps > 0 else 500
 
 
+def _rollout_backend(config: dict[str, Any]) -> str:
+    backend = str(config.get("rollout", {}).get("backend", "hf")).strip().lower()
+    if backend not in {"hf", "vllm"}:
+        raise ValueError("rollout.backend must be one of 'hf' or 'vllm'")
+    return backend
+
+
+def _vllm_config(config: dict[str, Any]) -> dict[str, Any]:
+    return dict(config.get("rollout", {}).get("vllm", {}))
+
+
+def _should_sync_lora_adapter(*, rollout_step: int, sync_every: int, adapter_loaded: bool) -> bool:
+    if sync_every <= 0:
+        raise ValueError("rollout.vllm.sync_every_rollout_steps must be positive")
+    return not adapter_loaded or rollout_step % sync_every == 0
+
+
 def _resolve_latest_run(root: str | Path) -> Path:
     candidates = [path for path in Path(root).iterdir() if path.is_dir()]
     if not candidates:
@@ -135,6 +153,28 @@ def _resolve_adapter_path(model_config: dict[str, Any]) -> str | None:
     if checkpoint_name:
         return str(run_dir / str(checkpoint_name))
     return str(run_dir)
+
+
+def _save_lora_adapter_for_rollout(model: Any, output_dir: str | Path) -> Path:
+    path = Path(output_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    if not hasattr(model, "peft_config"):
+        raise RuntimeError("vLLM rollout sync requires a PEFT LoRA model with save_pretrained support")
+    if not hasattr(model, "save_pretrained"):
+        raise RuntimeError("vLLM rollout sync requires model.save_pretrained")
+    model.save_pretrained(path)
+    adapter_config = path / "adapter_config.json"
+    if not adapter_config.exists():
+        raise RuntimeError(f"LoRA adapter export did not write {adapter_config}")
+    return path
+
+
+def _cleanup_old_lora_exports(root: Path, *, keep_last: int) -> None:
+    if keep_last <= 0 or not root.exists():
+        return
+    candidates = sorted([path for path in root.iterdir() if path.is_dir() and path.name.startswith("step_")])
+    for stale_path in candidates[:-keep_last]:
+        shutil.rmtree(stale_path)
 
 
 def _build_training_args(config: dict[str, Any], output_dir: Path) -> Any:
@@ -217,7 +257,9 @@ def _build_policy_model_and_tokenizer(config: dict[str, Any]) -> tuple[Any, Any 
     policy = _apply_peft_adapter_if_configured(policy_base, adapter_path, is_trainable=True)
     if bool(config.get("training", {}).get("gradient_checkpointing", False)) and hasattr(policy.config, "use_cache"):
         policy.config.use_cache = False
-    if bool(config.get("training", {}).get("gradient_checkpointing", False)) and hasattr(policy, "enable_input_require_grads"):
+    if bool(config.get("training", {}).get("gradient_checkpointing", False)) and hasattr(
+        policy, "enable_input_require_grads"
+    ):
         policy.enable_input_require_grads()
     pad_token_id = tokenizer.pad_token_id
     if pad_token_id is None:
@@ -278,6 +320,11 @@ class AgentGRPOTrainer:
                 self.logprob_micro_batch_size = _logprob_micro_batch_size(config)
                 self.update_epochs = _update_epochs(config)
                 self.task_batch_size = _task_batch_size(config)
+                self.rollout_backend = _rollout_backend(config)
+                self.vllm_config = _vllm_config(config)
+                self.vllm_lora_name = str(self.vllm_config.get("lora_name", "current_policy"))
+                self.vllm_current_model_name = str(self.vllm_config.get("model", self.vllm_lora_name))
+                self.vllm_adapter_loaded = False
                 self.rollout_step = 0
                 self.cached_prepared: GrpoTrainingBatch | None = None
                 self.cached_batch_stats: dict[str, Any] = {}
@@ -287,6 +334,8 @@ class AgentGRPOTrainer:
                 self.total_trajectories = 0
                 self.rows_written = 0
                 self.metrics_history: list[dict[str, Any]] = []
+                if self.rollout_backend == "vllm" and self.hf_tokenizer is None:
+                    raise ValueError("rollout.backend: vllm requires a Hugging Face tokenizer")
 
             def get_train_dataloader(self) -> Any:
                 return DataLoader(self.train_dataset, batch_size=None)
@@ -302,6 +351,18 @@ class AgentGRPOTrainer:
                 if self.grpo_config.get("rollout", {}).get("scripted_responses"):
                     return None
                 rollout = self.grpo_config.get("rollout", {})
+                if self.rollout_backend == "vllm":
+                    return VllmOpenAIModelClient(
+                        base_url=str(self.vllm_config.get("base_url", "http://127.0.0.1:8000/v1")),
+                        model_name=self.vllm_current_model_name,
+                        tokenizer=self.hf_tokenizer,
+                        api_key=str(self.vllm_config.get("api_key") or os.environ.get("VLLM_API_KEY") or "") or None,
+                        timeout_seconds=float(self.vllm_config.get("timeout_seconds", 300.0)),
+                        max_new_tokens=int(rollout.get("max_response_length", 256)),
+                        temperature=float(rollout.get("temperature", 0.0)),
+                        top_p=float(rollout["top_p"]) if rollout.get("top_p") is not None else None,
+                        top_k=int(rollout["top_k"]) if rollout.get("top_k") is not None else None,
+                    )
                 generation_model = self._unwrap_for_generation(model_for_step)
                 return HuggingFaceInMemoryModelClient(
                     generation_model,
@@ -312,6 +373,55 @@ class AgentGRPOTrainer:
                     top_p=float(rollout["top_p"]) if rollout.get("top_p") is not None else None,
                     top_k=int(rollout["top_k"]) if rollout.get("top_k") is not None else None,
                 )
+
+            def _sync_lora_to_vllm_if_needed(self, model_for_step: Any) -> None:
+                if self.rollout_backend != "vllm":
+                    return
+                if not bool(self.vllm_config.get("sync_lora", True)):
+                    self.vllm_current_model_name = str(self.vllm_config.get("model", self.vllm_lora_name))
+                    return
+
+                sync_every = int(self.vllm_config.get("sync_every_rollout_steps", 1))
+                if not _should_sync_lora_adapter(
+                    rollout_step=self.rollout_step,
+                    sync_every=sync_every,
+                    adapter_loaded=self.vllm_adapter_loaded,
+                ):
+                    return
+
+                exported_path_value = None
+                if self.context.is_main_process:
+                    export_root = Path(
+                        self.vllm_config.get(
+                            "lora_tmp_dir",
+                            f"/dev/shm/{os.environ.get('USER', 'user')}/sql_agent_training/vllm_lora",
+                        )
+                    )
+                    export_path = export_root / f"step_{self.rollout_step:06d}"
+                    model_to_export = self._unwrap_for_generation(model_for_step)
+                    _save_lora_adapter_for_rollout(model_to_export, export_path)
+                    client = VllmOpenAIModelClient(
+                        base_url=str(self.vllm_config.get("base_url", "http://127.0.0.1:8000/v1")),
+                        model_name=self.vllm_lora_name,
+                        tokenizer=self.hf_tokenizer,
+                        api_key=str(self.vllm_config.get("api_key") or os.environ.get("VLLM_API_KEY") or "") or None,
+                        timeout_seconds=float(self.vllm_config.get("timeout_seconds", 300.0)),
+                    )
+                    client.load_lora_adapter(
+                        lora_name=self.vllm_lora_name,
+                        lora_path=export_path,
+                        load_inplace=bool(self.vllm_config.get("load_inplace", True)),
+                    )
+                    _cleanup_old_lora_exports(
+                        export_root,
+                        keep_last=int(self.vllm_config.get("keep_last_adapters", 3)),
+                    )
+                    exported_path_value = str(export_path)
+
+                broadcast_object(exported_path_value, self.context)
+                barrier(self.context)
+                self.vllm_current_model_name = self.vllm_lora_name
+                self.vllm_adapter_loaded = True
 
             def _sample_examples_for_rollout_step(self) -> tuple[list[SpiderExample], list[SpiderExample]]:
                 seed = int(self.grpo_config.get("training", {}).get("seed", 0))
@@ -328,6 +438,7 @@ class AgentGRPOTrainer:
 
             def _prepare_next_rollout_batch(self, model_for_step: Any) -> None:
                 self.rollout_step += 1
+                self._sync_lora_to_vllm_if_needed(model_for_step)
                 global_examples, local_examples = self._sample_examples_for_rollout_step()
                 batch = build_rollout_batch_from_config(
                     self.grpo_config,
@@ -448,7 +559,9 @@ class AgentGRPOTrainer:
 
                         with torch.no_grad():
                             response_ratios = ratio[response_mask.bool()]
-                            metric_sums["policy_loss"] += float((policy_loss_tokens * response_mask).sum().detach().cpu())
+                            metric_sums["policy_loss"] += float(
+                                (policy_loss_tokens * response_mask).sum().detach().cpu()
+                            )
                             metric_sums["kl"] += float((kl_tokens * response_mask).sum().detach().cpu())
                             clip_mask = ((ratio - 1.0).abs() > self.loss_config.clip_epsilon).float()
                             metric_sums["clip_fraction"] += float((clip_mask * response_mask).sum().detach().cpu())
