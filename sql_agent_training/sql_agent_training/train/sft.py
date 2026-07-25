@@ -94,6 +94,20 @@ def _build_tokenized_eval_dataset(config: dict, tokenizer) -> SftTorchDataset:
     return SftTorchDataset(tokenized)
 
 
+def _build_train_metric_dataset(config: dict, dataset: SftTorchDataset) -> SftTorchDataset:
+    """Build a fixed train subset used only for periodic token-accuracy monitoring."""
+
+    eval_config = config.get("eval", {})
+    sample_size = eval_config.get("train_sample_size", eval_config.get("sample_size"))
+    records = select_eval_examples(
+        list(dataset.records),
+        sample_size=sample_size,
+        sample_seed=int(eval_config.get("sample_seed", 0)),
+    )
+    print(f"Selected {len(records)} train SFT records for periodic metrics")
+    return SftTorchDataset(records)
+
+
 def _new_checkpoint_dir(base_dir: str | Path) -> Path:
     """Create a new timestamped SFT checkpoint directory path."""
 
@@ -324,7 +338,14 @@ def _run_transformers_training(
     if gradient_checkpointing and hasattr(model, "enable_input_require_grads"):
         model.enable_input_require_grads()
     collator = SftDataCollator(pad_token_id=tokenizer.pad_token_id)
-    eval_dataset = _build_tokenized_eval_dataset(config, tokenizer) if eval_strategy != "no" else None
+    eval_dataset = (
+        {
+            "train": _build_train_metric_dataset(config, dataset),
+            "validation": _build_tokenized_eval_dataset(config, tokenizer),
+        }
+        if eval_strategy != "no"
+        else None
+    )
     trainer = Trainer(
         model=model,
         args=args,

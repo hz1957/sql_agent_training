@@ -14,7 +14,8 @@ output:
   checkpoint_dir: artifacts/checkpoints/sft_qwen25_coder_14b_lora_l40s_zero3
 
 eval:
-  sample_size: 500
+  sample_size: 100
+  train_sample_size: 100
   sample_seed: 0
 
 training:
@@ -29,7 +30,7 @@ training:
   weight_decay: 0.0
   logging_steps: 10
   eval_strategy: steps
-  eval_steps: 100
+  eval_steps: 200
   per_device_eval_batch_size: 1
   eval_accumulation_steps: 1
   save_strategy: steps

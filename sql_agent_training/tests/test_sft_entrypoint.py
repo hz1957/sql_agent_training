@@ -7,6 +7,7 @@ import numpy as np
 import yaml
 
 from sql_agent_training.train.sft import (
+    _build_train_metric_dataset,
     _compute_token_accuracy,
     _deepspeed_config,
     _eval_strategy,
@@ -16,7 +17,7 @@ from sql_agent_training.train.sft import (
     _optional_positive_int,
     _trainer_output_dir,
 )
-from sql_agent_training.train.sft_dataset import IGNORE_INDEX
+from sql_agent_training.train.sft_dataset import IGNORE_INDEX, SftTorchDataset, TokenizedSftRecord
 
 
 def test_sft_dry_run_writes_jsonl(tmp_path: Path) -> None:
@@ -172,6 +173,25 @@ def test_compute_token_accuracy_uses_next_token_shift_and_ignores_prompt_labels(
     metrics = _compute_token_accuracy((predictions, labels))
 
     assert metrics["token_accuracy"] == 0.5
+
+
+def test_build_train_metric_dataset_uses_configured_sample_size() -> None:
+    dataset = SftTorchDataset(
+        [
+            TokenizedSftRecord(
+                uid=str(index),
+                db_id="music",
+                input_ids=[1, 2, index],
+                attention_mask=[1, 1, 1],
+                labels=[IGNORE_INDEX, 2, index],
+            )
+            for index in range(5)
+        ]
+    )
+
+    metric_dataset = _build_train_metric_dataset({"eval": {"train_sample_size": 2, "sample_seed": 0}}, dataset)
+
+    assert len(metric_dataset) == 2
 
 
 def test_lora_config_kwargs_uses_qwen_defaults() -> None:
