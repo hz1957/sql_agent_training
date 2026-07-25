@@ -18,6 +18,7 @@ from sql_agent_training.train.grpo_train import (
     create_tiny_causal_lm,
     train_grpo_from_config,
 )
+from sql_agent_training.train.grpo_trainer import train_grpo_with_hf_trainer_from_config
 
 
 def _trajectory(uid: str, rollout: int, response_ids: list[int], reward: float) -> TokenizedTrajectory:
@@ -219,3 +220,50 @@ def test_train_grpo_from_config_runs_update_epochs(tmp_path: Path) -> None:
     assert [row["update_epoch"] for row in rows] == [1, 2]
     assert rows[0]["ratio_mean"] == pytest.approx(1.0)
     assert rows[1]["policy_approx_kl"] > 0.0
+
+
+def test_train_grpo_with_hf_trainer_runs_update_epochs(tmp_path: Path) -> None:
+    checkpoint_root = tmp_path / "checkpoint"
+
+    summary = train_grpo_with_hf_trainer_from_config(
+        {
+            "dry_run": True,
+            "model": {"backend": "tiny", "hidden_size": 8},
+            "tokenizer": {"kind": "whitespace"},
+            "rollout": {
+                "n": 2,
+                "max_turns": 1,
+                "scripted_responses": ["SELECT COUNT(*) FROM Singer", "SELECT Name FROM Singer"],
+            },
+            "training": {
+                "seed": 0,
+                "device": "cpu",
+                "max_steps": 1,
+                "update_epochs": 2,
+                "learning_rate": 0.01,
+                "kl_beta": 0.0,
+                "save_strategy": "no",
+                "logging_steps": 1,
+                "report_to": "none",
+            },
+            "output": {
+                "checkpoint_dir": str(checkpoint_root),
+            },
+        }
+    )
+
+    checkpoint_dir = Path(summary["checkpoint_dir"])
+    metrics_jsonl = Path(summary["metrics_jsonl"])
+    rollouts_jsonl = Path(summary["rollouts_jsonl"])
+    rows = [json.loads(line) for line in metrics_jsonl.read_text(encoding="utf-8").splitlines()]
+    assert summary["steps"] == 1
+    assert summary["update_epochs"] == 2
+    assert summary["optimizer_steps"] == 2
+    assert summary["trajectories"] == 2
+    assert summary["rows_written"] == 2
+    assert [row["update_epoch"] for row in rows] == [1, 2]
+    assert rows[0]["ratio_mean"] == pytest.approx(1.0)
+    assert rows[1]["policy_approx_kl"] > 0.0
+    assert checkpoint_dir.parent == checkpoint_root
+    assert (checkpoint_dir / "tiny_policy.pt").exists()
+    assert len(rollouts_jsonl.read_text(encoding="utf-8").splitlines()) == 2
