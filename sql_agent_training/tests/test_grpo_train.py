@@ -19,6 +19,8 @@ from sql_agent_training.train.grpo_train import (
     train_grpo_from_config,
 )
 from sql_agent_training.train.grpo_trainer import (
+    _distributed_max_int,
+    _local_microbatch_count,
     _microbatch_sync_context,
     _should_sync_lora_adapter,
     train_grpo_with_hf_trainer_from_config,
@@ -193,6 +195,20 @@ def test_microbatch_sync_context_uses_no_sync_for_non_deepspeed_middle_microbatc
         pass
 
     assert calls == ["no_sync"]
+
+
+def test_local_microbatch_count_rounds_up_and_handles_empty() -> None:
+    assert _local_microbatch_count(batch_size=0, micro_batch_size=2) == 0
+    assert _local_microbatch_count(batch_size=1, micro_batch_size=2) == 1
+    assert _local_microbatch_count(batch_size=4, micro_batch_size=2) == 2
+    assert _local_microbatch_count(batch_size=5, micro_batch_size=2) == 3
+
+
+def test_distributed_max_int_returns_local_value_when_not_distributed() -> None:
+    class FakeContext:
+        is_distributed = False
+
+    assert _distributed_max_int(3, FakeContext()) == 3
 
 
 def test_train_grpo_from_config_runs_tiny_checkpoint(tmp_path: Path) -> None:

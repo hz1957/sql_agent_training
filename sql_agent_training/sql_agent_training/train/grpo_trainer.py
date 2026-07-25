@@ -147,6 +147,26 @@ def _microbatch_sync_context(model: Any, accelerator: Any, *, micro_index: int, 
     return no_sync() if callable(no_sync) else nullcontext()
 
 
+def _local_microbatch_count(*, batch_size: int, micro_batch_size: int) -> int:
+    if batch_size <= 0:
+        return 0
+    if micro_batch_size <= 0:
+        return 1
+    return (batch_size + micro_batch_size - 1) // micro_batch_size
+
+
+def _distributed_max_int(value: int, context: DistributedContext) -> int:
+    if not context.is_distributed:
+        return value
+    import torch
+    import torch.distributed as dist
+
+    device = context.device if context.device.startswith("cuda") else "cpu"
+    tensor = torch.tensor(value, dtype=torch.int64, device=device)
+    dist.all_reduce(tensor, op=dist.ReduceOp.MAX)
+    return int(tensor.item())
+
+
 def _resolve_latest_run(root: str | Path) -> Path:
     candidates = [path for path in Path(root).iterdir() if path.is_dir()]
     if not candidates:
@@ -519,7 +539,13 @@ class AgentGRPOTrainer:
                 total_tokens = batch.response_mask.sum().clamp_min(1.0)
                 batch_size = int(batch.input_ids.shape[0])
                 micro_batch_size = self.logprob_micro_batch_size
-                starts = list(range(0, batch_size, micro_batch_size if micro_batch_size > 0 else batch_size))
+                if batch_size <= 0:
+                    raise ValueError("GRPO prepared batch is empty on this rank")
+                local_microbatch_count = _local_microbatch_count(
+                    batch_size=batch_size,
+                    micro_batch_size=micro_batch_size,
+                )
+                microbatch_count = _distributed_max_int(local_microbatch_count, self.context)
                 metric_sums = {
                     "policy_loss": 0.0,
                     "kl": 0.0,
@@ -532,24 +558,36 @@ class AgentGRPOTrainer:
                 trainable_tokens = int(batch.response_mask.sum().detach().cpu().item())
                 detached_loss = torch.zeros((), dtype=torch.float32, device=self.args.device)
 
-                for micro_index, start in enumerate(starts):
+                for micro_index in range(microbatch_count):
+                    start = micro_index * micro_batch_size if micro_batch_size > 0 else 0
                     stop = start + (micro_batch_size if micro_batch_size > 0 else batch_size)
+                    has_local_microbatch = start < batch_size
                     sync_context = _microbatch_sync_context(
                         model_for_step,
                         getattr(self, "accelerator", None),
                         micro_index=micro_index,
-                        microbatch_count=len(starts),
+                        microbatch_count=microbatch_count,
                     )
                     with sync_context:
                         with self.compute_loss_context_manager():
+                            if has_local_microbatch:
+                                input_ids = batch.input_ids[start:stop]
+                                attention_mask = batch.attention_mask[start:stop]
+                                old_logprobs = batch.old_logprobs[start:stop]
+                                response_mask = batch.response_mask[start:stop]
+                                token_advantages = batch.advantages[start:stop].unsqueeze(-1)
+                            else:
+                                input_ids = batch.input_ids[:1]
+                                attention_mask = batch.attention_mask[:1]
+                                old_logprobs = batch.old_logprobs[:1]
+                                response_mask = torch.zeros_like(batch.response_mask[:1])
+                                token_advantages = torch.zeros_like(batch.advantages[:1]).unsqueeze(-1)
+
                             new_logprobs = _sequence_logprobs(
                                 model_for_step,
-                                batch.input_ids[start:stop],
-                                batch.attention_mask[start:stop],
+                                input_ids,
+                                attention_mask,
                             )
-                            old_logprobs = batch.old_logprobs[start:stop]
-                            response_mask = batch.response_mask[start:stop]
-                            token_advantages = batch.advantages[start:stop].unsqueeze(-1)
                             log_ratio = new_logprobs - old_logprobs
                             ratio = torch.exp(log_ratio)
                             unclipped = ratio * token_advantages
