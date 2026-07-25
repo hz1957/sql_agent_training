@@ -18,7 +18,11 @@ from sql_agent_training.train.grpo_train import (
     create_tiny_causal_lm,
     train_grpo_from_config,
 )
-from sql_agent_training.train.grpo_trainer import _should_sync_lora_adapter, train_grpo_with_hf_trainer_from_config
+from sql_agent_training.train.grpo_trainer import (
+    _microbatch_sync_context,
+    _should_sync_lora_adapter,
+    train_grpo_with_hf_trainer_from_config,
+)
 
 
 def _trajectory(uid: str, rollout: int, response_ids: list[int], reward: float) -> TokenizedTrajectory:
@@ -155,6 +159,40 @@ def test_should_sync_lora_adapter_syncs_initial_rollout_before_interval() -> Non
 def test_should_sync_lora_adapter_rejects_invalid_interval() -> None:
     with pytest.raises(ValueError, match="sync_every_rollout_steps"):
         _should_sync_lora_adapter(rollout_step=1, sync_every=0, adapter_loaded=False)
+
+
+def test_microbatch_sync_context_skips_no_sync_for_deepspeed() -> None:
+    calls = []
+
+    class FakeDistributedType:
+        name = "DEEPSPEED"
+
+    class FakeAccelerator:
+        distributed_type = FakeDistributedType()
+
+    class FakeModel:
+        def no_sync(self):
+            calls.append("no_sync")
+            return torch.no_grad()
+
+    with _microbatch_sync_context(FakeModel(), FakeAccelerator(), micro_index=0, microbatch_count=2):
+        pass
+
+    assert calls == []
+
+
+def test_microbatch_sync_context_uses_no_sync_for_non_deepspeed_middle_microbatch() -> None:
+    calls = []
+
+    class FakeModel:
+        def no_sync(self):
+            calls.append("no_sync")
+            return torch.no_grad()
+
+    with _microbatch_sync_context(FakeModel(), object(), micro_index=0, microbatch_count=2):
+        pass
+
+    assert calls == ["no_sync"]
 
 
 def test_train_grpo_from_config_runs_tiny_checkpoint(tmp_path: Path) -> None:

@@ -135,6 +135,18 @@ def _should_sync_lora_adapter(*, rollout_step: int, sync_every: int, adapter_loa
     return not adapter_loaded or rollout_step % sync_every == 0
 
 
+def _is_deepspeed_accelerator(accelerator: Any) -> bool:
+    distributed_type = getattr(accelerator, "distributed_type", None)
+    return getattr(distributed_type, "name", "") == "DEEPSPEED"
+
+
+def _microbatch_sync_context(model: Any, accelerator: Any, *, micro_index: int, microbatch_count: int) -> Any:
+    if micro_index == microbatch_count - 1 or _is_deepspeed_accelerator(accelerator):
+        return nullcontext()
+    no_sync = getattr(model, "no_sync", None)
+    return no_sync() if callable(no_sync) else nullcontext()
+
+
 def _resolve_latest_run(root: str | Path) -> Path:
     candidates = [path for path in Path(root).iterdir() if path.is_dir()]
     if not candidates:
@@ -493,8 +505,7 @@ class AgentGRPOTrainer:
 
             def _accelerator_backward(self, loss: Any) -> None:
                 kwargs: dict[str, Any] = {}
-                distributed_type = getattr(getattr(self, "accelerator", None), "distributed_type", None)
-                if getattr(distributed_type, "name", "") == "DEEPSPEED":
+                if _is_deepspeed_accelerator(getattr(self, "accelerator", None)):
                     kwargs["scale_wrt_gas"] = False
                 self.accelerator.backward(loss, **kwargs)
 
@@ -523,10 +534,11 @@ class AgentGRPOTrainer:
 
                 for micro_index, start in enumerate(starts):
                     stop = start + (micro_batch_size if micro_batch_size > 0 else batch_size)
-                    sync_context = (
-                        nullcontext()
-                        if micro_index == len(starts) - 1 or not hasattr(model_for_step, "no_sync")
-                        else model_for_step.no_sync()
+                    sync_context = _microbatch_sync_context(
+                        model_for_step,
+                        getattr(self, "accelerator", None),
+                        micro_index=micro_index,
+                        microbatch_count=len(starts),
                     )
                     with sync_context:
                         with self.compute_loss_context_manager():
