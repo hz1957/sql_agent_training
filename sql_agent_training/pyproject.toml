@@ -25,7 +25,6 @@ train = [
   "torch>=2.5.1,<2.6",
   "transformers>=4.45,<5",
   "accelerate",
-  "deepspeed>=0.16,<0.17",
   "peft>=0.17,<0.19",
   "protobuf",
 ]

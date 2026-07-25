@@ -2084,7 +2084,6 @@ sft = [
 ]
 train = [
     { name = "accelerate" },
-    { name = "deepspeed" },
     { name = "peft" },
     { name = "protobuf" },
     { name = "torch" },
@@ -2102,7 +2101,6 @@ requires-dist = [
     { name = "accelerate", marker = "extra == 'train'" },
     { name = "datasets", specifier = ">=2.18" },
     { name = "deepspeed", marker = "extra == 'sft'", specifier = ">=0.16,<0.17" },
-    { name = "deepspeed", marker = "extra == 'train'", specifier = ">=0.16,<0.17" },
     { name = "huggingface-hub", specifier = ">=0.24" },
     { name = "peft", marker = "extra == 'sft'", specifier = ">=0.17,<0.19" },
     { name = "peft", marker = "extra == 'train'", specifier = ">=0.17,<0.19" },
