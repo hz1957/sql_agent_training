@@ -1,22 +1,25 @@
-"""Ray-based asynchronous GRPO pipeline for two-GPU training.
+"""Ray-based asynchronous GRPO pipeline with separately placed worker modules.
 
 Architecture
 ------------
-- `ActorWorker` (GPU 0): vLLM inference + reference model forward pass.
-  Runs rollouts, scores them with execution reward, computes reference
-  log-probabilities, and returns a `GrpoBatch` paired with ``ref_logprobs``.
-- `LearnerWorker` (GPU 1): policy HF model training only.
+- `RolloutActor`: vLLM inference plus SQLite-backed SQL-agent rollout/reward.
+- `ReferenceLogprobWorker`: frozen reference model forward pass.
+- `LearnerWorker`: policy HF model training only.
   Receives the batch and pre-computed reference log-probs, computes old
   log-probabilities, runs GRPO gradient updates, and returns updated LoRA
   weights plus step metrics.
-- `train_grpo_ray` (CPU driver): coordinates the two workers in strict
-  on-policy order—each rollout uses the latest weights before training begins.
+- `train_grpo_ray` (CPU driver): coordinates the three workers in strict
+  on-policy order; each rollout uses the latest weights before training begins.
+
+The three modules are independent in code. Deployment decides whether rollout
+and reference share one physical GPU (2-GPU runs) or use separate GPUs
+(3-GPU runs).
 
 Per-step timeline (on-policy, rollout is the bottleneck)::
 
-    GPU 0: [vLLM rollout ~40s] → [ref_logprobs ~8s] → wait → [vLLM reload LoRA ~2s]
-                                         ↓ GrpoBatch + ref_logprobs (Ray Object Store)
-    GPU 1:                          [old_logprobs ~5s + GRPO update ~10s] → LoRA weights ↑
+    RolloutActor:      [vLLM rollout] -> GrpoBatch -----------------------> reload LoRA
+    ReferenceWorker:                  [reference logprobs] ---------------->
+    LearnerWorker:                                        [GRPO update] -> LoRA weights
 
 Usage::
 
@@ -26,9 +29,9 @@ Usage::
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
 import logging
+import os
 import random
 import subprocess
 import time
@@ -86,36 +89,59 @@ def _require_torch() -> Any:
     return torch
 
 
+def _normalize_cuda_device(requested_device: str) -> str:
+    """Map legacy physical cuda:N config to cuda:0 inside single-GPU Ray actors."""
+
+    if not requested_device.startswith("cuda:"):
+        return requested_device
+    visible_devices = [item for item in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") if item]
+    if len(visible_devices) == 1:
+        return "cuda:0"
+    return requested_device
+
+
 # ---------------------------------------------------------------------------
-# ActorWorker
+# RolloutActor
 # ---------------------------------------------------------------------------
 
 
-def _make_ray_actor(num_gpus: int) -> Any:
-    """Return a Ray remote decorator accepting `num_gpus`."""
-    ray = _require_ray()
-    return ray.remote(num_gpus=num_gpus)
+def _role_num_gpus(config: dict[str, Any], role: str) -> float:
+    """Return Ray GPU resource demand for one worker role."""
+
+    ray_cfg = config.get("ray", {})
+    colocate_reference = bool(ray_cfg.get("reference_colocate_with_rollout", True))
+    defaults = {
+        "rollout": 0.5 if colocate_reference else 1.0,
+        "reference": 0.5 if colocate_reference else 1.0,
+        "learner": 1.0,
+    }
+    if role not in defaults:
+        raise ValueError(f"unknown Ray GRPO role: {role}")
+    value = ray_cfg.get(f"{role}_num_gpus", defaults[role])
+    num_gpus = float(value)
+    if num_gpus < 0:
+        raise ValueError(f"ray.{role}_num_gpus must be non-negative")
+    return num_gpus
 
 
-class ActorWorker:
-    """Runs rollouts and reference forward passes on GPU 0.
+class RolloutActor:
+    """Runs SQL-agent rollouts through vLLM.
 
     Initialised once per training run by the coordinator.  Internally it:
 
     1. Starts a vLLM server subprocess on the assigned GPU.
-    2. Loads a frozen reference HF model on the same device for
-       reference log-probability computation.
-    3. Exposes `rollout_with_ref` and `reload_lora` for the coordinator.
+    2. Builds scored SQL-agent trajectories.
+    3. Exposes `rollout` and `reload_lora` for the coordinator.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoTokenizer
 
         self._config = config
         model_cfg = config.get("model", {})
         ray_cfg = config.get("ray", {})
-        self._device = str(ray_cfg.get("actor_device", "cuda:0"))
+        self._device = _normalize_cuda_device(str(ray_cfg.get("rollout_device", ray_cfg.get("actor_device", "cuda:0"))))
         self._vllm_port = int(ray_cfg.get("vllm_port", 8100))
         self._vllm_model_name = str(model_cfg.get("path", ""))
         self._adapter_path: str | None = str(model_cfg["adapter_path"]) if model_cfg.get("adapter_path") else None
@@ -130,13 +156,20 @@ class ActorWorker:
 
         rollout_cfg = config.get("rollout", {})
         self._max_new_tokens = int(rollout_cfg.get("max_response_length", 2048))
+        self._max_model_len = int(
+            rollout_cfg.get("max_model_len", int(rollout_cfg.get("max_prompt_length", 4096)) + self._max_new_tokens)
+        )
         self._temperature = float(rollout_cfg.get("temperature", 0.8))
         self._top_p: float | None = float(rollout_cfg["top_p"]) if rollout_cfg.get("top_p") is not None else None
+        colocate_reference = bool(ray_cfg.get("reference_colocate_with_rollout", True))
+        self._vllm_gpu_memory_utilization = float(
+            ray_cfg.get("vllm_gpu_memory_utilization", 0.45 if colocate_reference else 0.85)
+        )
 
         tokenizer_path = (
             model_cfg.get("tokenizer_path") or config.get("tokenizer", {}).get("path") or self._vllm_model_name
         )
-        logger.info("ActorWorker: loading tokenizer from %s", tokenizer_path)
+        logger.info("RolloutActor: loading tokenizer from %s", tokenizer_path)
         self._tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=True)
         if self._tokenizer.pad_token_id is None and self._tokenizer.eos_token_id is not None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
@@ -145,41 +178,11 @@ class ActorWorker:
         self._vllm_proc: subprocess.Popen[str] | None = None
         self._start_vllm()
 
-        # Load reference model (frozen) on same GPU
-        reference_8bit = bool(model_cfg.get("reference_load_in_8bit", False))
-        reference_4bit = bool(model_cfg.get("reference_load_in_4bit", False))
-        ref_path = str(model_cfg.get("reference_path") or self._vllm_model_name)
-        ref_adapter = str(model_cfg.get("reference_adapter_path") or self._adapter_path or "")
-        logger.info("ActorWorker: loading reference model from %s", ref_path)
-        load_kwargs: dict[str, Any] = {"trust_remote_code": True}
-        if reference_8bit:
-            load_kwargs["load_in_8bit"] = True
-        elif reference_4bit:
-            load_kwargs["load_in_4bit"] = True
-        elif self._torch_dtype is not None:
-            load_kwargs["torch_dtype"] = self._torch_dtype
-
-        ref_base = AutoModelForCausalLM.from_pretrained(ref_path, **load_kwargs)
-        if ref_adapter:
-            try:
-                from peft import PeftModel
-
-                ref_base = PeftModel.from_pretrained(ref_base, ref_adapter, is_trainable=False)
-            except ImportError as exc:
-                raise RuntimeError("Install peft to load LoRA adapter on reference model.") from exc
-        if not reference_8bit and not reference_4bit:
-            ref_base = ref_base.to(self._device)
-        self._reference_model = ref_base
-        self._reference_model.eval()
-        for param in self._reference_model.parameters():
-            param.requires_grad_(False)
-        logger.info("ActorWorker: reference model loaded and frozen")
-
         # Build rollout source
         from sql_agent_training.train.grpo_rollouts import load_rollout_source_from_config
 
         self._source = load_rollout_source_from_config(config)
-        logger.info("ActorWorker: rollout source loaded (%d examples)", len(self._source.examples))
+        logger.info("RolloutActor: rollout source loaded (%d examples)", len(self._source.examples))
 
     # ------------------------------------------------------------------
     # vLLM lifecycle
@@ -203,15 +206,15 @@ class ActorWorker:
             "--dtype",
             "bfloat16" if self._torch_dtype == torch.bfloat16 else "float16",
             "--gpu-memory-utilization",
-            "0.45",  # leave room for reference model
+            str(self._vllm_gpu_memory_utilization),
             "--max-model-len",
-            str(int(self._max_new_tokens) + 8192),
+            str(self._max_model_len),
             "--trust-remote-code",
             "--enable-lora",
         ]
         if self._adapter_path:
             cmd += ["--lora-modules", f"policy={self._adapter_path}"]
-        logger.info("ActorWorker: starting vLLM: %s", " ".join(cmd))
+        logger.info("RolloutActor: starting vLLM: %s", " ".join(cmd))
         self._vllm_proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -227,11 +230,11 @@ class ActorWorker:
 
         health_url = f"http://127.0.0.1:{self._vllm_port}/health"
         deadline = time.time() + timeout
-        logger.info("ActorWorker: waiting for vLLM to be ready at %s", health_url)
+        logger.info("RolloutActor: waiting for vLLM to be ready at %s", health_url)
         while time.time() < deadline:
             try:
                 with urllib.request.urlopen(health_url, timeout=2.0):
-                    logger.info("ActorWorker: vLLM is ready")
+                    logger.info("RolloutActor: vLLM is ready")
                     return
             except (urllib.error.URLError, OSError):
                 time.sleep(poll_interval)
@@ -254,14 +257,14 @@ class ActorWorker:
     # Public remote methods
     # ------------------------------------------------------------------
 
-    def rollout_with_ref(
+    def rollout(
         self,
         step_examples: list[Any],
         *,
         rollout_jsonl_path: str | None = None,
         include_text: bool = True,
-    ) -> tuple[Any, dict[str, list[float]]]:
-        """Run rollouts then compute reference log-probs.
+    ) -> Any:
+        """Run vLLM rollouts and return a scored GRPO batch.
 
         Args:
             step_examples: `SpiderExample` list for this training step.
@@ -269,14 +272,11 @@ class ActorWorker:
             include_text: Whether to include prompt/response text in JSONL.
 
         Returns:
-            Tuple of `(GrpoBatch, ref_logprobs)` where `ref_logprobs` maps
-            each `rollout_id` to a list of per-token log-probabilities.
+            `GrpoBatch` containing scored tokenized trajectories.
         """
-        import torch
         from sql_agent_training.train.grpo_rollouts import (
             RolloutJsonlWriter,
             _build_batch_from_examples,
-            _load_text_tokenizer,
         )
         from sql_agent_training.agent.tokenization import ExistingHuggingFaceTokenizer
 
@@ -303,9 +303,7 @@ class ActorWorker:
             if writer is not None:
                 writer.__exit__(None, None, None)
 
-        # Compute reference log-probs using the frozen reference HF model
-        ref_logprobs = self._compute_ref_logprobs(batch)
-        return batch, ref_logprobs
+        return batch
 
     def reload_lora(self, lora_state_dict: dict[str, Any], *, lora_name: str = "policy") -> None:
         """Hot-reload updated LoRA weights into the vLLM server.
@@ -315,7 +313,6 @@ class ActorWorker:
             lora_name: The named LoRA slot registered in vLLM.
         """
         from sql_agent_training.agent.model_client import VllmOpenAIModelClient
-        from peft import get_peft_model_state_dict
         import torch
 
         # Write state dict to a temporary directory vLLM can read from
@@ -338,13 +335,13 @@ class ActorWorker:
                 model_name=self._vllm_model_name,
             )
             client.load_lora_adapter(lora_name=lora_name, lora_path=str(adapter_dir))
-            logger.info("ActorWorker: vLLM LoRA weights reloaded from tmp dir")
+            logger.info("RolloutActor: vLLM LoRA weights reloaded from tmp dir")
 
     def close(self) -> None:
         """Terminate the vLLM subprocess and release resources."""
         self._source.close()
         if self._vllm_proc is not None:
-            logger.info("ActorWorker: terminating vLLM subprocess")
+            logger.info("RolloutActor: terminating vLLM subprocess")
             self._vllm_proc.terminate()
             try:
                 self._vllm_proc.wait(timeout=15)
@@ -352,20 +349,68 @@ class ActorWorker:
                 self._vllm_proc.kill()
             self._vllm_proc = None
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
-    def _compute_ref_logprobs(self, batch: Any) -> dict[str, list[float]]:
-        """Compute per-token reference log-probabilities for all trajectories.
+# ---------------------------------------------------------------------------
+# ReferenceLogprobWorker
+# ---------------------------------------------------------------------------
 
-        Args:
-            batch: `GrpoBatch` produced by the rollout step.
 
-        Returns:
-            Mapping from `rollout_id` to a flat list of per-token log-probs
-            aligned to the shifted-label positions used by `GrpoTrainer`.
-        """
+class ReferenceLogprobWorker:
+    """Runs frozen reference-model log-probability computation."""
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        import torch
+        from transformers import AutoModelForCausalLM
+
+        self._config = config
+        model_cfg = config.get("model", {})
+        ray_cfg = config.get("ray", {})
+        self._device = _normalize_cuda_device(
+            str(ray_cfg.get("reference_device", ray_cfg.get("actor_device", "cuda:0")))
+        )
+
+        torch_dtype_str = str(model_cfg.get("torch_dtype", "bf16")).lower()
+        if torch_dtype_str in {"bf16", "bfloat16"}:
+            torch_dtype: Any = torch.bfloat16
+        elif torch_dtype_str in {"fp16", "float16", "half"}:
+            torch_dtype = torch.float16
+        else:
+            torch_dtype = None
+
+        reference_8bit = bool(model_cfg.get("reference_load_in_8bit", False))
+        reference_4bit = bool(model_cfg.get("reference_load_in_4bit", False))
+        model_path = str(model_cfg["path"])
+        ref_path = str(model_cfg.get("reference_path") or model_path)
+        adapter_path = str(model_cfg["adapter_path"]) if model_cfg.get("adapter_path") else ""
+        ref_adapter = str(model_cfg.get("reference_adapter_path") or adapter_path)
+        logger.info("ReferenceLogprobWorker: loading reference model from %s", ref_path)
+
+        load_kwargs: dict[str, Any] = {"trust_remote_code": True}
+        if reference_8bit:
+            load_kwargs["load_in_8bit"] = True
+        elif reference_4bit:
+            load_kwargs["load_in_4bit"] = True
+        elif torch_dtype is not None:
+            load_kwargs["torch_dtype"] = torch_dtype
+
+        ref_base = AutoModelForCausalLM.from_pretrained(ref_path, **load_kwargs)
+        if ref_adapter:
+            try:
+                from peft import PeftModel
+
+                ref_base = PeftModel.from_pretrained(ref_base, ref_adapter, is_trainable=False)
+            except ImportError as exc:
+                raise RuntimeError("Install peft to load LoRA adapter on reference model.") from exc
+        if not reference_8bit and not reference_4bit:
+            ref_base = ref_base.to(self._device)
+        self._reference_model = ref_base
+        self._reference_model.eval()
+        for param in self._reference_model.parameters():
+            param.requires_grad_(False)
+        logger.info("ReferenceLogprobWorker: initialised on device %s", self._device)
+
+    def compute_ref_logprobs(self, batch: Any) -> dict[str, list[float]]:
+        """Compute per-token reference log-probabilities for all trajectories."""
         import torch
 
         ref_logprobs: dict[str, list[float]] = {}
@@ -385,6 +430,17 @@ class ActorWorker:
 
         return ref_logprobs
 
+    def close(self) -> None:
+        """Release GPU cache held by the reference worker."""
+        try:
+            import torch
+
+            del self._reference_model
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            logger.debug("ReferenceLogprobWorker: close cleanup skipped", exc_info=True)
+
 
 # ---------------------------------------------------------------------------
 # LearnerWorker
@@ -392,11 +448,12 @@ class ActorWorker:
 
 
 class LearnerWorker:
-    """Runs GRPO gradient updates on GPU 1.
+    """Runs GRPO gradient updates on the learner GPU.
 
-    Receives `GrpoBatch` + `ref_logprobs` from the `ActorWorker`, computes
-    old log-probs from the current policy, performs clipped GRPO updates, and
-    returns the updated LoRA adapter state dict plus step metrics.
+    Receives `GrpoBatch` from `RolloutActor` plus `ref_logprobs` from
+    `ReferenceLogprobWorker`, computes old log-probs from the current policy,
+    performs clipped GRPO updates, and returns the updated LoRA adapter state
+    dict plus step metrics.
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
@@ -406,7 +463,7 @@ class LearnerWorker:
         self._config = config
         model_cfg = config.get("model", {})
         ray_cfg = config.get("ray", {})
-        self._device = str(ray_cfg.get("learner_device", "cuda:1"))
+        self._device = _normalize_cuda_device(str(ray_cfg.get("learner_device", "cuda:0")))
         self._update_epochs = int(config.get("training", {}).get("update_epochs", 1))
 
         torch_dtype_str = str(model_cfg.get("torch_dtype", "bf16")).lower()
@@ -462,7 +519,7 @@ class LearnerWorker:
         # Pass a dummy reference (unused: we receive ref_logprobs externally)
         self._trainer = GrpoTrainer(
             self._policy_model,
-            self._policy_model,  # placeholder; ref logprobs come from ActorWorker
+            self._policy_model,  # placeholder; ref logprobs come from ReferenceLogprobWorker
             optimizer,
             pad_token_id=self._pad_token_id,
             loss_config=loss_config,
@@ -480,7 +537,7 @@ class LearnerWorker:
         """Run one GRPO training step.
 
         Args:
-            grpo_batch: `GrpoBatch` from `ActorWorker.rollout_with_ref`.
+            grpo_batch: `GrpoBatch` from `RolloutActor.rollout`.
             ref_logprobs: Per-token reference log-probs keyed by `rollout_id`.
 
         Returns:
@@ -545,7 +602,7 @@ class LearnerWorker:
         assert last_metrics is not None
         lora_state_dict = self._extract_lora_state_dict()
         logger.info(
-            "LearnerWorker: step complete — loss=%.4f reward=%.4f optimizer_step=%d",
+            "LearnerWorker: step complete: loss=%.4f reward=%.4f optimizer_step=%d",
             last_metrics.loss,
             last_metrics.mean_reward,
             self._optimizer_steps,
@@ -566,13 +623,13 @@ class LearnerWorker:
     ) -> Any:
         """Reconstruct reference log-prob tensor aligned to shifted label positions.
 
-        The ActorWorker returns per-token logprobs over the full sequence
+        The ReferenceLogprobWorker returns per-token logprobs over the full sequence
         (shifted by one).  Here we slice out the positions corresponding to
         each trajectory's response tokens and pad to match `input_ids`.
 
         Args:
             batch: `GrpoBatch` with trajectory lengths.
-            ref_logprobs: Raw per-token logprobs from ActorWorker.
+            ref_logprobs: Raw per-token logprobs from ReferenceLogprobWorker.
             input_ids: Padded input tensor `(B, L)`.
             response_mask: Shifted response mask `(B, L-1)`.
 
@@ -687,8 +744,8 @@ def train_grpo_ray(config: dict[str, Any]) -> dict[str, Any]:
     """Launch the Ray GRPO pipeline and return summary metrics.
 
     This is the entry point called by `grpo_train.main()` when ``--ray`` is
-    passed.  It creates one `ActorWorker` (GPU 0) and one `LearnerWorker`
-    (GPU 1), then runs the training loop in strict on-policy order.
+    passed. It creates rollout, reference-logprob, and learner workers, then
+    runs the training loop in strict on-policy order.
 
     Args:
         config: Loaded YAML config dict (same schema as `train_grpo_from_config`
@@ -724,12 +781,19 @@ def train_grpo_ray(config: dict[str, Any]) -> dict[str, Any]:
         metrics_jsonl.unlink()
 
     # Build remote classes at runtime to avoid module-level ray.remote decoration
-    RemoteActorWorker = ray.remote(num_gpus=1)(ActorWorker)
-    RemoteLearnerWorker = ray.remote(num_gpus=1)(LearnerWorker)
+    RemoteRolloutActor = ray.remote(num_gpus=_role_num_gpus(config, "rollout"))(RolloutActor)
+    RemoteReferenceLogprobWorker = ray.remote(num_gpus=_role_num_gpus(config, "reference"))(ReferenceLogprobWorker)
+    RemoteLearnerWorker = ray.remote(num_gpus=_role_num_gpus(config, "learner"))(LearnerWorker)
 
-    actor: Any = RemoteActorWorker.remote(config)
+    rollout_actor: Any = RemoteRolloutActor.remote(config)
+    reference_worker: Any = RemoteReferenceLogprobWorker.remote(config)
     learner: Any = RemoteLearnerWorker.remote(config)
-    logger.info("Workers created — actor on GPU 0, learner on GPU 1")
+    logger.info(
+        "Worker resources: rollout=%s GPU, reference=%s GPU, learner=%s GPU",
+        _role_num_gpus(config, "rollout"),
+        _role_num_gpus(config, "reference"),
+        _role_num_gpus(config, "learner"),
+    )
 
     # Load example list from the source (driver side, no GPU needed)
     from sql_agent_training.train.grpo_rollouts import load_rollout_source_from_config
@@ -752,16 +816,16 @@ def train_grpo_ray(config: dict[str, Any]) -> dict[str, Any]:
             )
             logger.info("Step %d/%d: running rollout on %d examples", step, max_steps, len(step_examples))
 
-            # Step A: Actor rollout + reference log-probs (GPU 0)
-            rollout_ref = actor.rollout_with_ref.remote(
+            # Step A: RolloutActor generates trajectories.
+            rollout_ref = rollout_actor.rollout.remote(
                 step_examples,
                 rollout_jsonl_path=str(rollouts_jsonl),
                 include_text=include_text,
             )
-            grpo_batch, ref_logprobs = ray.get(rollout_ref)
+            grpo_batch = ray.get(rollout_ref)
 
             if not grpo_batch.groups:
-                logger.warning("Step %d: empty batch — skipping update", step)
+                logger.warning("Step %d: empty batch; skipping update", step)
                 metric_row: dict[str, Any] = {
                     "step": step,
                     "skipped_update": True,
@@ -771,7 +835,11 @@ def train_grpo_ray(config: dict[str, Any]) -> dict[str, Any]:
                 metrics_history.append(metric_row)
                 continue
 
-            # Step B: Learner old_logprobs + GRPO update (GPU 1)
+            # Step B: ReferenceLogprobWorker computes frozen reference log-probs.
+            logger.info("Step %d: computing reference logprobs", step)
+            ref_logprobs = ray.get(reference_worker.compute_ref_logprobs.remote(grpo_batch))
+
+            # Step C: Learner old_logprobs + GRPO update.
             logger.info("Step %d: starting Learner train_step", step)
             train_ref = learner.train_step.remote(grpo_batch, ref_logprobs)
             result: LearnerStepResult = ray.get(train_ref)
@@ -790,11 +858,11 @@ def train_grpo_ray(config: dict[str, Any]) -> dict[str, Any]:
             total_trajectories += grpo_batch.num_trajectories
             final_batch_stats = result.batch_stats
 
-            # Step C: push updated LoRA weights back to Actor / vLLM (GPU 0)
+            # Step D: push updated LoRA weights back to RolloutActor / vLLM.
             logger.info("Step %d: reloading LoRA weights in vLLM", step)
-            ray.get(actor.reload_lora.remote(result.lora_state_dict))
+            ray.get(rollout_actor.reload_lora.remote(result.lora_state_dict))
 
-            # Step D: optional checkpoint
+            # Step E: optional checkpoint.
             if save_every_steps > 0 and step % save_every_steps == 0 and step != max_steps:
                 _save_lora_checkpoint(
                     result.lora_state_dict,
@@ -804,7 +872,7 @@ def train_grpo_ray(config: dict[str, Any]) -> dict[str, Any]:
 
     finally:
         source.close()
-        ray.get(actor.close.remote())
+        ray.get([rollout_actor.close.remote(), reference_worker.close.remote()])
 
     # Save final checkpoint
     final_lora = result.lora_state_dict if metrics_history else {}  # type: ignore[possibly-undefined]

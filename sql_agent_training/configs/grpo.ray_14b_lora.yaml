@@ -1,10 +1,18 @@
 dry_run: false
 
 ray:
-  # GPU device for ActorWorker (vLLM + reference model)
-  actor_device: "cuda:0"
-  # GPU device for LearnerWorker (policy training)
-  learner_device: "cuda:1"
+  # 2-GPU placement: rollout/vLLM and reference share one physical GPU
+  # through Ray fractional GPU resources; learner uses the second GPU.
+  # For 3-GPU placement, set reference_colocate_with_rollout: false and
+  # rollout_num_gpus/reference_num_gpus/learner_num_gpus all to 1.
+  reference_colocate_with_rollout: true
+  rollout_num_gpus: 0.5
+  reference_num_gpus: 0.5
+  learner_num_gpus: 1
+  rollout_device: "cuda:0"
+  reference_device: "cuda:0"
+  learner_device: "cuda:0"
+  vllm_gpu_memory_utilization: 0.45
   # Local port for the vLLM OpenAI-compatible server
   vllm_port: 8100
 

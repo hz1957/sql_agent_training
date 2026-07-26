@@ -272,10 +272,10 @@ class GrpoTrainer:
     ) -> GrpoTrainingBatch:
         """Build padded tensors using pre-computed reference log-probs.
 
-        Used by the Ray pipeline where `ActorWorker` computes reference
-        log-probabilities on GPU 0 and transfers them to `LearnerWorker`
-        (GPU 1) via Ray Object Store, avoiding a second reference forward
-        pass on the Learner GPU.
+        Used by the Ray pipeline where `ReferenceLogprobWorker` computes
+        reference log-probabilities and transfers them to `LearnerWorker`
+        via Ray Object Store, avoiding a second reference forward pass on the
+        Learner GPU.
 
         Args:
             batch: `GrpoBatch` to prepare.
@@ -826,7 +826,7 @@ def main() -> None:
     parser.add_argument(
         "--ray",
         action="store_true",
-        help="Use the Ray async pipeline (ActorWorker on GPU 0, LearnerWorker on GPU 1).",
+        help="Use the Ray async pipeline with rollout, reference-logprob, and learner workers.",
     )
     args = parser.parse_args()
 

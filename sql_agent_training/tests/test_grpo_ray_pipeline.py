@@ -1,8 +1,8 @@
 """Tests for the Ray GRPO pipeline.
 
 The ``dryrun`` tests use tiny scripted models and do not require real GPUs,
-vLLM, or Ray workers.  They exercise the core data-flow logic by calling the
-worker class methods directly (without Ray remote dispatch).
+vLLM, or Ray workers. They exercise the core data-flow logic by calling worker
+class methods directly (without Ray remote dispatch).
 
 The ``ray`` marker tests require an actual Ray cluster with two GPUs.
 """
@@ -26,7 +26,7 @@ from sql_agent_training.train.grpo_train import (
     GrpoTrainingBatch,
     create_tiny_causal_lm,
 )
-from sql_agent_training.train.grpo_ray_pipeline import LearnerStepResult
+from sql_agent_training.train.grpo_ray_pipeline import LearnerStepResult, ReferenceLogprobWorker, _role_num_gpus
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ def test_prepare_batch_with_ref_logprobs_uses_supplied_reference() -> None:
     batch = _tiny_batch()
     _, _, trainer = _make_tiny_trainer()
 
-    fake_ref = torch.full((2, 3), fill_value=-1.23)  # seq_len = 4 → shifted = 3
+    fake_ref = torch.full((2, 3), fill_value=-1.23)  # seq_len = 4, shifted = 3
     prepared = trainer.prepare_batch_with_ref_logprobs(batch, fake_ref)
 
     assert torch.allclose(prepared.reference_logprobs, fake_ref)
@@ -147,8 +147,62 @@ def test_learner_step_result_batch_stats_defaults_to_empty() -> None:
     assert result.batch_stats == {}
 
 
+def test_role_num_gpus_defaults_to_two_gpu_colocated_layout() -> None:
+    config: dict[str, Any] = {"ray": {"reference_colocate_with_rollout": True}}
+
+    assert _role_num_gpus(config, "rollout") == 0.5
+    assert _role_num_gpus(config, "reference") == 0.5
+    assert _role_num_gpus(config, "learner") == 1.0
+
+
+def test_role_num_gpus_supports_three_gpu_separate_layout() -> None:
+    config: dict[str, Any] = {
+        "ray": {
+            "reference_colocate_with_rollout": False,
+            "rollout_num_gpus": 1,
+            "reference_num_gpus": 1,
+            "learner_num_gpus": 1,
+        }
+    }
+
+    assert _role_num_gpus(config, "rollout") == 1.0
+    assert _role_num_gpus(config, "reference") == 1.0
+    assert _role_num_gpus(config, "learner") == 1.0
+
+
+def _stub_reference_worker_deps(monkeypatch: pytest.MonkeyPatch) -> None:
+    tiny_reference = create_tiny_causal_lm(vocab_size=16, hidden_size=8)
+
+    class FakeAutoModel:
+        @staticmethod
+        def from_pretrained(*args: Any, **kwargs: Any) -> Any:
+            return tiny_reference
+
+    fake_transformers = types.SimpleNamespace(AutoModelForCausalLM=FakeAutoModel)
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+
+
+@pytest.mark.dryrun
+def test_reference_logprob_worker_computes_logprobs_on_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_reference_worker_deps(monkeypatch)
+
+    worker = ReferenceLogprobWorker(
+        {
+            "model": {"path": "fake/path", "torch_dtype": "none"},
+            "ray": {"reference_device": "cpu"},
+        }
+    )
+    batch = _tiny_batch()
+
+    ref_logprobs = worker.compute_ref_logprobs(batch)
+
+    assert set(ref_logprobs) == {trajectory.rollout_id for trajectory in batch.trajectories}
+    for trajectory in batch.trajectories:
+        assert len(ref_logprobs[trajectory.rollout_id]) == len(trajectory.prompt_ids) + len(trajectory.response_ids) - 1
+
+
 # ---------------------------------------------------------------------------
-# Dryrun integration: LearnerWorker logic (without Ray remote, no real GPU)
+# Dryrun integration: worker logic (without Ray remote, no real GPU)
 # ---------------------------------------------------------------------------
 
 
