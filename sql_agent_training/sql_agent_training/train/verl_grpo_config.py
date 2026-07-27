@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 from dataclasses import dataclass
 
 
@@ -102,6 +103,21 @@ class VerlGrpoLaunchConfig:
         )
 
 
+def validate_runtime_dependencies(*, require_flash_attn: bool) -> None:
+    """Validate optional packages that the selected verl launch path needs at runtime."""
+
+    if not require_flash_attn:
+        return
+    try:
+        importlib.import_module("flash_attn.bert_padding")
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "flash_attn.bert_padding is required by this verl main_ppo path. "
+            "The trainer converts padded batches with verl.workers.utils.padding.left_right_2_no_padding "
+            "during old/reference log-prob and actor updates."
+        ) from exc
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train-batch-size", type=int, required=True)
@@ -115,6 +131,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-prob-use-dynamic-bsz", required=True)
     parser.add_argument("--log-prob-micro-batch-size-per-gpu", type=int)
     parser.add_argument("--balance-batch", default="True")
+    parser.add_argument("--require-flash-attn", action="store_true")
     return parser
 
 
@@ -134,6 +151,7 @@ def main() -> None:
         balance_batch=_bool(args.balance_batch),
     )
     config.validate()
+    validate_runtime_dependencies(require_flash_attn=args.require_flash_attn)
     print(config.summary())
 
 

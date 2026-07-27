@@ -1,6 +1,6 @@
 import pytest
 
-from sql_agent_training.train.verl_grpo_config import VerlGrpoLaunchConfig
+from sql_agent_training.train.verl_grpo_config import VerlGrpoLaunchConfig, validate_runtime_dependencies
 
 
 def _config(**overrides) -> VerlGrpoLaunchConfig:
@@ -46,3 +46,16 @@ def test_dynamic_logprob_does_not_require_fixed_micro_batch() -> None:
 def test_rejects_tensor_parallel_size_that_does_not_divide_attention_heads() -> None:
     with pytest.raises(ValueError, match="rollout_tp"):
         _config(rollout_tp=3).validate()
+
+
+def test_flash_attn_runtime_check_can_be_disabled() -> None:
+    validate_runtime_dependencies(require_flash_attn=False)
+
+
+def test_flash_attn_runtime_check_reports_missing_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_import(name: str):
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr("importlib.import_module", fail_import)
+    with pytest.raises(RuntimeError, match="flash_attn.bert_padding"):
+        validate_runtime_dependencies(require_flash_attn=True)

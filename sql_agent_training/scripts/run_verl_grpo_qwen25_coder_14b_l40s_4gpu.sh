@@ -67,6 +67,11 @@ DATA_TRUST_REMOTE_CODE=${DATA_TRUST_REMOTE_CODE:-False}
 MODEL_TRUST_REMOTE_CODE=${MODEL_TRUST_REMOTE_CODE:-False}
 ENABLE_GPU_MONITOR=${ENABLE_GPU_MONITOR:-True}
 GPU_MONITOR_INTERVAL_SEC=${GPU_MONITOR_INTERVAL_SEC:-10}
+if [[ "${DRY_RUN:-0}" == "1" ]]; then
+  CHECK_FLASH_ATTN=${CHECK_FLASH_ATTN:-False}
+else
+  CHECK_FLASH_ATTN=${CHECK_FLASH_ATTN:-True}
+fi
 
 if (( MODEL_NUM_ATTENTION_HEADS % ROLLOUT_TP != 0 )); then
   echo "ERROR: ROLLOUT_TP=${ROLLOUT_TP} must divide MODEL_NUM_ATTENTION_HEADS=${MODEL_NUM_ATTENTION_HEADS}."
@@ -118,6 +123,7 @@ echo "verl ACTOR_PARAM_OFFLOAD=${ACTOR_PARAM_OFFLOAD} ACTOR_OPTIMIZER_OFFLOAD=${
 echo "verl MODEL_USE_REMOVE_PADDING=${MODEL_USE_REMOVE_PADDING} MODEL_ATTN_IMPLEMENTATION=${MODEL_ATTN_IMPLEMENTATION}"
 echo "verl DATA_TRUST_REMOTE_CODE=${DATA_TRUST_REMOTE_CODE} MODEL_TRUST_REMOTE_CODE=${MODEL_TRUST_REMOTE_CODE}"
 echo "verl ENABLE_GPU_MONITOR=${ENABLE_GPU_MONITOR} GPU_MONITOR_INTERVAL_SEC=${GPU_MONITOR_INTERVAL_SEC}"
+echo "verl CHECK_FLASH_ATTN=${CHECK_FLASH_ATTN}"
 
 DATA=(
   algorithm.adv_estimator=grpo
@@ -230,18 +236,25 @@ if [[ "${ENABLE_RAY_RUNTIME_ENV:-0}" == "1" ]]; then
   )
 fi
 
-python -m sql_agent_training.train.verl_grpo_config \
-  --train-batch-size "${TRAIN_BATCH_SIZE}" \
-  --ppo-mini-batch-size "${PPO_MINI_BATCH_SIZE}" \
-  --ppo-micro-batch-size-per-gpu "${PPO_MICRO_BATCH_SIZE_PER_GPU}" \
-  --n-gpus-per-node "${NGPUS_PER_NODE}" \
-  --rollout-n "${ROLLOUT_N}" \
-  --rollout-tp "${ROLLOUT_TP}" \
-  --rollout-pp "${ROLLOUT_PP}" \
-  --model-num-attention-heads "${MODEL_NUM_ATTENTION_HEADS}" \
-  --log-prob-use-dynamic-bsz "${LOG_PROB_USE_DYNAMIC_BSZ}" \
-  --log-prob-micro-batch-size-per-gpu "${LOG_PROB_MICRO_BATCH_SIZE_PER_GPU}" \
+VALIDATOR_ARGS=(
+  --train-batch-size "${TRAIN_BATCH_SIZE}"
+  --ppo-mini-batch-size "${PPO_MINI_BATCH_SIZE}"
+  --ppo-micro-batch-size-per-gpu "${PPO_MICRO_BATCH_SIZE_PER_GPU}"
+  --n-gpus-per-node "${NGPUS_PER_NODE}"
+  --rollout-n "${ROLLOUT_N}"
+  --rollout-tp "${ROLLOUT_TP}"
+  --rollout-pp "${ROLLOUT_PP}"
+  --model-num-attention-heads "${MODEL_NUM_ATTENTION_HEADS}"
+  --log-prob-use-dynamic-bsz "${LOG_PROB_USE_DYNAMIC_BSZ}"
+  --log-prob-micro-batch-size-per-gpu "${LOG_PROB_MICRO_BATCH_SIZE_PER_GPU}"
   --balance-batch True
+)
+case "${CHECK_FLASH_ATTN}" in
+  1|true|True|TRUE|yes|Yes|YES) VALIDATOR_ARGS+=(--require-flash-attn) ;;
+esac
+
+python -m sql_agent_training.train.verl_grpo_config \
+  "${VALIDATOR_ARGS[@]}"
 
 VERL_CMD=(
   python -m verl.trainer.main_ppo
@@ -262,6 +275,11 @@ if [[ "${DRY_RUN:-0}" == "1" ]]; then
   printf 'verl command:'
   printf ' %q' "${VERL_CMD[@]}"
   printf '\n'
+  exit 0
+fi
+
+if [[ "${PREFLIGHT:-0}" == "1" ]]; then
+  echo "verl PREFLIGHT=1"
   exit 0
 fi
 
