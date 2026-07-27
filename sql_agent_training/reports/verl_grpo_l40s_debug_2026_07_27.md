@@ -708,3 +708,73 @@ MAX_RESPONSE_LENGTH=2048
     Qwen2.5-Coder-14B because 40 attention heads is divisible by 4.
 13. If `vLLM wake_up(tags=["weights"])` OOMs while colocated with actor/reference, disable reference/KL first:
     `USE_KL_LOSS=False` and `USE_KL_IN_REWARD=False`. This removes the reference FSDP worker from the smoke path.
+
+## 2026-07-27 H100 Smoke Result And LoRA Loading Fix
+
+The 2x H100 no-reference smoke completed successfully:
+
+```text
+Training Progress: 100%|...| 2/2
+verl RUN_WALL_TIME_SEC=298
+EXIT_CODE 0 Mon Jul 27 14:12:04 EDT 2026
+```
+
+Important metrics from the two training steps:
+
+```text
+step 1: step=27.56s, gen=20.25s, old_log_prob=1.71s, update_actor=2.27s, update_weights=3.33s
+step 2: step=7.27s,  gen=1.98s,  old_log_prob=0.52s, update_actor=1.63s, update_weights=3.14s
+```
+
+The smoke validated the full path:
+
+```text
+verl main_ppo -> vLLM rollout -> custom SQL AgentLoop -> SQLite reward -> old logprob -> actor update -> weight sync
+```
+
+However, both steps had reward `1.0`, advantage `0.0`, actor loss `0.0`, and gradient norm `0.0`. That is acceptable
+for a smoke test, but it is not a useful learning signal. Real GRPO pilots need harder samples and/or larger
+`ROLLOUT_N` so each prompt has within-group reward variance.
+
+The smoke still showed a serious adapter-loading warning:
+
+```text
+copying from a non-meta parameter in the checkpoint to a meta parameter in the current model, which is a no-op
+```
+
+This happens while verl/FSDP initializes the actor with meta tensors and PEFT loads the existing SFT LoRA adapter.
+The run can continue, but the warning means the SFT adapter checkpoint may not actually be assigned into the actor
+weights. The safer path is:
+
+1. Merge the SFT LoRA checkpoint into the 14B base model once.
+2. Use that merged model as `MODEL_PATH`.
+3. Set `LORA_ADAPTER_PATH=none`.
+4. Let verl initialize a fresh trainable GRPO LoRA on top of the merged SFT model.
+
+The repository now includes:
+
+```text
+scripts/merge_lora_adapter.py
+```
+
+Run the one-time merge from the outer server workspace root:
+
+```bash
+cd /home/hice1/hzhang961/scratch/sql_agent_training
+
+uv run --no-sync python sql_agent_training/scripts/merge_lora_adapter.py \
+  --base-model sql_agent_training/data/models/Qwen2.5-Coder-14B-Instruct \
+  --adapter sql_agent_training/artifacts/checkpoints/sft_qwen25_coder_14b_lora_h100_zero2/20260725_061113/checkpoint-300 \
+  --output-dir sql_agent_training/data/models/Qwen2.5-Coder-14B-Instruct-SFT-Merged \
+  --dtype bfloat16 \
+  --device-map auto
+```
+
+The H100 wrapper now defaults to:
+
+```text
+MODEL_PATH=data/models/Qwen2.5-Coder-14B-Instruct-SFT-Merged
+LORA_ADAPTER_PATH=none
+```
+
+so the next H100 smoke should no longer route the old SFT LoRA adapter through the PEFT/FSDP meta-tensor load path.

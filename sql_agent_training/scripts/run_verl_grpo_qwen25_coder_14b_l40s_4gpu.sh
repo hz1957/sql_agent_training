@@ -16,7 +16,11 @@ resolve_project_path() {
 }
 
 MODEL_PATH="$(resolve_project_path "${MODEL_PATH:-data/models/Qwen2.5-Coder-14B-Instruct}")"
-LORA_ADAPTER_PATH="$(resolve_project_path "${LORA_ADAPTER_PATH:-artifacts/checkpoints/sft_qwen25_coder_14b_lora_h100_zero2/20260725_061113/checkpoint-300}")"
+LORA_ADAPTER_PATH_RAW="${LORA_ADAPTER_PATH:-artifacts/checkpoints/sft_qwen25_coder_14b_lora_h100_zero2/20260725_061113/checkpoint-300}"
+case "${LORA_ADAPTER_PATH_RAW}" in
+  ""|none|None|NONE|null|Null|NULL) LORA_ADAPTER_PATH="" ;;
+  *) LORA_ADAPTER_PATH="$(resolve_project_path "${LORA_ADAPTER_PATH_RAW}")" ;;
+esac
 TRAIN_FILES="$(resolve_project_path "${TRAIN_FILES:-data/verl_spider/train.parquet}")"
 VAL_FILES="$(resolve_project_path "${VAL_FILES:-data/verl_spider/validation.parquet}")"
 AGENT_LOOP_CONFIG_PATH="$(resolve_project_path "${AGENT_LOOP_CONFIG_PATH:-configs/verl_sql_agent_loop.yaml}")"
@@ -43,6 +47,9 @@ ROLLOUT_MAX_NUM_SEQS=${ROLLOUT_MAX_NUM_SEQS:-1}
 ROLLOUT_LAYERED_SUMMON=${ROLLOUT_LAYERED_SUMMON:-True}
 REWARD_NUM_WORKERS=${REWARD_NUM_WORKERS:-1}
 ACTOR_LR=${ACTOR_LR:-5e-7}
+ACTOR_LORA_RANK=${ACTOR_LORA_RANK:-64}
+ACTOR_LORA_ALPHA=${ACTOR_LORA_ALPHA:-128}
+ACTOR_LORA_TARGET_MODULES=${ACTOR_LORA_TARGET_MODULES:-all-linear}
 USE_KL_IN_REWARD=${USE_KL_IN_REWARD:-False}
 USE_KL_LOSS=${USE_KL_LOSS:-False}
 KL_LOSS_COEF=${KL_LOSS_COEF:-0.01}
@@ -113,9 +120,12 @@ export CUDA_MODULE_LOADING="${CUDA_MODULE_LOADING:-LAZY}"
 export VLLM_WORKER_MULTIPROC_METHOD="${VLLM_WORKER_MULTIPROC_METHOD:-spawn}"
 
 echo "verl PROJECT_DIR=${PROJECT_DIR}"
+echo "verl MODEL_PATH=${MODEL_PATH}"
+echo "verl LORA_ADAPTER_PATH=${LORA_ADAPTER_PATH:-<none>}"
 echo "verl RAY_NUM_CPUS=${RAY_NUM_CPUS} RAY_OBJECT_STORE_MEMORY=${RAY_OBJECT_STORE_MEMORY} RAY_INCLUDE_DASHBOARD=${RAY_INCLUDE_DASHBOARD}"
 echo "verl TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE} PPO_MINI_BATCH_SIZE=${PPO_MINI_BATCH_SIZE} ROLLOUT_N=${ROLLOUT_N}"
 echo "verl MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH} MAX_RESPONSE_LENGTH=${MAX_RESPONSE_LENGTH}"
+echo "verl ACTOR_LORA_RANK=${ACTOR_LORA_RANK} ACTOR_LORA_ALPHA=${ACTOR_LORA_ALPHA} ACTOR_LORA_TARGET_MODULES=${ACTOR_LORA_TARGET_MODULES}"
 echo "verl ROLLOUT_TP=${ROLLOUT_TP} ROLLOUT_PP=${ROLLOUT_PP} ROLLOUT_GPU_MEMORY_UTILIZATION=${ROLLOUT_GPU_MEMORY_UTILIZATION} ROLLOUT_MAX_MODEL_LEN=${ROLLOUT_MAX_MODEL_LEN}"
 echo "verl ROLLOUT_MAX_NUM_BATCHED_TOKENS=${ROLLOUT_MAX_NUM_BATCHED_TOKENS} ROLLOUT_MAX_NUM_SEQS=${ROLLOUT_MAX_NUM_SEQS} ROLLOUT_LAYERED_SUMMON=${ROLLOUT_LAYERED_SUMMON}"
 echo "verl USE_KL_IN_REWARD=${USE_KL_IN_REWARD} USE_KL_LOSS=${USE_KL_LOSS} KL_LOSS_COEF=${KL_LOSS_COEF}"
@@ -148,12 +158,14 @@ MODEL=(
   actor_rollout_ref.model.trust_remote_code="${MODEL_TRUST_REMOTE_CODE}"
   actor_rollout_ref.model.use_remove_padding="${MODEL_USE_REMOVE_PADDING}"
   actor_rollout_ref.model.enable_gradient_checkpointing=True
-  actor_rollout_ref.model.lora_rank=64
-  actor_rollout_ref.model.lora_alpha=128
-  actor_rollout_ref.model.target_modules=all-linear
-  actor_rollout_ref.model.lora_adapter_path="${LORA_ADAPTER_PATH}"
+  actor_rollout_ref.model.lora_rank="${ACTOR_LORA_RANK}"
+  actor_rollout_ref.model.lora_alpha="${ACTOR_LORA_ALPHA}"
+  actor_rollout_ref.model.target_modules="${ACTOR_LORA_TARGET_MODULES}"
   +actor_rollout_ref.model.override_config._attn_implementation="${MODEL_ATTN_IMPLEMENTATION}"
 )
+if [[ -n "${LORA_ADAPTER_PATH}" ]]; then
+  MODEL+=(actor_rollout_ref.model.lora_adapter_path="${LORA_ADAPTER_PATH}")
+fi
 
 ACTOR=(
   actor_rollout_ref.actor.strategy=fsdp

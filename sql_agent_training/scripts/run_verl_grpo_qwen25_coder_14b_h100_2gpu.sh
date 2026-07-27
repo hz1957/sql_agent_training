@@ -8,6 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
 export NGPUS_PER_NODE="${NGPUS_PER_NODE:-2}"
+export MODEL_PATH="${MODEL_PATH:-data/models/Qwen2.5-Coder-14B-Instruct-SFT-Merged}"
+export LORA_ADAPTER_PATH="${LORA_ADAPTER_PATH:-none}"
 
 export TOTAL_TRAINING_STEPS="${TOTAL_TRAINING_STEPS:-2}"
 export SAVE_FREQ="${SAVE_FREQ:--1}"

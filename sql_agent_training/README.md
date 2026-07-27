@@ -149,7 +149,20 @@ uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_
 For a real GRPO pilot after the smoke succeeds, increase `TRAIN_BATCH_SIZE`, `PPO_MINI_BATCH_SIZE`, and `ROLLOUT_N`
 carefully while keeping `PPO_MINI_BATCH_SIZE <= TRAIN_BATCH_SIZE`.
 
-For a 2x H100 node, use the H100 wrapper. It defaults to the same small smoke shape, but uses `ROLLOUT_TP=2`,
+Before running the 2x H100 wrapper, merge the SFT LoRA checkpoint into a normal HF model directory. This avoids PEFT
+loading the old SFT adapter into verl/FSDP meta tensors during actor startup:
+
+```bash
+uv run --no-sync python sql_agent_training/scripts/merge_lora_adapter.py \
+  --base-model sql_agent_training/data/models/Qwen2.5-Coder-14B-Instruct \
+  --adapter sql_agent_training/artifacts/checkpoints/sft_qwen25_coder_14b_lora_h100_zero2/20260725_061113/checkpoint-300 \
+  --output-dir sql_agent_training/data/models/Qwen2.5-Coder-14B-Instruct-SFT-Merged \
+  --dtype bfloat16 \
+  --device-map auto
+```
+
+For a 2x H100 node, use the H100 wrapper. It defaults to the same small smoke shape, but uses the merged SFT model
+as `MODEL_PATH`, sets `LORA_ADAPTER_PATH=none`, initializes a fresh trainable GRPO LoRA, and uses `ROLLOUT_TP=2`,
 `NGPUS_PER_NODE=2`, no offload, `ROLLOUT_GPU_MEMORY_UTILIZATION=0.30`, and `ROLLOUT_LAYERED_SUMMON=True` so LoRA
 parameter sync does not need to summon the full FSDP model at once. The wrapper unsets allocator
 `expandable_segments:True` when present because it is incompatible with vLLM's CuMem memory pool:
