@@ -204,10 +204,11 @@ Key changes:
   - `MODEL_ATTN_IMPLEMENTATION=sdpa`
   - `DATA_TRUST_REMOTE_CODE=False`
   - `MODEL_TRUST_REMOTE_CODE=False`
-  - `ROLLOUT_GPU_MEMORY_UTILIZATION=0.60`
+  - `ROLLOUT_TP=3`
+  - `ROLLOUT_GPU_MEMORY_UTILIZATION=0.32`
   - `ROLLOUT_MAX_MODEL_LEN=MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`
   - `ROLLOUT_MAX_NUM_BATCHED_TOKENS=ROLLOUT_MAX_MODEL_LEN`
-  - `ROLLOUT_MAX_NUM_SEQS=4`
+  - `ROLLOUT_MAX_NUM_SEQS=1`
 - Limit CPU thread fan-out:
   - `TOKENIZERS_PARALLELISM=false`
   - `OMP_NUM_THREADS=1`
@@ -374,5 +375,10 @@ MAX_RESPONSE_LENGTH=2048
    Transformers/vLLM stack and does not require remote model code. If a future model requires custom
    code, set `MODEL_TRUST_REMOTE_CODE=True` and `DATA_TRUST_REMOTE_CODE=True` explicitly.
 8. If vLLM `EngineCore` fails during startup after loading roughly half of each L40S, first check the
-   worker logs for the root cause, then reduce KV/cache pressure with lower `ROLLOUT_GPU_MEMORY_UTILIZATION`,
-   `ROLLOUT_MAX_MODEL_LEN`, `ROLLOUT_MAX_NUM_BATCHED_TOKENS`, and `ROLLOUT_MAX_NUM_SEQS`.
+   worker logs for the root cause. In one failing run, the root cause was:
+   `Free memory on device (16.17/44.39 GiB) on startup is less than desired GPU memory utilization (0.6, 26.64 GiB)`.
+   vLLM's utilization target is a fraction of total device memory, not a fraction of currently free memory.
+9. For 14B on 3x L40S with learner/reference workers already resident, prefer `ROLLOUT_TP=3` for smoke runs.
+   `ROLLOUT_TP=1` can create one full 14B vLLM replica per GPU, which leaves too little free memory once
+   the training-side workers are colocated. Keep `ROLLOUT_GPU_MEMORY_UTILIZATION`, `ROLLOUT_MAX_MODEL_LEN`,
+   `ROLLOUT_MAX_NUM_BATCHED_TOKENS`, and `ROLLOUT_MAX_NUM_SEQS` conservative until the smoke completes.
