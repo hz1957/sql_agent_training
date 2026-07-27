@@ -42,6 +42,7 @@ PROJECT_NAME=${PROJECT_NAME:-sql_agent_training}
 EXPERIMENT_NAME=${EXPERIMENT_NAME:-verl_grpo_qwen25_coder_14b_l40s_3gpu}
 
 export CUDA_VISIBLE_DEVICES
+export RAY_ENABLE_UV_RUN_RUNTIME_ENV="${RAY_ENABLE_UV_RUN_RUNTIME_ENV:-0}"
 
 DATA=(
   algorithm.adv_estimator=grpo
