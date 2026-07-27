@@ -205,11 +205,14 @@ Key changes:
   - `DATA_TRUST_REMOTE_CODE=False`
   - `MODEL_TRUST_REMOTE_CODE=False`
   - `ROLLOUT_TP=1`
-  - `ROLLOUT_PP=3`
-  - `ROLLOUT_GPU_MEMORY_UTILIZATION=0.32`
+  - `ROLLOUT_PP=1`
+  - `ROLLOUT_GPU_MEMORY_UTILIZATION=0.70`
   - `ROLLOUT_MAX_MODEL_LEN=MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`
   - `ROLLOUT_MAX_NUM_BATCHED_TOKENS=ROLLOUT_MAX_MODEL_LEN`
   - `ROLLOUT_MAX_NUM_SEQS=1`
+  - `ACTOR_PARAM_OFFLOAD=True`
+  - `ACTOR_OPTIMIZER_OFFLOAD=True`
+  - `REF_PARAM_OFFLOAD=True`
 - Limit CPU thread fan-out:
   - `TOKENIZERS_PARALLELISM=false`
   - `OMP_NUM_THREADS=1`
@@ -286,6 +289,12 @@ mkdir -p "$TRITON_CACHE_DIR" "$RAY_TMPDIR"
   TRAIN_BATCH_SIZE=1 \
   PPO_MINI_BATCH_SIZE=1 \
   ROLLOUT_N=1 \
+  ROLLOUT_TP=1 \
+  ROLLOUT_PP=1 \
+  ROLLOUT_GPU_MEMORY_UTILIZATION=0.70 \
+  ROLLOUT_MAX_NUM_SEQS=1 \
+  ACTOR_PARAM_OFFLOAD=True \
+  ACTOR_OPTIMIZER_OFFLOAD=True \
   MAX_PROMPT_LENGTH=2048 \
   MAX_RESPONSE_LENGTH=512 \
   uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_3gpu.sh
@@ -382,7 +391,10 @@ MAX_RESPONSE_LENGTH=2048
 9. A follow-up attempt with `ROLLOUT_TP=3` failed because Qwen2.5-Coder-14B has 40 attention heads, and vLLM requires
    the head count to be divisible by the tensor parallel size:
    `Total number of attention heads (40) must be divisible by tensor parallel size (3)`.
-10. For 14B on 3x L40S with learner/reference workers already resident, prefer `ROLLOUT_TP=1` and `ROLLOUT_PP=3`
-   for smoke runs. `ROLLOUT_TP=1` avoids invalid tensor head splits, while `ROLLOUT_PP=3` still avoids placing a
-   separate full 14B vLLM replica on each GPU. Keep `ROLLOUT_GPU_MEMORY_UTILIZATION`, `ROLLOUT_MAX_MODEL_LEN`,
-   `ROLLOUT_MAX_NUM_BATCHED_TOKENS`, and `ROLLOUT_MAX_NUM_SEQS` conservative until the smoke completes.
+10. A follow-up attempt with `ROLLOUT_PP=3` also failed in the installed verl path:
+    `Current rollout self.name='vllm' not implemented pipeline_model_parallel_size > 1 yet.`
+11. For 14B on exactly 3x L40S with this verl vLLM rollout path, there is no valid 3-way model-parallel rollout:
+    `TP=3` is invalid for 40 heads, and `PP=3` is not implemented by verl's vLLM rollout wrapper. The remaining
+    smoke fallback is `ROLLOUT_TP=1`, `ROLLOUT_PP=1`, PyTorch/FSDP offload, and very small rollout concurrency.
+    If that still cannot fit, use more GPUs with a legal TP size such as 4, use 2 H100 with TP=2, or move rollout
+    to separate vLLM GPUs instead of colocating learner and rollout on the same 3 L40S cards.

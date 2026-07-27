@@ -115,9 +115,11 @@ TRAIN_BATCH_SIZE=1 \
 PPO_MINI_BATCH_SIZE=1 \
 ROLLOUT_N=1 \
 ROLLOUT_TP=1 \
-ROLLOUT_PP=3 \
-ROLLOUT_GPU_MEMORY_UTILIZATION=0.32 \
+ROLLOUT_PP=1 \
+ROLLOUT_GPU_MEMORY_UTILIZATION=0.70 \
 ROLLOUT_MAX_NUM_SEQS=1 \
+ACTOR_PARAM_OFFLOAD=True \
+ACTOR_OPTIMIZER_OFFLOAD=True \
 MAX_PROMPT_LENGTH=2048 \
 MAX_RESPONSE_LENGTH=512 \
 uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_3gpu.sh
@@ -138,10 +140,11 @@ The smoke defaults also keep CPU subprocess fan-out conservative with `DATALOADE
 `REWARD_NUM_WORKERS=1`; increase them only after the first GPU smoke succeeds. Smoke runs also default to
 `ACTOR_USE_TORCH_COMPILE=False`, `ROLLOUT_ENFORCE_EAGER=True`, `MODEL_TRUST_REMOTE_CODE=False`, and
 `MODEL_ATTN_IMPLEMENTATION=sdpa` to reduce initialization-time memory pressure and avoid optional FlashAttention
-dependencies. vLLM startup is also kept conservative with `ROLLOUT_TP=1`, `ROLLOUT_PP=3`,
-`ROLLOUT_GPU_MEMORY_UTILIZATION=0.32`, `ROLLOUT_MAX_NUM_SEQS=1`, and a default `ROLLOUT_MAX_MODEL_LEN` of
-`MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`. `ROLLOUT_PP=3` avoids placing a separate full 14B vLLM replica on each
-L40S while also avoiding invalid tensor parallel sizes for Qwen2.5-Coder-14B's 40 attention heads.
+dependencies. For this verl vLLM rollout path, `ROLLOUT_PP` must remain `1`; the installed verl version rejects
+`pipeline_model_parallel_size > 1`. Qwen2.5-Coder-14B has 40 attention heads, so `ROLLOUT_TP` must divide 40. On a
+3x L40S node this means the conservative smoke path uses `ROLLOUT_TP=1`, PyTorch/FSDP offload, `ROLLOUT_MAX_NUM_SEQS=1`,
+and a default `ROLLOUT_MAX_MODEL_LEN` of `MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`. If this still cannot fit, use
+more GPUs with a legal TP size such as 4, or move rollout to separate vLLM GPUs.
 
 This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
 
