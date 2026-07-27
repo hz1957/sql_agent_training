@@ -490,6 +490,7 @@ vllm_gpu_memory_utilization
 reference colocated vs separate GPU
 reference dtype / quantization if supported
 LoRA reload frequency
+layered_summon for LoRA-to-vLLM weight sync
 checkpoint frequency
 include_text in rollouts.jsonl
 ```
@@ -540,6 +541,7 @@ Notes:
 reference_logprob_time_sec is absent when reference/KL is disabled.
 learner_train_time_sec, checkpoint_time_sec, and exact step_wall_time_sec require patching verl's trainer loop.
 The lightweight fields are enough to identify rollout bottlenecks, token throughput, and GPU idle/memory pressure.
+For L40S memory pressure during vLLM wake-up, try layered_summon before switching the learner to QLoRA.
 ```
 
 Success criteria:
