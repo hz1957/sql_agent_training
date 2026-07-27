@@ -56,6 +56,7 @@ RAY_INCLUDE_DASHBOARD=${RAY_INCLUDE_DASHBOARD:-False}
 RAY_OBJECT_STORE_MEMORY=${RAY_OBJECT_STORE_MEMORY:-1073741824}
 ACTOR_USE_TORCH_COMPILE=${ACTOR_USE_TORCH_COMPILE:-False}
 ROLLOUT_ENFORCE_EAGER=${ROLLOUT_ENFORCE_EAGER:-True}
+LOG_PROB_USE_DYNAMIC_BSZ=${LOG_PROB_USE_DYNAMIC_BSZ:-False}
 ACTOR_PARAM_OFFLOAD=${ACTOR_PARAM_OFFLOAD:-False}
 ACTOR_OPTIMIZER_OFFLOAD=${ACTOR_OPTIMIZER_OFFLOAD:-False}
 REF_PARAM_OFFLOAD=${REF_PARAM_OFFLOAD:-False}
@@ -105,6 +106,7 @@ echo "verl ROLLOUT_TP=${ROLLOUT_TP} ROLLOUT_PP=${ROLLOUT_PP} ROLLOUT_GPU_MEMORY_
 echo "verl ROLLOUT_MAX_NUM_BATCHED_TOKENS=${ROLLOUT_MAX_NUM_BATCHED_TOKENS} ROLLOUT_MAX_NUM_SEQS=${ROLLOUT_MAX_NUM_SEQS} ROLLOUT_LAYERED_SUMMON=${ROLLOUT_LAYERED_SUMMON}"
 echo "verl USE_KL_IN_REWARD=${USE_KL_IN_REWARD} USE_KL_LOSS=${USE_KL_LOSS} KL_LOSS_COEF=${KL_LOSS_COEF}"
 echo "verl ACTOR_USE_TORCH_COMPILE=${ACTOR_USE_TORCH_COMPILE} ROLLOUT_ENFORCE_EAGER=${ROLLOUT_ENFORCE_EAGER}"
+echo "verl LOG_PROB_USE_DYNAMIC_BSZ=${LOG_PROB_USE_DYNAMIC_BSZ}"
 echo "verl ACTOR_PARAM_OFFLOAD=${ACTOR_PARAM_OFFLOAD} ACTOR_OPTIMIZER_OFFLOAD=${ACTOR_OPTIMIZER_OFFLOAD} REF_PARAM_OFFLOAD=${REF_PARAM_OFFLOAD}"
 echo "verl MODEL_USE_REMOVE_PADDING=${MODEL_USE_REMOVE_PADDING} MODEL_ATTN_IMPLEMENTATION=${MODEL_ATTN_IMPLEMENTATION}"
 echo "verl DATA_TRUST_REMOTE_CODE=${DATA_TRUST_REMOTE_CODE} MODEL_TRUST_REMOTE_CODE=${MODEL_TRUST_REMOTE_CODE}"
@@ -170,7 +172,7 @@ ROLLOUT=(
   actor_rollout_ref.rollout.prompt_length="${MAX_PROMPT_LENGTH}"
   actor_rollout_ref.rollout.response_length="${MAX_RESPONSE_LENGTH}"
   actor_rollout_ref.rollout.load_format=safetensors
-  actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=True
+  actor_rollout_ref.rollout.log_prob_use_dynamic_bsz="${LOG_PROB_USE_DYNAMIC_BSZ}"
   actor_rollout_ref.rollout.log_prob_max_token_len_per_gpu="${PPO_MAX_TOKEN_LEN_PER_GPU}"
   actor_rollout_ref.rollout.agent.agent_loop_config_path="${AGENT_LOOP_CONFIG_PATH}"
   actor_rollout_ref.rollout.agent.default_agent_loop=sql_agent
@@ -182,7 +184,7 @@ ROLLOUT=(
 )
 
 REF=(
-  actor_rollout_ref.ref.log_prob_use_dynamic_bsz=True
+  actor_rollout_ref.ref.log_prob_use_dynamic_bsz="${LOG_PROB_USE_DYNAMIC_BSZ}"
   actor_rollout_ref.ref.log_prob_max_token_len_per_gpu="${PPO_MAX_TOKEN_LEN_PER_GPU}"
   actor_rollout_ref.ref.fsdp_config.param_offload="${REF_PARAM_OFFLOAD}"
   actor_rollout_ref.ref.fsdp_config.use_torch_compile="${ACTOR_USE_TORCH_COMPILE}"
