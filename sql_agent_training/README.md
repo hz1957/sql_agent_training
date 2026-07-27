@@ -110,6 +110,10 @@ Run the 14B LoRA verl GRPO script on a 3x L40S node after installing a compatibl
 uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_3gpu.sh
 ```
 
+The script assumes a single local Ray node by default and does not pass a Ray `runtime_env`, so Ray workers inherit the
+current project checkout directly. Set `ENABLE_RAY_RUNTIME_ENV=1` only for a deployment that needs Ray to package and
+ship the working directory.
+
 This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
 
 Evaluate a trained GRPO checkpoint on Spider validation:

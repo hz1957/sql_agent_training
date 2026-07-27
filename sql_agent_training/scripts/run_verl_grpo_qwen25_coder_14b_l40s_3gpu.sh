@@ -121,10 +121,13 @@ TRAINER=(
   trainer.val_before_train=False
 )
 
-RAY_RUNTIME=(
-  +ray_kwargs.ray_init.runtime_env.working_dir="${PROJECT_DIR}"
-  '+ray_kwargs.ray_init.runtime_env.excludes=["data/**","artifacts/**","logs/**",".venv/**",".venv-vllm/**",".uv_cache/**",".xdg_cache/**","*.safetensors","*.sqlite"]'
-)
+RAY_RUNTIME=()
+if [[ "${ENABLE_RAY_RUNTIME_ENV:-0}" == "1" ]]; then
+  RAY_RUNTIME=(
+    +ray_kwargs.ray_init.runtime_env.working_dir="${PROJECT_DIR}"
+    '+ray_kwargs.ray_init.runtime_env.excludes=["data/**","artifacts/**","logs/**",".venv/**",".venv-vllm/**",".uv_cache/**",".xdg_cache/**","*.safetensors","*.sqlite"]'
+  )
+fi
 
 python -m verl.trainer.main_ppo \
   "${DATA[@]}" \
