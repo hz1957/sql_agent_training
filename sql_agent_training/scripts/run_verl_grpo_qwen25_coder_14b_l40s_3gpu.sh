@@ -122,7 +122,7 @@ TRAINER=(
 )
 
 RAY_RUNTIME=(
-  ray_kwargs.ray_init.runtime_env.working_dir="${PROJECT_DIR}"
+  +ray_kwargs.ray_init.runtime_env.working_dir="${PROJECT_DIR}"
   '+ray_kwargs.ray_init.runtime_env.excludes=["data/**","artifacts/**","logs/**",".venv/**",".venv-vllm/**",".uv_cache/**",".xdg_cache/**","*.safetensors","*.sqlite"]'
 )
 
