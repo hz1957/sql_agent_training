@@ -164,7 +164,9 @@ uv run --no-sync python sql_agent_training/scripts/merge_lora_adapter.py \
 For a 2x H100 node, use the H100 wrapper. It defaults to the same small smoke shape, but uses the merged SFT model
 as `MODEL_PATH`, sets `LORA_ADAPTER_PATH=none`, initializes a fresh trainable GRPO LoRA, and uses `ROLLOUT_TP=2`,
 `NGPUS_PER_NODE=2`, no offload, `ROLLOUT_GPU_MEMORY_UTILIZATION=0.30`, and `ROLLOUT_LAYERED_SUMMON=True` so LoRA
-parameter sync does not need to summon the full FSDP model at once. The wrapper unsets allocator
+parameter sync does not need to summon the full FSDP model at once. H100 smoke defaults use `ROLLOUT_N=4` and
+`ROLLOUT_TEMPERATURE=1.2` to make same-prompt rollouts more likely to produce non-zero GRPO advantages.
+The wrapper unsets allocator
 `expandable_segments:True` when present because it is incompatible with vLLM's CuMem memory pool:
 
 ```bash
