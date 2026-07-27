@@ -133,6 +133,14 @@ uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_
 For a real GRPO pilot after the smoke succeeds, increase `TRAIN_BATCH_SIZE`, `PPO_MINI_BATCH_SIZE`, and `ROLLOUT_N`
 back to group values such as `4`.
 
+For a 2x H100 node, use the H100 wrapper. It defaults to the same small smoke shape, but uses `ROLLOUT_TP=2`,
+`NGPUS_PER_NODE=2`, no offload, and `ROLLOUT_LAYERED_SUMMON=False`:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 \
+uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_h100_2gpu.sh
+```
+
 The script assumes a single local Ray node by default and does not pass a Ray `runtime_env`, so Ray workers inherit the
 current project checkout directly. Set `ENABLE_RAY_RUNTIME_ENV=1` only for a deployment that needs Ray to package and
 ship the working directory. The script also sets `RAY_ENABLE_UV_RUN_RUNTIME_ENV=0` by default, because Ray's automatic
