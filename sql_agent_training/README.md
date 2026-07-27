@@ -8,7 +8,7 @@ The project now keeps only the code needed to understand one small loop:
 Spider data -> schema prompt -> SFT records -> SQL agent rollout -> execution reward -> GRPO loss -> optimizer step
 ```
 
-There is no AutoDL launcher and no VERL integration in this branch. The GRPO path is local and readable: `train.grpo_rollouts` prepares rollouts, while `train.grpo_train` performs online rollout/update steps.
+The local GRPO path remains readable: `train.grpo_rollouts` prepares rollouts, while `train.grpo_train` performs online rollout/update steps. An experimental verl entrypoint is also available for server-side async AgentLoop GRPO.
 
 ## Layout
 
@@ -94,6 +94,22 @@ uv run python -m sql_agent_training.train.grpo_train --config configs/grpo.yaml
 ```
 
 `configs/grpo.yaml` uses PPO-style online GRPO: every training step samples a task batch, generates `rollout.n` rollouts from the current policy, caches old/reference log-probs, then reuses that rollout batch for `training.update_epochs` clipped actor updates.
+
+## Experimental verl GRPO
+
+Prepare Spider parquet files in verl's default RLHF dataset format:
+
+```powershell
+uv run python scripts/prepare_verl_spider.py --data-dir data/spider --output-dir data/verl_spider
+```
+
+Run the 14B LoRA verl GRPO script on a 3x L40S node after installing a compatible verl/vLLM environment:
+
+```bash
+bash scripts/run_verl_grpo_qwen25_coder_14b_l40s_3gpu.sh
+```
+
+This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
 
 Evaluate a trained GRPO checkpoint on Spider validation:
 
