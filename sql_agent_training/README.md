@@ -135,7 +135,8 @@ back to group values such as `4`.
 
 For a 2x H100 node, use the H100 wrapper. It defaults to the same small smoke shape, but uses `ROLLOUT_TP=2`,
 `NGPUS_PER_NODE=2`, no offload, `ROLLOUT_GPU_MEMORY_UTILIZATION=0.30`, and `ROLLOUT_LAYERED_SUMMON=True` so LoRA
-parameter sync does not need to summon the full FSDP model at once:
+parameter sync does not need to summon the full FSDP model at once. The wrapper unsets allocator
+`expandable_segments:True` when present because it is incompatible with vLLM's CuMem memory pool:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 \

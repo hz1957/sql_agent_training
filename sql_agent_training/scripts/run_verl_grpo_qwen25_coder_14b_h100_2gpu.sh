@@ -35,6 +35,12 @@ export MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-2048}"
 export MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-512}"
 export MAX_TURNS="${MAX_TURNS:-1}"
 export EXPERIMENT_NAME="${EXPERIMENT_NAME:-verl_grpo_qwen25_coder_14b_h100_2gpu}"
-export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+
+case "${PYTORCH_CUDA_ALLOC_CONF:-}" in
+  *expandable_segments:True*) unset PYTORCH_CUDA_ALLOC_CONF ;;
+esac
+case "${PYTORCH_ALLOC_CONF:-}" in
+  *expandable_segments:True*) unset PYTORCH_ALLOC_CONF ;;
+esac
 
 exec bash "${SCRIPT_DIR}/run_verl_grpo_qwen25_coder_14b_l40s_4gpu.sh" "$@"
