@@ -114,7 +114,7 @@ SAVE_FREQ=-1 \
 TEST_FREQ=-1 \
 TRAIN_BATCH_SIZE=1 \
 PPO_MINI_BATCH_SIZE=1 \
-ROLLOUT_N=1 \
+ROLLOUT_N=4 \
 ROLLOUT_TP=4 \
 ROLLOUT_PP=1 \
 ROLLOUT_GPU_MEMORY_UTILIZATION=0.32 \
@@ -130,8 +130,24 @@ MAX_RESPONSE_LENGTH=512 \
 uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_4gpu.sh
 ```
 
+With `trainer.balance_batch=True`, `TRAIN_BATCH_SIZE * ROLLOUT_N` must be at least the GPU count. On 4 GPUs, use
+`ROLLOUT_N=4` with `TRAIN_BATCH_SIZE=1`, or use a larger `TRAIN_BATCH_SIZE`. Run a no-GPU config dry run first:
+
+```bash
+DRY_RUN=1 \
+CUDA_VISIBLE_DEVICES=0,1,2,3 \
+TOTAL_TRAINING_STEPS=2 \
+TRAIN_BATCH_SIZE=1 \
+PPO_MINI_BATCH_SIZE=1 \
+ROLLOUT_N=4 \
+ROLLOUT_TP=4 \
+MAX_PROMPT_LENGTH=2048 \
+MAX_RESPONSE_LENGTH=512 \
+uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_4gpu.sh
+```
+
 For a real GRPO pilot after the smoke succeeds, increase `TRAIN_BATCH_SIZE`, `PPO_MINI_BATCH_SIZE`, and `ROLLOUT_N`
-back to group values such as `4`.
+carefully while keeping `PPO_MINI_BATCH_SIZE <= TRAIN_BATCH_SIZE`.
 
 For a 2x H100 node, use the H100 wrapper. It defaults to the same small smoke shape, but uses `ROLLOUT_TP=2`,
 `NGPUS_PER_NODE=2`, no offload, `ROLLOUT_GPU_MEMORY_UTILIZATION=0.30`, and `ROLLOUT_LAYERED_SUMMON=True` so LoRA
@@ -140,8 +156,23 @@ parameter sync does not need to summon the full FSDP model at once. The wrapper 
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 \
+DRY_RUN=1 \
 uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_h100_2gpu.sh
 ```
+
+Remove `DRY_RUN=1` to start Ray/vLLM. The launch scripts validate the common verl batch-size relationships before
+starting GPU work:
+
+- `TRAIN_BATCH_SIZE`: number of prompts sampled from the dataset per trainer step.
+- `ROLLOUT_N`: number of sampled responses per prompt. GRPO uses these as the comparison group.
+- `TRAIN_BATCH_SIZE * ROLLOUT_N`: number of rollout trajectories produced for a step; with batch balancing, this must
+  be at least the number of GPUs.
+- `PPO_MINI_BATCH_SIZE`: number of original prompts used in one PPO/GRPO actor update mini-batch; verl requires this to
+  be no larger than `TRAIN_BATCH_SIZE`.
+- `PPO_MICRO_BATCH_SIZE_PER_GPU`: per-GPU chunk size used inside actor forward/backward to control memory.
+- `LOG_PROB_MICRO_BATCH_SIZE_PER_GPU`: per-GPU chunk size for old/reference log-prob recomputation when
+  `LOG_PROB_USE_DYNAMIC_BSZ=False`. It defaults to `1` for smoke tests because this path avoids the optional
+  FlashAttention padding helper.
 
 The script assumes a single local Ray node by default and does not pass a Ray `runtime_env`, so Ray workers inherit the
 current project checkout directly. Set `ENABLE_RAY_RUNTIME_ENV=1` only for a deployment that needs Ray to package and

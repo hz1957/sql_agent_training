@@ -230,6 +230,41 @@ if [[ "${ENABLE_RAY_RUNTIME_ENV:-0}" == "1" ]]; then
   )
 fi
 
+python -m sql_agent_training.train.verl_grpo_config \
+  --train-batch-size "${TRAIN_BATCH_SIZE}" \
+  --ppo-mini-batch-size "${PPO_MINI_BATCH_SIZE}" \
+  --ppo-micro-batch-size-per-gpu "${PPO_MICRO_BATCH_SIZE_PER_GPU}" \
+  --n-gpus-per-node "${NGPUS_PER_NODE}" \
+  --rollout-n "${ROLLOUT_N}" \
+  --rollout-tp "${ROLLOUT_TP}" \
+  --rollout-pp "${ROLLOUT_PP}" \
+  --model-num-attention-heads "${MODEL_NUM_ATTENTION_HEADS}" \
+  --log-prob-use-dynamic-bsz "${LOG_PROB_USE_DYNAMIC_BSZ}" \
+  --log-prob-micro-batch-size-per-gpu "${LOG_PROB_MICRO_BATCH_SIZE_PER_GPU}" \
+  --balance-batch True
+
+VERL_CMD=(
+  python -m verl.trainer.main_ppo
+  "${DATA[@]}"
+  "${MODEL[@]}"
+  "${ACTOR[@]}"
+  "${ROLLOUT[@]}"
+  "${REF[@]}"
+  "${REWARD[@]}"
+  "${TRAINER[@]}"
+  "${RAY_INIT[@]}"
+  "${RAY_RUNTIME[@]}"
+  "$@"
+)
+
+if [[ "${DRY_RUN:-0}" == "1" ]]; then
+  echo "verl DRY_RUN=1"
+  printf 'verl command:'
+  printf ' %q' "${VERL_CMD[@]}"
+  printf '\n'
+  exit 0
+fi
+
 GPU_MONITOR_PID=""
 start_gpu_monitor() {
   case "${ENABLE_GPU_MONITOR}" in
@@ -268,17 +303,7 @@ start_gpu_monitor
 RUN_START_TIME=${SECONDS}
 
 set +e
-python -m verl.trainer.main_ppo \
-  "${DATA[@]}" \
-  "${MODEL[@]}" \
-  "${ACTOR[@]}" \
-  "${ROLLOUT[@]}" \
-  "${REF[@]}" \
-  "${REWARD[@]}" \
-  "${TRAINER[@]}" \
-  "${RAY_INIT[@]}" \
-  "${RAY_RUNTIME[@]}" \
-  "$@"
+"${VERL_CMD[@]}"
 status=$?
 set -e
 
