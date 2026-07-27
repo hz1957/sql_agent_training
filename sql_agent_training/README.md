@@ -104,18 +104,31 @@ Prepare Spider parquet files in verl's default RLHF dataset format:
 uv run --no-sync python sql_agent_training/scripts/prepare_verl_spider.py
 ```
 
-Run the 14B LoRA verl GRPO script on a 3x L40S node after installing a compatible verl/vLLM environment:
+Run the 14B LoRA verl GRPO script on a 3x L40S node after installing a compatible verl/vLLM environment.
+For the first smoke test, keep both Ray and GRPO very small:
 
 ```bash
+TOTAL_TRAINING_STEPS=2 \
+SAVE_FREQ=-1 \
+TEST_FREQ=-1 \
+TRAIN_BATCH_SIZE=1 \
+PPO_MINI_BATCH_SIZE=1 \
+ROLLOUT_N=1 \
+MAX_RESPONSE_LENGTH=512 \
 uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_3gpu.sh
 ```
+
+For a real GRPO pilot after the smoke succeeds, increase `TRAIN_BATCH_SIZE`, `PPO_MINI_BATCH_SIZE`, and `ROLLOUT_N`
+back to group values such as `4`.
 
 The script assumes a single local Ray node by default and does not pass a Ray `runtime_env`, so Ray workers inherit the
 current project checkout directly. Set `ENABLE_RAY_RUNTIME_ENV=1` only for a deployment that needs Ray to package and
 ship the working directory. The script also sets `RAY_ENABLE_UV_RUN_RUNTIME_ENV=0` by default, because Ray's automatic
 `uv run` runtime hook can otherwise rewrite `runtime_env.working_dir` and package the whole project.
-For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=16` and `RAY_INCLUDE_DASHBOARD=False` by default to avoid
-slow local worker/dashboard startup; override those environment variables when more CPU-side rollout workers are needed.
+For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=4`, `RAY_OBJECT_STORE_MEMORY=8589934592`, and
+`RAY_INCLUDE_DASHBOARD=False` by default to avoid slow local worker/dashboard startup and oversized Ray object-store
+allocation inside memory-limited jobs; override those environment variables when more CPU-side rollout workers are
+needed.
 The smoke defaults also keep CPU subprocess fan-out conservative with `DATALOADER_NUM_WORKERS=0` and
 `REWARD_NUM_WORKERS=1`; increase them only after the first GPU smoke succeeds.
 
