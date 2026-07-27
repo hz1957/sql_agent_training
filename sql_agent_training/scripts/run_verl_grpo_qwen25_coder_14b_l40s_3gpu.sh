@@ -48,6 +48,8 @@ RAY_INCLUDE_DASHBOARD=${RAY_INCLUDE_DASHBOARD:-False}
 RAY_OBJECT_STORE_MEMORY=${RAY_OBJECT_STORE_MEMORY:-1073741824}
 ACTOR_USE_TORCH_COMPILE=${ACTOR_USE_TORCH_COMPILE:-False}
 ROLLOUT_ENFORCE_EAGER=${ROLLOUT_ENFORCE_EAGER:-True}
+MODEL_USE_REMOVE_PADDING=${MODEL_USE_REMOVE_PADDING:-False}
+MODEL_ATTN_IMPLEMENTATION=${MODEL_ATTN_IMPLEMENTATION:-sdpa}
 
 export CUDA_VISIBLE_DEVICES
 export RAY_ENABLE_UV_RUN_RUNTIME_ENV="${RAY_ENABLE_UV_RUN_RUNTIME_ENV:-0}"
@@ -64,6 +66,7 @@ echo "verl RAY_NUM_CPUS=${RAY_NUM_CPUS} RAY_OBJECT_STORE_MEMORY=${RAY_OBJECT_STO
 echo "verl TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE} PPO_MINI_BATCH_SIZE=${PPO_MINI_BATCH_SIZE} ROLLOUT_N=${ROLLOUT_N}"
 echo "verl MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH} MAX_RESPONSE_LENGTH=${MAX_RESPONSE_LENGTH}"
 echo "verl ACTOR_USE_TORCH_COMPILE=${ACTOR_USE_TORCH_COMPILE} ROLLOUT_ENFORCE_EAGER=${ROLLOUT_ENFORCE_EAGER}"
+echo "verl MODEL_USE_REMOVE_PADDING=${MODEL_USE_REMOVE_PADDING} MODEL_ATTN_IMPLEMENTATION=${MODEL_ATTN_IMPLEMENTATION}"
 
 DATA=(
   algorithm.adv_estimator=grpo
@@ -84,12 +87,13 @@ DATA=(
 MODEL=(
   actor_rollout_ref.model.path="${MODEL_PATH}"
   actor_rollout_ref.model.trust_remote_code=True
-  actor_rollout_ref.model.use_remove_padding=True
+  actor_rollout_ref.model.use_remove_padding="${MODEL_USE_REMOVE_PADDING}"
   actor_rollout_ref.model.enable_gradient_checkpointing=True
   actor_rollout_ref.model.lora_rank=64
   actor_rollout_ref.model.lora_alpha=128
   actor_rollout_ref.model.target_modules=all-linear
   actor_rollout_ref.model.lora_adapter_path="${LORA_ADAPTER_PATH}"
+  actor_rollout_ref.model.override_config._attn_implementation="${MODEL_ATTN_IMPLEMENTATION}"
 )
 
 ACTOR=(
@@ -102,6 +106,7 @@ ACTOR=(
   actor_rollout_ref.actor.kl_loss_coef="${KL_LOSS_COEF}"
   actor_rollout_ref.actor.kl_loss_type=low_var_kl
   actor_rollout_ref.actor.use_dynamic_bsz=True
+  actor_rollout_ref.actor.use_remove_padding="${MODEL_USE_REMOVE_PADDING}"
   actor_rollout_ref.actor.ppo_max_token_len_per_gpu="${PPO_MAX_TOKEN_LEN_PER_GPU}"
   actor_rollout_ref.actor.fsdp_config.param_offload=False
   actor_rollout_ref.actor.fsdp_config.optimizer_offload=False

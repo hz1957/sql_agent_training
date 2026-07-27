@@ -200,6 +200,8 @@ Key changes:
   - `REWARD_NUM_WORKERS=1`
   - `ACTOR_USE_TORCH_COMPILE=False`
   - `ROLLOUT_ENFORCE_EAGER=True`
+  - `MODEL_USE_REMOVE_PADDING=False`
+  - `MODEL_ATTN_IMPLEMENTATION=sdpa`
 - Limit CPU thread fan-out:
   - `TOKENIZERS_PARALLELISM=false`
   - `OMP_NUM_THREADS=1`
@@ -355,3 +357,6 @@ MAX_RESPONSE_LENGTH=2048
    store warnings or object spilling become the bottleneck.
 5. Re-enable `ACTOR_USE_TORCH_COMPILE=True` or disable `ROLLOUT_ENFORCE_EAGER` only
    after the run is stable and memory headroom is confirmed.
+6. Re-enable `MODEL_USE_REMOVE_PADDING=True` or use `MODEL_ATTN_IMPLEMENTATION=flash_attention_2`
+   only after installing a compatible `flash_attn` package. Without `flash_attn`, Transformers
+   raises `FlashAttention2 has been toggled on`.
