@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import inspect
 from dataclasses import dataclass
 
 
@@ -103,19 +104,59 @@ class VerlGrpoLaunchConfig:
         )
 
 
-def validate_runtime_dependencies(*, require_flash_attn: bool) -> None:
+def _package_version(module_name: str) -> str:
+    try:
+        module = importlib.import_module(module_name)
+    except Exception:
+        return "unknown"
+    return str(getattr(module, "__version__", "unknown"))
+
+
+def validate_runtime_dependencies(
+    *,
+    require_flash_attn: bool,
+    require_peft_transformers_compat: bool = False,
+) -> None:
     """Validate optional packages that the selected verl launch path needs at runtime."""
 
-    if not require_flash_attn:
-        return
-    try:
-        importlib.import_module("flash_attn.bert_padding")
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            "flash_attn.bert_padding is required by this verl main_ppo path. "
-            "The trainer converts padded batches with verl.workers.utils.padding.left_right_2_no_padding "
-            "during old/reference log-prob and actor updates."
-        ) from exc
+    if require_flash_attn:
+        try:
+            importlib.import_module("flash_attn.bert_padding")
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "flash_attn.bert_padding is required by this verl main_ppo path. "
+                "The trainer converts padded batches with verl.workers.utils.padding.left_right_2_no_padding "
+                "during old/reference log-prob and actor updates."
+            ) from exc
+
+    if require_peft_transformers_compat:
+        try:
+            save_and_load = importlib.import_module("peft.utils.save_and_load")
+        except ModuleNotFoundError as exc:
+            raise RuntimeError("peft is required to load the LoRA adapter.") from exc
+
+        maybe_shard = getattr(save_and_load, "_maybe_shard_state_dict_for_tp", None)
+        try:
+            source = inspect.getsource(maybe_shard) if maybe_shard is not None else ""
+        except (OSError, TypeError):
+            source = ""
+        if "EmbeddingParallel" in source:
+            try:
+                tensor_parallel = importlib.import_module("transformers.integrations.tensor_parallel")
+            except ModuleNotFoundError as exc:
+                raise RuntimeError(
+                    "PEFT expects Transformers tensor-parallel helpers, but "
+                    "transformers.integrations.tensor_parallel is missing."
+                ) from exc
+            if not hasattr(tensor_parallel, "EmbeddingParallel"):
+                raise RuntimeError(
+                    "PEFT/Transformers compatibility check failed: PEFT references "
+                    "transformers.integrations.tensor_parallel.EmbeddingParallel, but the installed "
+                    "Transformers package does not provide it. "
+                    f"peft={_package_version('peft')}, transformers={_package_version('transformers')}. "
+                    "Install a PEFT version compatible with this Transformers version, or upgrade "
+                    "Transformers to a version that provides EmbeddingParallel."
+                )
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -132,6 +173,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-prob-micro-batch-size-per-gpu", type=int)
     parser.add_argument("--balance-batch", default="True")
     parser.add_argument("--require-flash-attn", action="store_true")
+    parser.add_argument("--require-peft-transformers-compat", action="store_true")
     return parser
 
 
@@ -151,7 +193,10 @@ def main() -> None:
         balance_batch=_bool(args.balance_batch),
     )
     config.validate()
-    validate_runtime_dependencies(require_flash_attn=args.require_flash_attn)
+    validate_runtime_dependencies(
+        require_flash_attn=args.require_flash_attn,
+        require_peft_transformers_compat=args.require_peft_transformers_compat,
+    )
     print(config.summary())
 
 

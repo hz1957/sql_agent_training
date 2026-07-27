@@ -59,3 +59,36 @@ def test_flash_attn_runtime_check_reports_missing_dependency(monkeypatch: pytest
     monkeypatch.setattr("importlib.import_module", fail_import)
     with pytest.raises(RuntimeError, match="flash_attn.bert_padding"):
         validate_runtime_dependencies(require_flash_attn=True)
+
+
+def test_peft_transformers_compat_reports_missing_tensor_parallel_symbol(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class SaveAndLoad:
+        @staticmethod
+        def _maybe_shard_state_dict_for_tp():
+            return None
+
+    class TensorParallel:
+        pass
+
+    def fake_import(name: str):
+        if name == "peft.utils.save_and_load":
+            return SaveAndLoad
+        if name == "transformers.integrations.tensor_parallel":
+            return TensorParallel
+        if name in {"peft", "transformers"}:
+            return type("Package", (), {"__version__": "test"})()
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr("importlib.import_module", fake_import)
+    monkeypatch.setattr(
+        "inspect.getsource",
+        lambda _: "from transformers.integrations.tensor_parallel import EmbeddingParallel",
+    )
+
+    with pytest.raises(RuntimeError, match="EmbeddingParallel"):
+        validate_runtime_dependencies(
+            require_flash_attn=False,
+            require_peft_transformers_compat=True,
+        )
