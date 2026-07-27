@@ -40,6 +40,8 @@ TEST_FREQ=${TEST_FREQ:-25}
 MAX_TURNS=${MAX_TURNS:-3}
 PROJECT_NAME=${PROJECT_NAME:-sql_agent_training}
 EXPERIMENT_NAME=${EXPERIMENT_NAME:-verl_grpo_qwen25_coder_14b_l40s_3gpu}
+RAY_NUM_CPUS=${RAY_NUM_CPUS:-16}
+RAY_INCLUDE_DASHBOARD=${RAY_INCLUDE_DASHBOARD:-False}
 
 export CUDA_VISIBLE_DEVICES
 export RAY_ENABLE_UV_RUN_RUNTIME_ENV="${RAY_ENABLE_UV_RUN_RUNTIME_ENV:-0}"
@@ -122,6 +124,11 @@ TRAINER=(
   trainer.val_before_train=False
 )
 
+RAY_INIT=(
+  ray_kwargs.ray_init.num_cpus="${RAY_NUM_CPUS}"
+  +ray_kwargs.ray_init.include_dashboard="${RAY_INCLUDE_DASHBOARD}"
+)
+
 RAY_RUNTIME=()
 if [[ "${ENABLE_RAY_RUNTIME_ENV:-0}" == "1" ]]; then
   RAY_RUNTIME=(
@@ -137,5 +144,6 @@ python -m verl.trainer.main_ppo \
   "${ROLLOUT[@]}" \
   "${REF[@]}" \
   "${TRAINER[@]}" \
+  "${RAY_INIT[@]}" \
   "${RAY_RUNTIME[@]}" \
   "$@"
