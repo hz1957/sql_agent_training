@@ -131,6 +131,25 @@ def _sample_fields(kwargs: dict[str, Any]) -> dict[str, str]:
     return fields
 
 
+def _rollout_extra_fields(
+    *,
+    final_sql: str | None,
+    final_sql_source: str,
+    num_execute_calls: int,
+    num_check_calls: int,
+    num_parse_errors: int,
+) -> dict[str, Any]:
+    """Return only rollout-owned fields so verl can safely union batches."""
+
+    return {
+        "final_sql": final_sql,
+        "final_sql_source": final_sql_source,
+        "num_execute_calls": num_execute_calls,
+        "num_check_calls": num_check_calls,
+        "num_parse_errors": num_parse_errors,
+    }
+
+
 @register("sql_agent")
 class SpiderSqlAgentLoop(AgentLoopBase):
     """Run SQL write/check/rewrite rollouts inside verl's async AgentLoop."""
@@ -480,13 +499,11 @@ class SpiderSqlAgentLoop(AgentLoopBase):
             reward_score=float(reward),
             num_turns=num_turns,
             metrics=metrics,
-            extra_fields={
-                "uid": fields["uid"],
-                "db_id": fields["db_id"],
-                "final_sql": final_sql,
-                "final_sql_source": final_sql_source,
-                "num_execute_calls": num_execute_calls,
-                "num_check_calls": num_check_calls,
-                "num_parse_errors": num_parse_errors,
-            },
+            extra_fields=_rollout_extra_fields(
+                final_sql=final_sql,
+                final_sql_source=final_sql_source,
+                num_execute_calls=num_execute_calls,
+                num_check_calls=num_check_calls,
+                num_parse_errors=num_parse_errors,
+            ),
         )
