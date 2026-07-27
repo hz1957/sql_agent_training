@@ -134,7 +134,8 @@ For a real GRPO pilot after the smoke succeeds, increase `TRAIN_BATCH_SIZE`, `PP
 back to group values such as `4`.
 
 For a 2x H100 node, use the H100 wrapper. It defaults to the same small smoke shape, but uses `ROLLOUT_TP=2`,
-`NGPUS_PER_NODE=2`, no offload, and `ROLLOUT_LAYERED_SUMMON=False`:
+`NGPUS_PER_NODE=2`, no offload, `ROLLOUT_GPU_MEMORY_UTILIZATION=0.30`, and `ROLLOUT_LAYERED_SUMMON=True` so LoRA
+parameter sync does not need to summon the full FSDP model at once:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 \
