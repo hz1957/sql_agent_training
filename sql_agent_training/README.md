@@ -125,7 +125,7 @@ The script assumes a single local Ray node by default and does not pass a Ray `r
 current project checkout directly. Set `ENABLE_RAY_RUNTIME_ENV=1` only for a deployment that needs Ray to package and
 ship the working directory. The script also sets `RAY_ENABLE_UV_RUN_RUNTIME_ENV=0` by default, because Ray's automatic
 `uv run` runtime hook can otherwise rewrite `runtime_env.working_dir` and package the whole project.
-For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=9`, `RAY_OBJECT_STORE_MEMORY=8589934592`, and
+For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=12`, `RAY_OBJECT_STORE_MEMORY=8589934592`, and
 `RAY_INCLUDE_DASHBOARD=False` by default to avoid slow local worker/dashboard startup and oversized Ray object-store
 allocation inside memory-limited jobs; override those environment variables when more CPU-side rollout workers are
 needed.
