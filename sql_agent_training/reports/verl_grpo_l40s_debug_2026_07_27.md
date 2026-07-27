@@ -1,4 +1,4 @@
-# verl GRPO 3x L40S Debug Notes, 2026-07-27
+# verl GRPO L40S/H100 Debug Notes, 2026-07-27
 
 ## Context
 
@@ -11,7 +11,10 @@ Target run:
 - Initial smoke target: 2 training steps, tiny rollout settings
 
 The goal of this debugging round was not to tune GRPO quality yet. It was to make the
-14B LoRA verl pipeline pass initialization and one tiny smoke run.
+14B LoRA verl pipeline pass initialization and one tiny smoke run. Later in the same
+debugging session, the smoke target moved to 2x H100 because 4x L40S fitting remained
+fragile; those H100 findings are included because they exposed several code and
+environment issues that apply to both launch paths.
 
 ## Problem Chain
 
@@ -170,6 +173,256 @@ This allocation is not enough for verl/Ray. The run had 3 L40S GPUs but only:
 
 That is why Ray/verl died before meaningful GPU training began.
 
+### 8. AgentLoop `extra_fields` duplicated verl sample keys
+
+After the H100 run reached rollout, verl failed while merging the original batch with
+the generated batch:
+
+```text
+AssertionError: `uid` in tensor_dict1 and tensor_dict2 are not the same object.
+```
+
+Root cause:
+
+- The custom `SpiderSqlAgentLoop` returned `uid` and `db_id` in `AgentLoopOutput.extra_fields`.
+- The original verl batch already carried sample identifiers such as `uid`.
+- `batch.union(gen_batch_output)` requires duplicated non-tensor keys to be deeply equal.
+  The repeated `uid` value did not pass that identity/equality check.
+
+Resolution:
+
+- Kept `uid` and `db_id` inside `_sample_fields()` for internal request IDs and SQLite context.
+- Removed `uid` and `db_id` from `extra_fields`.
+- Added `_rollout_extra_fields()` so only rollout-owned diagnostics are returned:
+  `final_sql`, `final_sql_source`, `num_execute_calls`, `num_check_calls`, and
+  `num_parse_errors`.
+- Added a unit test that guards against reintroducing `uid`/`db_id` into rollout
+  `extra_fields`.
+
+Relevant commit:
+
+```text
+ffab338c Avoid duplicate verl rollout fields
+```
+
+### 9. Batch-size relationships surfaced as delayed verl config/runtime errors
+
+Several errors were caused by launch parameters that were individually reasonable but
+invalid in combination.
+
+Observed failures:
+
+```text
+AssertionError: number of items:[1] < k_partitions:[2]
+ValueError: train_batch_size (1) must be >= actor.ppo_mini_batch_size (2)
+ValueError: [actor_rollout_ref.rollout] Please set at least one of
+  actor_rollout_ref.rollout.log_prob_micro_batch_size
+  or actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu
+AssertionError:
+  actor.use_dynamic_bsz == rollout.log_prob_use_dynamic_bsz
+```
+
+Root causes and fixes:
+
+- With `trainer.balance_batch=True`, verl balances generated trajectories across data
+  parallel ranks. On 2 H100s, `TRAIN_BATCH_SIZE=1` and `ROLLOUT_N=1` created only one
+  generated item for two partitions. The H100 smoke default changed to `ROLLOUT_N=2`.
+- `PPO_MINI_BATCH_SIZE` is validated against the original prompt batch size, not the
+  rollout-expanded trajectory count. Therefore `TRAIN_BATCH_SIZE=1` requires
+  `PPO_MINI_BATCH_SIZE=1`, even if `ROLLOUT_N=2`.
+- When `LOG_PROB_USE_DYNAMIC_BSZ=False`, verl still requires a fixed
+  `log_prob_micro_batch_size_per_gpu`. We defaulted this to
+  `PPO_MICRO_BATCH_SIZE_PER_GPU` so smoke users only need to remember one per-GPU
+  micro-batch knob.
+- verl requires actor dynamic batching and rollout log-prob dynamic batching to match,
+  so `actor.use_dynamic_bsz` now follows `LOG_PROB_USE_DYNAMIC_BSZ`.
+
+Resolution:
+
+- Added `sql_agent_training.train.verl_grpo_config`, a lightweight validator that does
+  not import torch, verl, vLLM, or load the model.
+- Added `DRY_RUN=1` support in the launch script. It validates batch relationships and
+  prints the final `python -m verl.trainer.main_ppo ...` command without starting Ray,
+  vLLM, GPU monitoring, or model loading.
+- Added validation for:
+  - `TRAIN_BATCH_SIZE * ROLLOUT_N >= NGPUS_PER_NODE` when `balance_batch=True`
+  - `PPO_MINI_BATCH_SIZE <= TRAIN_BATCH_SIZE`
+  - `PPO_MICRO_BATCH_SIZE_PER_GPU <= PPO_MINI_BATCH_SIZE`
+  - fixed log-prob micro-batch presence when dynamic log-prob batching is disabled
+  - `ROLLOUT_TP` divisibility by Qwen's 40 attention heads
+  - `ROLLOUT_PP=1` for the installed verl vLLM rollout wrapper
+
+Relevant commits:
+
+```text
+38a62407 Fix verl smoke batch sizing
+cfef0430 Disable dynamic logprob batching by default
+0c9cd9ef Align verl dynamic batch switches
+6e2a9040 Fix H100 verl mini batch default
+3ea404c3 Set verl logprob micro batch size
+0839295a Add verl GRPO launch validation
+81de01af Default logprob micro batch to actor micro batch
+```
+
+### 10. FlashAttention became a hard dependency of this verl `main_ppo` path
+
+Initially we tried to avoid FlashAttention by setting:
+
+```text
+MODEL_USE_REMOVE_PADDING=False
+MODEL_ATTN_IMPLEMENTATION=sdpa
+LOG_PROB_USE_DYNAMIC_BSZ=False
+```
+
+This avoided Transformers' explicit `FlashAttention2 has been toggled on` failure, but
+did not remove all FlashAttention usage from verl. Once the run reached old log-prob
+calculation, it failed with:
+
+```text
+ModuleNotFoundError: No module named 'flash_attn'
+```
+
+Stack evidence:
+
+```text
+RayPPOTrainer._compute_old_log_prob
+  -> left_right_2_no_padding
+  -> verl.utils.attention_utils.unpad_input
+  -> from flash_attn.bert_padding import ...
+```
+
+Conclusion:
+
+- In the installed verl `main_ppo` / `RayPPOTrainer` path, `flash_attn.bert_padding`
+  is needed by the padding conversion used during old/reference log-prob and actor
+  update stages.
+- This is independent of whether Transformers model attention itself uses SDPA.
+
+Resolution:
+
+- Added `PREFLIGHT=1` support: validate config and runtime dependencies, then exit
+  before starting Ray/vLLM/model loading.
+- Added preflight check for `flash_attn.bert_padding`.
+- The check is enabled for real runs and `PREFLIGHT=1`, but disabled for `DRY_RUN=1`
+  so local command-shape validation still works without GPU packages.
+
+Relevant commit:
+
+```text
+7c6042de Preflight verl flash attention dependency
+```
+
+### 11. FlashAttention install failed until Python/CUDA/PyTorch were aligned
+
+The first `flash-attn` installation attempt failed because the existing environment was:
+
+```text
+torch: 2.9.0+cu128
+torch.version.cuda: 12.8
+detected nvcc/CUDA toolkit: 13.2
+```
+
+The build error:
+
+```text
+RuntimeError:
+The detected CUDA version (13.2) mismatches the version that was used to compile PyTorch (12.8).
+```
+
+The cluster had CUDA modules for `12.6.1`, `12.9.1`, and `13.0.1`, but not `12.8`.
+Therefore compiling `flash-attn` against the existing `torch+cu128` environment was not
+viable.
+
+Resolution path:
+
+- Created a fresh outer `.venv` instead of mutating the old environment in place.
+- Loaded `cuda/12.6.1`.
+- Installed a CUDA 12.6-aligned torch/vLLM/verl stack:
+
+```text
+python: 3.12.13
+torch: 2.9.0+cu126
+torch.version.cuda: 12.6
+vllm: 0.12.0
+```
+
+- Removed the inner project `.venv` so `uv run` consistently uses the outer
+  workspace environment.
+- Updated both `.python-version` files from `3.10` to `3.12` on the server to avoid
+  uv selecting/requesting Python 3.10 by mistake.
+- Installed `flash-attn` into the outer environment after CUDA/PyTorch alignment.
+
+Important lesson:
+
+- Do not only replace torch inside an existing verl/vLLM environment. vLLM, torch,
+  flash-attn, and CUDA should be treated as one binary stack.
+- Manual `uv pip install flash-attn` is acceptable as an experiment, but `uv sync`
+  can later remove it because it is not locked in `pyproject.toml`/`uv.lock`.
+
+### 12. PEFT and Transformers became the next binary-stack compatibility issue
+
+After CUDA/FlashAttention was fixed, the run progressed into model initialization and
+LoRA adapter loading, then failed with:
+
+```text
+ImportError: cannot import name 'EmbeddingParallel'
+from transformers.integrations.tensor_parallel
+```
+
+Stack evidence:
+
+```text
+PeftModel.from_pretrained(...)
+  -> set_peft_model_state_dict(...)
+  -> _maybe_shard_state_dict_for_tp(...)
+  -> from transformers.integrations.tensor_parallel import EmbeddingParallel
+```
+
+Root cause:
+
+- The installed `peft` version expects a Transformers tensor-parallel helper symbol
+  named `EmbeddingParallel`.
+- The installed `transformers` package does not provide that symbol.
+- This is a PEFT/Transformers API compatibility mismatch surfaced while loading the
+  LoRA adapter.
+
+Resolution added so far:
+
+- Added a preflight check that inspects whether the installed PEFT code references
+  `EmbeddingParallel` and whether the installed Transformers package provides it.
+- This catches the mismatch before model loading.
+
+Likely next action:
+
+- Prefer adjusting PEFT before upgrading Transformers, because vLLM is sensitive to
+  Transformers version changes.
+- First try:
+
+```bash
+uv pip install "peft==0.17.1"
+```
+
+- Then verify:
+
+```bash
+uv run --no-sync python - <<'PY'
+import peft, transformers
+print("peft:", peft.__version__)
+print("transformers:", transformers.__version__)
+try:
+    from transformers.integrations.tensor_parallel import EmbeddingParallel
+    print("EmbeddingParallel ok")
+except Exception as exc:
+    print("EmbeddingParallel failed:", repr(exc))
+PY
+```
+
+Relevant commit:
+
+```text
+43f12c41 Preflight PEFT transformers compatibility
+```
+
 ## Code And Parameter Changes Made
 
 Main script:
@@ -215,6 +468,8 @@ Key changes:
   - `ACTOR_PARAM_OFFLOAD=False`
   - `ACTOR_OPTIMIZER_OFFLOAD=False`
   - `REF_PARAM_OFFLOAD=False`
+  - `LOG_PROB_USE_DYNAMIC_BSZ=False`
+  - `LOG_PROB_MICRO_BATCH_SIZE_PER_GPU=PPO_MICRO_BATCH_SIZE_PER_GPU`
 - Limit CPU thread fan-out:
   - `TOKENIZERS_PARALLELISM=false`
   - `OMP_NUM_THREADS=1`
@@ -232,6 +487,10 @@ a1ef675b Constrain Ray resources for verl smoke
 9e6dc58d Advertise enough Ray CPUs for verl workers
 5983ccbf Leave CPU headroom for verl placement group
 00a11c9c Reduce verl smoke memory pressure
+ffab338c Avoid duplicate verl rollout fields
+0839295a Add verl GRPO launch validation
+7c6042de Preflight verl flash attention dependency
+43f12c41 Preflight PEFT transformers compatibility
 ```
 
 ## Correct SLURM Allocation
@@ -239,7 +498,7 @@ a1ef675b Constrain Ray resources for verl smoke
 Do not launch this job with only `--gres=gpu:l40s:3`. That gives GPUs but does not
 request enough CPU or memory.
 
-Use an allocation like:
+For the later 4x L40S `ROLLOUT_TP=4` path, use an allocation like:
 
 ```bash
 srun \
@@ -248,7 +507,7 @@ srun \
   --ntasks=1 \
   --cpus-per-task=16 \
   --mem=128G \
-  --gres=gpu:l40s:3 \
+  --gres=gpu:l40s:4 \
   --time=05:00:00 \
   --pty bash
 ```
@@ -260,12 +519,16 @@ working command but add:
 --cpus-per-task=16 --mem=128G
 ```
 
+For exactly 3x L40S, the current colocated verl vLLM path has no good model-parallel
+shape for Qwen2.5-Coder-14B: `TP=3` does not divide 40 attention heads, and `PP=3`
+is not implemented by the installed verl rollout wrapper.
+
 ## Recommended Smoke Command
 
 After entering a properly sized allocation:
 
 ```bash
-cd /storage/ice1/0/8/hzhang961/sql_agent_training
+cd /home/hice1/hzhang961/scratch/sql_agent_training
 git pull
 uv run --no-sync ray stop -f
 
@@ -290,7 +553,7 @@ mkdir -p "$TRITON_CACHE_DIR" "$RAY_TMPDIR"
   TEST_FREQ=-1 \
   TRAIN_BATCH_SIZE=1 \
   PPO_MINI_BATCH_SIZE=1 \
-  ROLLOUT_N=1 \
+  ROLLOUT_N=4 \
   ROLLOUT_TP=4 \
   ROLLOUT_PP=1 \
   ROLLOUT_GPU_MEMORY_UTILIZATION=0.32 \
@@ -315,11 +578,46 @@ Expected startup lines:
 
 ```text
 verl RAY_NUM_CPUS=16 RAY_OBJECT_STORE_MEMORY=1073741824
-verl TRAIN_BATCH_SIZE=1 PPO_MINI_BATCH_SIZE=1 ROLLOUT_N=1
+verl TRAIN_BATCH_SIZE=1 PPO_MINI_BATCH_SIZE=1 ROLLOUT_N=4
 verl ROLLOUT_TP=4 ROLLOUT_PP=1 ROLLOUT_GPU_MEMORY_UTILIZATION=0.32
 verl USE_KL_IN_REWARD=False USE_KL_LOSS=False KL_LOSS_COEF=0.01
 verl ACTOR_USE_TORCH_COMPILE=False ROLLOUT_ENFORCE_EAGER=True
 verl ACTOR_PARAM_OFFLOAD=False ACTOR_OPTIMIZER_OFFLOAD=False REF_PARAM_OFFLOAD=False
+```
+
+For a 4x L40S balanced smoke, `ROLLOUT_N=1` is now known to be invalid when
+`TRAIN_BATCH_SIZE=1` and `trainer.balance_batch=True`, because it creates only one
+trajectory for four GPU partitions. Use either:
+
+```bash
+TRAIN_BATCH_SIZE=1
+PPO_MINI_BATCH_SIZE=1
+ROLLOUT_N=4
+```
+
+or:
+
+```bash
+TRAIN_BATCH_SIZE=4
+PPO_MINI_BATCH_SIZE=4
+ROLLOUT_N=1
+```
+
+For GRPO quality experiments, prefer multiple rollouts per prompt (`ROLLOUT_N > 1`) so
+each prompt has an actual comparison group.
+
+Before starting a GPU run, use one of the launch-script checks:
+
+```bash
+# Validate config shape and print the final verl command. Does not require flash-attn.
+DRY_RUN=1 \
+CUDA_VISIBLE_DEVICES=0,1 \
+uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_h100_2gpu.sh
+
+# Validate config and runtime imports such as flash_attn/PEFT/Transformers, then exit.
+PREFLIGHT=1 \
+CUDA_VISIBLE_DEVICES=0,1 \
+uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_h100_2gpu.sh
 ```
 
 ## Monitoring And Diagnosis Checklist
