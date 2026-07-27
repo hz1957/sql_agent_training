@@ -204,7 +204,8 @@ Key changes:
   - `MODEL_ATTN_IMPLEMENTATION=sdpa`
   - `DATA_TRUST_REMOTE_CODE=False`
   - `MODEL_TRUST_REMOTE_CODE=False`
-  - `ROLLOUT_TP=3`
+  - `ROLLOUT_TP=1`
+  - `ROLLOUT_PP=3`
   - `ROLLOUT_GPU_MEMORY_UTILIZATION=0.32`
   - `ROLLOUT_MAX_MODEL_LEN=MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`
   - `ROLLOUT_MAX_NUM_BATCHED_TOKENS=ROLLOUT_MAX_MODEL_LEN`
@@ -378,7 +379,10 @@ MAX_RESPONSE_LENGTH=2048
    worker logs for the root cause. In one failing run, the root cause was:
    `Free memory on device (16.17/44.39 GiB) on startup is less than desired GPU memory utilization (0.6, 26.64 GiB)`.
    vLLM's utilization target is a fraction of total device memory, not a fraction of currently free memory.
-9. For 14B on 3x L40S with learner/reference workers already resident, prefer `ROLLOUT_TP=3` for smoke runs.
-   `ROLLOUT_TP=1` can create one full 14B vLLM replica per GPU, which leaves too little free memory once
-   the training-side workers are colocated. Keep `ROLLOUT_GPU_MEMORY_UTILIZATION`, `ROLLOUT_MAX_MODEL_LEN`,
+9. A follow-up attempt with `ROLLOUT_TP=3` failed because Qwen2.5-Coder-14B has 40 attention heads, and vLLM requires
+   the head count to be divisible by the tensor parallel size:
+   `Total number of attention heads (40) must be divisible by tensor parallel size (3)`.
+10. For 14B on 3x L40S with learner/reference workers already resident, prefer `ROLLOUT_TP=1` and `ROLLOUT_PP=3`
+   for smoke runs. `ROLLOUT_TP=1` avoids invalid tensor head splits, while `ROLLOUT_PP=3` still avoids placing a
+   separate full 14B vLLM replica on each GPU. Keep `ROLLOUT_GPU_MEMORY_UTILIZATION`, `ROLLOUT_MAX_MODEL_LEN`,
    `ROLLOUT_MAX_NUM_BATCHED_TOKENS`, and `ROLLOUT_MAX_NUM_SEQS` conservative until the smoke completes.
