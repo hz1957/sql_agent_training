@@ -202,6 +202,8 @@ Key changes:
   - `ROLLOUT_ENFORCE_EAGER=True`
   - `MODEL_USE_REMOVE_PADDING=False`
   - `MODEL_ATTN_IMPLEMENTATION=sdpa`
+  - `DATA_TRUST_REMOTE_CODE=False`
+  - `MODEL_TRUST_REMOTE_CODE=False`
 - Limit CPU thread fan-out:
   - `TOKENIZERS_PARALLELISM=false`
   - `OMP_NUM_THREADS=1`
@@ -210,6 +212,7 @@ Key changes:
   - `NUMEXPR_NUM_THREADS=1`
   - `MALLOC_ARENA_MAX=2`
   - `CUDA_MODULE_LOADING=LAZY`
+  - `VLLM_WORKER_MULTIPROC_METHOD=spawn`
 
 Relevant commits from this debugging chain:
 
@@ -362,3 +365,6 @@ MAX_RESPONSE_LENGTH=2048
    raises `FlashAttention2 has been toggled on`. In Hydra overrides, `_attn_implementation`
    must be appended under `override_config` with a leading `+` because the key is not present
    in verl's default config.
+7. Keep `MODEL_TRUST_REMOTE_CODE=False` for Qwen2.5-Coder because it is supported by the installed
+   Transformers/vLLM stack and does not require remote model code. If a future model requires custom
+   code, set `MODEL_TRUST_REMOTE_CODE=True` and `DATA_TRUST_REMOTE_CODE=True` explicitly.

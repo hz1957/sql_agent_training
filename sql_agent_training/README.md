@@ -131,7 +131,9 @@ allocation inside memory-limited jobs; override those environment variables when
 needed.
 The smoke defaults also keep CPU subprocess fan-out conservative with `DATALOADER_NUM_WORKERS=0` and
 `REWARD_NUM_WORKERS=1`; increase them only after the first GPU smoke succeeds. Smoke runs also default to
-`ACTOR_USE_TORCH_COMPILE=False` and `ROLLOUT_ENFORCE_EAGER=True` to reduce initialization-time memory pressure.
+`ACTOR_USE_TORCH_COMPILE=False`, `ROLLOUT_ENFORCE_EAGER=True`, `MODEL_TRUST_REMOTE_CODE=False`, and
+`MODEL_ATTN_IMPLEMENTATION=sdpa` to reduce initialization-time memory pressure and avoid optional FlashAttention
+dependencies.
 
 This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
 
