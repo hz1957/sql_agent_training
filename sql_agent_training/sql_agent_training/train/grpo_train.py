@@ -17,10 +17,12 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import logging
+import os
 import random
 from contextlib import nullcontext
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -262,58 +264,6 @@ class GrpoTrainer:
             rewards=tensors["rewards"],
             old_logprobs=old_logprobs,
             reference_logprobs=reference_logprobs,
-            rollout_ids=tensors["rollout_ids"],
-        )
-
-    def prepare_batch_with_ref_logprobs(
-        self,
-        batch: GrpoBatch,
-        ref_logprobs_tensor: Any,
-    ) -> GrpoTrainingBatch:
-        """Build padded tensors using pre-computed reference log-probs.
-
-        Used by the Ray pipeline where `ReferenceLogprobWorker` computes
-        reference log-probabilities and transfers them to `LearnerWorker`
-        via Ray Object Store, avoiding a second reference forward pass on the
-        Learner GPU.
-
-        Args:
-            batch: `GrpoBatch` to prepare.
-            ref_logprobs_tensor: Pre-computed reference log-prob tensor
-                of shape `(B, L-1)` already on `self.device`.
-
-        Returns:
-            `GrpoTrainingBatch` ready for `train_prepared_batch`.
-        """
-        torch = _require_torch()
-        advantages = compute_group_advantages(
-            batch,
-            normalize=self.loss_config.normalize_advantages,
-            epsilon=self.loss_config.advantage_epsilon,
-        )
-        tensors = build_training_tensors(
-            batch,
-            advantages=advantages,
-            pad_token_id=self.pad_token_id,
-            device=self.device,
-        )
-        self.policy_model.eval()
-        with torch.no_grad():
-            old_logprobs = _sequence_logprobs_microbatched(
-                self.policy_model,
-                tensors["input_ids"],
-                tensors["attention_mask"],
-                micro_batch_size=self.logprob_micro_batch_size,
-            ).detach()
-
-        return GrpoTrainingBatch(
-            input_ids=tensors["input_ids"],
-            attention_mask=tensors["attention_mask"],
-            response_mask=tensors["response_mask"],
-            advantages=tensors["advantages"],
-            rewards=tensors["rewards"],
-            old_logprobs=old_logprobs,
-            reference_logprobs=ref_logprobs_tensor,
             rollout_ids=tensors["rollout_ids"],
         )
 
@@ -819,26 +769,26 @@ def _load_config(path: str | Path) -> dict[str, Any]:
     return loaded or {}
 
 
+def _configure_logging() -> None:
+    level_name = os.environ.get("SQL_AGENT_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s -- %(message)s",
+    )
+
+
 def main() -> None:
+    _configure_logging()
     parser = argparse.ArgumentParser(description="Run a minimal complete GRPO trainer.")
     parser.add_argument("--config", default="configs/grpo.local_dryrun.yaml")
     parser.add_argument("--dry-run", action="store_true", help="Force built-in demo rollouts.")
-    parser.add_argument(
-        "--ray",
-        action="store_true",
-        help="Use the Ray async pipeline with rollout, reference-logprob, and learner workers.",
-    )
     args = parser.parse_args()
 
     config = _load_config(args.config)
     if args.dry_run:
         config["dry_run"] = True
-    if args.ray:
-        from sql_agent_training.train.grpo_ray_pipeline import train_grpo_ray
-
-        summary = train_grpo_ray(config)
-    else:
-        summary = train_grpo_from_config(config)
+    summary = train_grpo_from_config(config)
     if int(summary.get("rank", 0)) == 0:
         print(json.dumps(summary, indent=2, ensure_ascii=False))
 

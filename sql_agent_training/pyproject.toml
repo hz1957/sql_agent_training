@@ -28,15 +28,6 @@ train = [
   "peft>=0.17,<0.19",
   "protobuf",
 ]
-ray = [
-  "torch>=2.5.1,<2.6",
-  "transformers>=4.45,<5",
-  "accelerate",
-  "peft>=0.17,<0.19",
-  "protobuf",
-  "ray[default]>=2.9.0",
-  "vllm>=0.4.0",
-]
 
 [dependency-groups]
 dev = [
@@ -48,7 +39,6 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
   "dryrun: tests that run the full pipeline with tiny/scripted models (no real GPU required)",
-  "ray: tests that require a real Ray cluster with GPUs",
   "openai: tests that call the OpenAI API",
 ]
 
