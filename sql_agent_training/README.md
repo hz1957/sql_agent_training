@@ -119,6 +119,8 @@ ROLLOUT_TP=4 \
 ROLLOUT_PP=1 \
 ROLLOUT_GPU_MEMORY_UTILIZATION=0.32 \
 ROLLOUT_MAX_NUM_SEQS=1 \
+USE_KL_IN_REWARD=False \
+USE_KL_LOSS=False \
 ACTOR_PARAM_OFFLOAD=False \
 ACTOR_OPTIMIZER_OFFLOAD=False \
 REF_PARAM_OFFLOAD=False \
@@ -145,8 +147,9 @@ The smoke defaults also keep CPU subprocess fan-out conservative with `DATALOADE
 dependencies. For this verl vLLM rollout path, `ROLLOUT_PP` must remain `1`; the installed verl version rejects
 `pipeline_model_parallel_size > 1`. Qwen2.5-Coder-14B has 40 attention heads, so `ROLLOUT_TP` must divide 40. On a
 4x L40S node this means the conservative smoke path uses `ROLLOUT_TP=4`, no FSDP offload, `ROLLOUT_MAX_NUM_SEQS=1`,
-and a default `ROLLOUT_MAX_MODEL_LEN` of `MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`. If this still cannot fit, lower
-`ROLLOUT_GPU_MEMORY_UTILIZATION` first, or move rollout to separate vLLM GPUs.
+reference/KL disabled via `USE_KL_LOSS=False` and `USE_KL_IN_REWARD=False`, and a default `ROLLOUT_MAX_MODEL_LEN` of
+`MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`. If this still cannot fit, lower `ROLLOUT_GPU_MEMORY_UTILIZATION` first,
+or move rollout to separate vLLM GPUs.
 
 This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
 

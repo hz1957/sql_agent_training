@@ -210,6 +210,8 @@ Key changes:
   - `ROLLOUT_MAX_MODEL_LEN=MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`
   - `ROLLOUT_MAX_NUM_BATCHED_TOKENS=ROLLOUT_MAX_MODEL_LEN`
   - `ROLLOUT_MAX_NUM_SEQS=1`
+  - `USE_KL_IN_REWARD=False`
+  - `USE_KL_LOSS=False`
   - `ACTOR_PARAM_OFFLOAD=False`
   - `ACTOR_OPTIMIZER_OFFLOAD=False`
   - `REF_PARAM_OFFLOAD=False`
@@ -293,6 +295,8 @@ mkdir -p "$TRITON_CACHE_DIR" "$RAY_TMPDIR"
   ROLLOUT_PP=1 \
   ROLLOUT_GPU_MEMORY_UTILIZATION=0.32 \
   ROLLOUT_MAX_NUM_SEQS=1 \
+  USE_KL_IN_REWARD=False \
+  USE_KL_LOSS=False \
   ACTOR_PARAM_OFFLOAD=False \
   ACTOR_OPTIMIZER_OFFLOAD=False \
   REF_PARAM_OFFLOAD=False \
@@ -313,6 +317,7 @@ Expected startup lines:
 verl RAY_NUM_CPUS=16 RAY_OBJECT_STORE_MEMORY=1073741824
 verl TRAIN_BATCH_SIZE=1 PPO_MINI_BATCH_SIZE=1 ROLLOUT_N=1
 verl ROLLOUT_TP=4 ROLLOUT_PP=1 ROLLOUT_GPU_MEMORY_UTILIZATION=0.32
+verl USE_KL_IN_REWARD=False USE_KL_LOSS=False KL_LOSS_COEF=0.01
 verl ACTOR_USE_TORCH_COMPILE=False ROLLOUT_ENFORCE_EAGER=True
 verl ACTOR_PARAM_OFFLOAD=False ACTOR_OPTIMIZER_OFFLOAD=False REF_PARAM_OFFLOAD=False
 ```
@@ -403,3 +408,5 @@ MAX_RESPONSE_LENGTH=2048
     to separate vLLM GPUs instead of colocating learner and rollout on the same 3 L40S cards.
 12. After acquiring 4x L40S, use `ROLLOUT_TP=4`, `ROLLOUT_PP=1`, and no FSDP offload. `TP=4` is valid for
     Qwen2.5-Coder-14B because 40 attention heads is divisible by 4.
+13. If `vLLM wake_up(tags=["weights"])` OOMs while colocated with actor/reference, disable reference/KL first:
+    `USE_KL_LOSS=False` and `USE_KL_IN_REWARD=False`. This removes the reference FSDP worker from the smoke path.
