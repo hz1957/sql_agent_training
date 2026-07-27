@@ -45,15 +45,25 @@ PROJECT_NAME=${PROJECT_NAME:-sql_agent_training}
 EXPERIMENT_NAME=${EXPERIMENT_NAME:-verl_grpo_qwen25_coder_14b_l40s_3gpu}
 RAY_NUM_CPUS=${RAY_NUM_CPUS:-12}
 RAY_INCLUDE_DASHBOARD=${RAY_INCLUDE_DASHBOARD:-False}
-RAY_OBJECT_STORE_MEMORY=${RAY_OBJECT_STORE_MEMORY:-8589934592}
+RAY_OBJECT_STORE_MEMORY=${RAY_OBJECT_STORE_MEMORY:-1073741824}
+ACTOR_USE_TORCH_COMPILE=${ACTOR_USE_TORCH_COMPILE:-False}
+ROLLOUT_ENFORCE_EAGER=${ROLLOUT_ENFORCE_EAGER:-True}
 
 export CUDA_VISIBLE_DEVICES
 export RAY_ENABLE_UV_RUN_RUNTIME_ENV="${RAY_ENABLE_UV_RUN_RUNTIME_ENV:-0}"
+export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
+export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
+export CUDA_MODULE_LOADING="${CUDA_MODULE_LOADING:-LAZY}"
 
 echo "verl PROJECT_DIR=${PROJECT_DIR}"
 echo "verl RAY_NUM_CPUS=${RAY_NUM_CPUS} RAY_OBJECT_STORE_MEMORY=${RAY_OBJECT_STORE_MEMORY} RAY_INCLUDE_DASHBOARD=${RAY_INCLUDE_DASHBOARD}"
 echo "verl TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE} PPO_MINI_BATCH_SIZE=${PPO_MINI_BATCH_SIZE} ROLLOUT_N=${ROLLOUT_N}"
 echo "verl MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH} MAX_RESPONSE_LENGTH=${MAX_RESPONSE_LENGTH}"
+echo "verl ACTOR_USE_TORCH_COMPILE=${ACTOR_USE_TORCH_COMPILE} ROLLOUT_ENFORCE_EAGER=${ROLLOUT_ENFORCE_EAGER}"
 
 DATA=(
   algorithm.adv_estimator=grpo
@@ -95,11 +105,13 @@ ACTOR=(
   actor_rollout_ref.actor.ppo_max_token_len_per_gpu="${PPO_MAX_TOKEN_LEN_PER_GPU}"
   actor_rollout_ref.actor.fsdp_config.param_offload=False
   actor_rollout_ref.actor.fsdp_config.optimizer_offload=False
+  actor_rollout_ref.actor.fsdp_config.use_torch_compile="${ACTOR_USE_TORCH_COMPILE}"
 )
 
 ROLLOUT=(
   actor_rollout_ref.rollout.name=vllm
   actor_rollout_ref.rollout.mode=async
+  actor_rollout_ref.rollout.enforce_eager="${ROLLOUT_ENFORCE_EAGER}"
   actor_rollout_ref.rollout.tensor_model_parallel_size="${ROLLOUT_TP}"
   actor_rollout_ref.rollout.gpu_memory_utilization="${ROLLOUT_GPU_MEMORY_UTILIZATION}"
   actor_rollout_ref.rollout.n="${ROLLOUT_N}"
@@ -121,6 +133,7 @@ REF=(
   actor_rollout_ref.ref.log_prob_use_dynamic_bsz=True
   actor_rollout_ref.ref.log_prob_max_token_len_per_gpu="${PPO_MAX_TOKEN_LEN_PER_GPU}"
   actor_rollout_ref.ref.fsdp_config.param_offload=True
+  actor_rollout_ref.ref.fsdp_config.use_torch_compile="${ACTOR_USE_TORCH_COMPILE}"
 )
 
 REWARD=(

@@ -125,12 +125,13 @@ The script assumes a single local Ray node by default and does not pass a Ray `r
 current project checkout directly. Set `ENABLE_RAY_RUNTIME_ENV=1` only for a deployment that needs Ray to package and
 ship the working directory. The script also sets `RAY_ENABLE_UV_RUN_RUNTIME_ENV=0` by default, because Ray's automatic
 `uv run` runtime hook can otherwise rewrite `runtime_env.working_dir` and package the whole project.
-For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=12`, `RAY_OBJECT_STORE_MEMORY=8589934592`, and
+For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=12`, `RAY_OBJECT_STORE_MEMORY=1073741824`, and
 `RAY_INCLUDE_DASHBOARD=False` by default to avoid slow local worker/dashboard startup and oversized Ray object-store
 allocation inside memory-limited jobs; override those environment variables when more CPU-side rollout workers are
 needed.
 The smoke defaults also keep CPU subprocess fan-out conservative with `DATALOADER_NUM_WORKERS=0` and
-`REWARD_NUM_WORKERS=1`; increase them only after the first GPU smoke succeeds.
+`REWARD_NUM_WORKERS=1`; increase them only after the first GPU smoke succeeds. Smoke runs also default to
+`ACTOR_USE_TORCH_COMPILE=False` and `ROLLOUT_ENFORCE_EAGER=True` to reduce initialization-time memory pressure.
 
 This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
 
