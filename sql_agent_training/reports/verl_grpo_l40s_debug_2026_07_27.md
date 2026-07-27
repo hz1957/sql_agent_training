@@ -359,4 +359,6 @@ MAX_RESPONSE_LENGTH=2048
    after the run is stable and memory headroom is confirmed.
 6. Re-enable `MODEL_USE_REMOVE_PADDING=True` or use `MODEL_ATTN_IMPLEMENTATION=flash_attention_2`
    only after installing a compatible `flash_attn` package. Without `flash_attn`, Transformers
-   raises `FlashAttention2 has been toggled on`.
+   raises `FlashAttention2 has been toggled on`. In Hydra overrides, `_attn_implementation`
+   must be appended under `override_config` with a leading `+` because the key is not present
+   in verl's default config.

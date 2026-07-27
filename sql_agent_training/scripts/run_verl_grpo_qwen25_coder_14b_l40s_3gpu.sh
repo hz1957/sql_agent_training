@@ -93,7 +93,7 @@ MODEL=(
   actor_rollout_ref.model.lora_alpha=128
   actor_rollout_ref.model.target_modules=all-linear
   actor_rollout_ref.model.lora_adapter_path="${LORA_ADAPTER_PATH}"
-  actor_rollout_ref.model.override_config._attn_implementation="${MODEL_ATTN_IMPLEMENTATION}"
+  +actor_rollout_ref.model.override_config._attn_implementation="${MODEL_ATTN_IMPLEMENTATION}"
 )
 
 ACTOR=(
