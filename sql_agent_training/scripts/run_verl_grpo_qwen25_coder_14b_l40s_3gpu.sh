@@ -30,9 +30,12 @@ PPO_MAX_TOKEN_LEN_PER_GPU=${PPO_MAX_TOKEN_LEN_PER_GPU:-16384}
 MAX_PROMPT_LENGTH=${MAX_PROMPT_LENGTH:-4096}
 MAX_RESPONSE_LENGTH=${MAX_RESPONSE_LENGTH:-2048}
 TOTAL_TRAINING_STEPS=${TOTAL_TRAINING_STEPS:-500}
+DATALOADER_NUM_WORKERS=${DATALOADER_NUM_WORKERS:-0}
+FILTER_OVERLONG_PROMPTS_WORKERS=${FILTER_OVERLONG_PROMPTS_WORKERS:-1}
 ROLLOUT_N=${ROLLOUT_N:-4}
 ROLLOUT_TP=${ROLLOUT_TP:-1}
 ROLLOUT_GPU_MEMORY_UTILIZATION=${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.82}
+REWARD_NUM_WORKERS=${REWARD_NUM_WORKERS:-1}
 ACTOR_LR=${ACTOR_LR:-5e-7}
 KL_LOSS_COEF=${KL_LOSS_COEF:-0.01}
 SAVE_FREQ=${SAVE_FREQ:-25}
@@ -56,7 +59,10 @@ DATA=(
   data.max_response_length="${MAX_RESPONSE_LENGTH}"
   data.return_raw_chat=True
   data.filter_overlong_prompts=True
+  data.filter_overlong_prompts_workers="${FILTER_OVERLONG_PROMPTS_WORKERS}"
+  data.dataloader_num_workers="${DATALOADER_NUM_WORKERS}"
   data.truncation=error
+  data.trust_remote_code=True
 )
 
 MODEL=(
@@ -111,6 +117,10 @@ REF=(
   actor_rollout_ref.ref.fsdp_config.param_offload=True
 )
 
+REWARD=(
+  reward.num_workers="${REWARD_NUM_WORKERS}"
+)
+
 TRAINER=(
   trainer.balance_batch=True
   trainer.logger='["console"]'
@@ -143,6 +153,7 @@ python -m verl.trainer.main_ppo \
   "${ACTOR[@]}" \
   "${ROLLOUT[@]}" \
   "${REF[@]}" \
+  "${REWARD[@]}" \
   "${TRAINER[@]}" \
   "${RAY_INIT[@]}" \
   "${RAY_RUNTIME[@]}" \
