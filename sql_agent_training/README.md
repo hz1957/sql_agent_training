@@ -104,25 +104,27 @@ Prepare Spider parquet files in verl's default RLHF dataset format:
 uv run --no-sync python sql_agent_training/scripts/prepare_verl_spider.py
 ```
 
-Run the 14B LoRA verl GRPO script on a 3x L40S node after installing a compatible verl/vLLM environment.
+Run the 14B LoRA verl GRPO script on a 4x L40S node after installing a compatible verl/vLLM environment.
 For the first smoke test, keep both Ray and GRPO very small:
 
 ```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 \
 TOTAL_TRAINING_STEPS=2 \
 SAVE_FREQ=-1 \
 TEST_FREQ=-1 \
 TRAIN_BATCH_SIZE=1 \
 PPO_MINI_BATCH_SIZE=1 \
 ROLLOUT_N=1 \
-ROLLOUT_TP=1 \
+ROLLOUT_TP=4 \
 ROLLOUT_PP=1 \
-ROLLOUT_GPU_MEMORY_UTILIZATION=0.70 \
+ROLLOUT_GPU_MEMORY_UTILIZATION=0.32 \
 ROLLOUT_MAX_NUM_SEQS=1 \
-ACTOR_PARAM_OFFLOAD=True \
-ACTOR_OPTIMIZER_OFFLOAD=True \
+ACTOR_PARAM_OFFLOAD=False \
+ACTOR_OPTIMIZER_OFFLOAD=False \
+REF_PARAM_OFFLOAD=False \
 MAX_PROMPT_LENGTH=2048 \
 MAX_RESPONSE_LENGTH=512 \
-uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_3gpu.sh
+uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_4gpu.sh
 ```
 
 For a real GRPO pilot after the smoke succeeds, increase `TRAIN_BATCH_SIZE`, `PPO_MINI_BATCH_SIZE`, and `ROLLOUT_N`
@@ -132,7 +134,7 @@ The script assumes a single local Ray node by default and does not pass a Ray `r
 current project checkout directly. Set `ENABLE_RAY_RUNTIME_ENV=1` only for a deployment that needs Ray to package and
 ship the working directory. The script also sets `RAY_ENABLE_UV_RUN_RUNTIME_ENV=0` by default, because Ray's automatic
 `uv run` runtime hook can otherwise rewrite `runtime_env.working_dir` and package the whole project.
-For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=12`, `RAY_OBJECT_STORE_MEMORY=1073741824`, and
+For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=16`, `RAY_OBJECT_STORE_MEMORY=1073741824`, and
 `RAY_INCLUDE_DASHBOARD=False` by default to avoid slow local worker/dashboard startup and oversized Ray object-store
 allocation inside memory-limited jobs; override those environment variables when more CPU-side rollout workers are
 needed.
@@ -142,9 +144,9 @@ The smoke defaults also keep CPU subprocess fan-out conservative with `DATALOADE
 `MODEL_ATTN_IMPLEMENTATION=sdpa` to reduce initialization-time memory pressure and avoid optional FlashAttention
 dependencies. For this verl vLLM rollout path, `ROLLOUT_PP` must remain `1`; the installed verl version rejects
 `pipeline_model_parallel_size > 1`. Qwen2.5-Coder-14B has 40 attention heads, so `ROLLOUT_TP` must divide 40. On a
-3x L40S node this means the conservative smoke path uses `ROLLOUT_TP=1`, PyTorch/FSDP offload, `ROLLOUT_MAX_NUM_SEQS=1`,
-and a default `ROLLOUT_MAX_MODEL_LEN` of `MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`. If this still cannot fit, use
-more GPUs with a legal TP size such as 4, or move rollout to separate vLLM GPUs.
+4x L40S node this means the conservative smoke path uses `ROLLOUT_TP=4`, no FSDP offload, `ROLLOUT_MAX_NUM_SEQS=1`,
+and a default `ROLLOUT_MAX_MODEL_LEN` of `MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`. If this still cannot fit, lower
+`ROLLOUT_GPU_MEMORY_UTILIZATION` first, or move rollout to separate vLLM GPUs.
 
 This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
 

@@ -175,7 +175,7 @@ That is why Ray/verl died before meaningful GPU training began.
 Main script:
 
 ```text
-sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_3gpu.sh
+sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_4gpu.sh
 ```
 
 Key changes:
@@ -192,7 +192,7 @@ Key changes:
   - prompt/response lengths
   - torch compile / eager rollout switches
 - Set conservative smoke defaults:
-  - `RAY_NUM_CPUS=12`
+  - `RAY_NUM_CPUS=16`
   - `RAY_OBJECT_STORE_MEMORY=1073741824`
   - `RAY_INCLUDE_DASHBOARD=False`
   - `DATALOADER_NUM_WORKERS=0`
@@ -204,15 +204,15 @@ Key changes:
   - `MODEL_ATTN_IMPLEMENTATION=sdpa`
   - `DATA_TRUST_REMOTE_CODE=False`
   - `MODEL_TRUST_REMOTE_CODE=False`
-  - `ROLLOUT_TP=1`
+  - `ROLLOUT_TP=4`
   - `ROLLOUT_PP=1`
-  - `ROLLOUT_GPU_MEMORY_UTILIZATION=0.70`
+  - `ROLLOUT_GPU_MEMORY_UTILIZATION=0.32`
   - `ROLLOUT_MAX_MODEL_LEN=MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`
   - `ROLLOUT_MAX_NUM_BATCHED_TOKENS=ROLLOUT_MAX_MODEL_LEN`
   - `ROLLOUT_MAX_NUM_SEQS=1`
-  - `ACTOR_PARAM_OFFLOAD=True`
-  - `ACTOR_OPTIMIZER_OFFLOAD=True`
-  - `REF_PARAM_OFFLOAD=True`
+  - `ACTOR_PARAM_OFFLOAD=False`
+  - `ACTOR_OPTIMIZER_OFFLOAD=False`
+  - `REF_PARAM_OFFLOAD=False`
 - Limit CPU thread fan-out:
   - `TOKENIZERS_PARALLELISM=false`
   - `OMP_NUM_THREADS=1`
@@ -269,7 +269,7 @@ uv run --no-sync ray stop -f
 
 mkdir -p logs
 export UV_LINK_MODE=copy
-export CUDA_VISIBLE_DEVICES=0,1,2
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 export TRITON_CACHE_DIR="${SLURM_TMPDIR:-/tmp/$USER}/triton_cache"
 export RAY_TMPDIR="${SLURM_TMPDIR:-/tmp/$USER}/ray"
 export HYDRA_FULL_ERROR=1
@@ -289,15 +289,16 @@ mkdir -p "$TRITON_CACHE_DIR" "$RAY_TMPDIR"
   TRAIN_BATCH_SIZE=1 \
   PPO_MINI_BATCH_SIZE=1 \
   ROLLOUT_N=1 \
-  ROLLOUT_TP=1 \
+  ROLLOUT_TP=4 \
   ROLLOUT_PP=1 \
-  ROLLOUT_GPU_MEMORY_UTILIZATION=0.70 \
+  ROLLOUT_GPU_MEMORY_UTILIZATION=0.32 \
   ROLLOUT_MAX_NUM_SEQS=1 \
-  ACTOR_PARAM_OFFLOAD=True \
-  ACTOR_OPTIMIZER_OFFLOAD=True \
+  ACTOR_PARAM_OFFLOAD=False \
+  ACTOR_OPTIMIZER_OFFLOAD=False \
+  REF_PARAM_OFFLOAD=False \
   MAX_PROMPT_LENGTH=2048 \
   MAX_RESPONSE_LENGTH=512 \
-  uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_3gpu.sh
+  uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_4gpu.sh
 
   status=$?
   echo "EXIT_CODE $status $(date)"
@@ -309,9 +310,11 @@ tail -f logs/verl_grpo_smoke.log
 Expected startup lines:
 
 ```text
-verl RAY_NUM_CPUS=12 RAY_OBJECT_STORE_MEMORY=1073741824
+verl RAY_NUM_CPUS=16 RAY_OBJECT_STORE_MEMORY=1073741824
 verl TRAIN_BATCH_SIZE=1 PPO_MINI_BATCH_SIZE=1 ROLLOUT_N=1
+verl ROLLOUT_TP=4 ROLLOUT_PP=1 ROLLOUT_GPU_MEMORY_UTILIZATION=0.32
 verl ACTOR_USE_TORCH_COMPILE=False ROLLOUT_ENFORCE_EAGER=True
+verl ACTOR_PARAM_OFFLOAD=False ACTOR_OPTIMIZER_OFFLOAD=False REF_PARAM_OFFLOAD=False
 ```
 
 ## Monitoring And Diagnosis Checklist
@@ -360,7 +363,7 @@ Interpretation:
 
 ## Next Steps
 
-1. Re-request the 3x L40S allocation with adequate CPU and memory.
+1. Re-request the 4x L40S allocation with adequate CPU and memory.
 2. Re-run the tiny 2-step smoke.
 3. Only after the smoke completes with `EXIT_CODE 0`, increase to real GRPO group
    settings such as:
@@ -398,3 +401,5 @@ MAX_RESPONSE_LENGTH=2048
     smoke fallback is `ROLLOUT_TP=1`, `ROLLOUT_PP=1`, PyTorch/FSDP offload, and very small rollout concurrency.
     If that still cannot fit, use more GPUs with a legal TP size such as 4, use 2 H100 with TP=2, or move rollout
     to separate vLLM GPUs instead of colocating learner and rollout on the same 3 L40S cards.
+12. After acquiring 4x L40S, use `ROLLOUT_TP=4`, `ROLLOUT_PP=1`, and no FSDP offload. `TP=4` is valid for
+    Qwen2.5-Coder-14B because 40 attention heads is divisible by 4.
