@@ -114,6 +114,7 @@ TEST_FREQ=-1 \
 TRAIN_BATCH_SIZE=1 \
 PPO_MINI_BATCH_SIZE=1 \
 ROLLOUT_N=1 \
+MAX_PROMPT_LENGTH=2048 \
 MAX_RESPONSE_LENGTH=512 \
 uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_3gpu.sh
 ```
@@ -133,7 +134,8 @@ The smoke defaults also keep CPU subprocess fan-out conservative with `DATALOADE
 `REWARD_NUM_WORKERS=1`; increase them only after the first GPU smoke succeeds. Smoke runs also default to
 `ACTOR_USE_TORCH_COMPILE=False`, `ROLLOUT_ENFORCE_EAGER=True`, `MODEL_TRUST_REMOTE_CODE=False`, and
 `MODEL_ATTN_IMPLEMENTATION=sdpa` to reduce initialization-time memory pressure and avoid optional FlashAttention
-dependencies.
+dependencies. vLLM startup is also kept conservative with `ROLLOUT_GPU_MEMORY_UTILIZATION=0.60`,
+`ROLLOUT_MAX_NUM_SEQS=4`, and a default `ROLLOUT_MAX_MODEL_LEN` of `MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`.
 
 This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
 
