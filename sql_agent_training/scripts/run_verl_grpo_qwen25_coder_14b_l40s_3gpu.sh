@@ -2,7 +2,11 @@
 set -euo pipefail
 
 # Experimental verl GRPO entrypoint for 14B Qwen Coder LoRA on one 3x L40S node.
-# Run from the sql_agent_training project root after preparing data/verl_spider/*.parquet.
+# This script may be launched from the workspace root or from the inner project root.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${PROJECT_DIR}"
 
 MODEL_PATH=${MODEL_PATH:-data/models/Qwen2.5-Coder-14B-Instruct}
 LORA_ADAPTER_PATH=${LORA_ADAPTER_PATH:-artifacts/checkpoints/sft_qwen25_coder_14b_lora_h100_zero2/20260725_061113/checkpoint-300}

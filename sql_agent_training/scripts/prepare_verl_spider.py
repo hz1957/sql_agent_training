@@ -16,8 +16,8 @@ from sql_agent_training.train.verl_spider import prepare_verl_spider_dataset
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare Spider train/validation parquet files for verl.")
-    parser.add_argument("--data-dir", default="data/spider")
-    parser.add_argument("--output-dir", default="data/verl_spider")
+    parser.add_argument("--data-dir", default=str(ROOT / "data" / "spider"))
+    parser.add_argument("--output-dir", default=str(ROOT / "data" / "verl_spider"))
     parser.add_argument("--train-file", default="train_spider.json")
     parser.add_argument("--validation-file", default="dev.json")
     parser.add_argument("--train-limit", type=int, default=None)

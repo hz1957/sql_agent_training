@@ -100,13 +100,14 @@ uv run python -m sql_agent_training.train.grpo_train --config configs/grpo.yaml
 Prepare Spider parquet files in verl's default RLHF dataset format:
 
 ```powershell
-uv run python scripts/prepare_verl_spider.py --data-dir data/spider --output-dir data/verl_spider
+# From the workspace root, the directory that contains uv.lock.
+uv run --no-sync python sql_agent_training/scripts/prepare_verl_spider.py
 ```
 
 Run the 14B LoRA verl GRPO script on a 3x L40S node after installing a compatible verl/vLLM environment:
 
 ```bash
-bash scripts/run_verl_grpo_qwen25_coder_14b_l40s_3gpu.sh
+uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_3gpu.sh
 ```
 
 This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
