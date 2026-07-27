@@ -8,10 +8,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_DIR}"
 
-MODEL_PATH=${MODEL_PATH:-data/models/Qwen2.5-Coder-14B-Instruct}
-LORA_ADAPTER_PATH=${LORA_ADAPTER_PATH:-artifacts/checkpoints/sft_qwen25_coder_14b_lora_h100_zero2/20260725_061113/checkpoint-300}
-TRAIN_FILES=${TRAIN_FILES:-data/verl_spider/train.parquet}
-VAL_FILES=${VAL_FILES:-data/verl_spider/validation.parquet}
+resolve_project_path() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s\n' "${PROJECT_DIR}/$1" ;;
+  esac
+}
+
+MODEL_PATH="$(resolve_project_path "${MODEL_PATH:-data/models/Qwen2.5-Coder-14B-Instruct}")"
+LORA_ADAPTER_PATH="$(resolve_project_path "${LORA_ADAPTER_PATH:-artifacts/checkpoints/sft_qwen25_coder_14b_lora_h100_zero2/20260725_061113/checkpoint-300}")"
+TRAIN_FILES="$(resolve_project_path "${TRAIN_FILES:-data/verl_spider/train.parquet}")"
+VAL_FILES="$(resolve_project_path "${VAL_FILES:-data/verl_spider/validation.parquet}")"
+AGENT_LOOP_CONFIG_PATH="$(resolve_project_path "${AGENT_LOOP_CONFIG_PATH:-configs/verl_sql_agent_loop.yaml}")"
 
 CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0,1,2}
 NGPUS_PER_NODE=${NGPUS_PER_NODE:-3}
@@ -85,7 +93,7 @@ ROLLOUT=(
   actor_rollout_ref.rollout.load_format=safetensors
   actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=True
   actor_rollout_ref.rollout.log_prob_max_token_len_per_gpu="${PPO_MAX_TOKEN_LEN_PER_GPU}"
-  actor_rollout_ref.rollout.agent.agent_loop_config_path=configs/verl_sql_agent_loop.yaml
+  actor_rollout_ref.rollout.agent.agent_loop_config_path="${AGENT_LOOP_CONFIG_PATH}"
   actor_rollout_ref.rollout.agent.default_agent_loop=sql_agent
   actor_rollout_ref.rollout.agent.num_workers="${TRAIN_BATCH_SIZE}"
   actor_rollout_ref.rollout.multi_turn.enable=True
@@ -114,6 +122,7 @@ TRAINER=(
 )
 
 RAY_RUNTIME=(
+  ray_kwargs.ray_init.runtime_env.working_dir="${PROJECT_DIR}"
   '+ray_kwargs.ray_init.runtime_env.excludes=["data/**","artifacts/**","logs/**",".venv/**",".venv-vllm/**",".uv_cache/**",".xdg_cache/**","*.safetensors","*.sqlite"]'
 )
 
