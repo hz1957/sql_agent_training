@@ -270,6 +270,7 @@ class SpiderSqlAgentLoop(AgentLoopBase):
 
     @rollout_trace_op
     async def run(self, sampling_params: dict[str, Any], priority: int = 0, **kwargs) -> Any:
+        rollout_start = time.perf_counter()
         priority = int(_to_python(priority) or 0)
         fields = _sample_fields(kwargs)
         sqlite_path = fields["sqlite_path"]
@@ -441,11 +442,41 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         elif not final_sql:
             reward = 0.0
 
+        response_ids = response_ids[: self.response_length]
+        response_mask = response_mask[: self.response_length]
+        if response_logprobs is not None:
+            response_logprobs = response_logprobs[: self.response_length]
+
+        rollout_time_sec = max(time.perf_counter() - rollout_start, 1e-9)
+        prompt_tokens = len(prompt_ids)
+        response_tokens = len(response_ids)
+        trainable_tokens = int(sum(int(value) for value in response_mask))
+        total_tokens = prompt_tokens + response_tokens
+        metrics.update(
+            {
+                "rollout_time_sec": rollout_time_sec,
+                "generate_time_sec": float(metrics.get("generate_sequences", 0.0)),
+                "tool_time_sec": float(metrics.get("tool_calls", 0.0)),
+                "reward_time_sec": float(metrics.get("compute_score", 0.0)),
+                "prompt_tokens": prompt_tokens,
+                "response_tokens": response_tokens,
+                "trainable_tokens": trainable_tokens,
+                "total_tokens": total_tokens,
+                "tokens_per_sec_total": total_tokens / rollout_time_sec,
+                "tokens_per_sec_trainable": trainable_tokens / rollout_time_sec,
+                "trajectories_per_sec": 1.0 / rollout_time_sec,
+                "num_turns": num_turns,
+                "num_execute_calls": num_execute_calls,
+                "num_check_calls": num_check_calls,
+                "num_parse_errors": num_parse_errors,
+            }
+        )
+
         return AgentLoopOutput(
             prompt_ids=prompt_ids,
-            response_ids=response_ids[: self.response_length],
-            response_mask=response_mask[: self.response_length],
-            response_logprobs=response_logprobs[: self.response_length] if response_logprobs is not None else None,
+            response_ids=response_ids,
+            response_mask=response_mask,
+            response_logprobs=response_logprobs,
             reward_score=float(reward),
             num_turns=num_turns,
             metrics=metrics,

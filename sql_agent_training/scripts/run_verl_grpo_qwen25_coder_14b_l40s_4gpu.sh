@@ -62,6 +62,8 @@ MODEL_USE_REMOVE_PADDING=${MODEL_USE_REMOVE_PADDING:-False}
 MODEL_ATTN_IMPLEMENTATION=${MODEL_ATTN_IMPLEMENTATION:-sdpa}
 DATA_TRUST_REMOTE_CODE=${DATA_TRUST_REMOTE_CODE:-False}
 MODEL_TRUST_REMOTE_CODE=${MODEL_TRUST_REMOTE_CODE:-False}
+ENABLE_GPU_MONITOR=${ENABLE_GPU_MONITOR:-True}
+GPU_MONITOR_INTERVAL_SEC=${GPU_MONITOR_INTERVAL_SEC:-10}
 
 if (( MODEL_NUM_ATTENTION_HEADS % ROLLOUT_TP != 0 )); then
   echo "ERROR: ROLLOUT_TP=${ROLLOUT_TP} must divide MODEL_NUM_ATTENTION_HEADS=${MODEL_NUM_ATTENTION_HEADS}."
@@ -97,6 +99,7 @@ echo "verl ACTOR_USE_TORCH_COMPILE=${ACTOR_USE_TORCH_COMPILE} ROLLOUT_ENFORCE_EA
 echo "verl ACTOR_PARAM_OFFLOAD=${ACTOR_PARAM_OFFLOAD} ACTOR_OPTIMIZER_OFFLOAD=${ACTOR_OPTIMIZER_OFFLOAD} REF_PARAM_OFFLOAD=${REF_PARAM_OFFLOAD}"
 echo "verl MODEL_USE_REMOVE_PADDING=${MODEL_USE_REMOVE_PADDING} MODEL_ATTN_IMPLEMENTATION=${MODEL_ATTN_IMPLEMENTATION}"
 echo "verl DATA_TRUST_REMOTE_CODE=${DATA_TRUST_REMOTE_CODE} MODEL_TRUST_REMOTE_CODE=${MODEL_TRUST_REMOTE_CODE}"
+echo "verl ENABLE_GPU_MONITOR=${ENABLE_GPU_MONITOR} GPU_MONITOR_INTERVAL_SEC=${GPU_MONITOR_INTERVAL_SEC}"
 
 DATA=(
   algorithm.adv_estimator=grpo
@@ -206,6 +209,44 @@ if [[ "${ENABLE_RAY_RUNTIME_ENV:-0}" == "1" ]]; then
   )
 fi
 
+GPU_MONITOR_PID=""
+start_gpu_monitor() {
+  case "${ENABLE_GPU_MONITOR}" in
+    1|true|True|TRUE|yes|Yes|YES) ;;
+    *) return 0 ;;
+  esac
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    echo "GPU_MONITOR_DISABLED nvidia-smi not found"
+    return 0
+  fi
+  echo "GPU_MONITOR_HEADER timestamp,index,memory_used_mb,memory_total_mb,gpu_utilization_pct"
+  (
+    while true; do
+      nvidia-smi \
+        --query-gpu=timestamp,index,memory.used,memory.total,utilization.gpu \
+        --format=csv,noheader,nounits |
+        while IFS= read -r line; do
+          echo "GPU_MONITOR ${line}"
+        done
+      sleep "${GPU_MONITOR_INTERVAL_SEC}"
+    done
+  ) &
+  GPU_MONITOR_PID="$!"
+}
+
+stop_gpu_monitor() {
+  if [[ -n "${GPU_MONITOR_PID}" ]]; then
+    kill "${GPU_MONITOR_PID}" 2>/dev/null || true
+  fi
+}
+
+trap stop_gpu_monitor EXIT
+trap 'stop_gpu_monitor; exit 130' INT
+trap 'stop_gpu_monitor; exit 143' TERM
+start_gpu_monitor
+RUN_START_TIME=${SECONDS}
+
+set +e
 python -m verl.trainer.main_ppo \
   "${DATA[@]}" \
   "${MODEL[@]}" \
@@ -217,3 +258,8 @@ python -m verl.trainer.main_ppo \
   "${RAY_INIT[@]}" \
   "${RAY_RUNTIME[@]}" \
   "$@"
+status=$?
+set -e
+
+echo "verl RUN_WALL_TIME_SEC=$((SECONDS - RUN_START_TIME))"
+exit "${status}"

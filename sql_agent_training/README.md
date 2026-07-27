@@ -152,6 +152,10 @@ reference/KL disabled via `USE_KL_LOSS=False` and `USE_KL_IN_REWARD=False`, and 
 or move rollout to separate vLLM GPUs.
 
 This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
+The 4x L40S script writes lightweight experiment metrics into the same log: `GPU_MONITOR` lines sample
+`memory_used_mb` and `gpu_utilization_pct`, while the SQL AgentLoop reports `rollout_time_sec`, `generate_time_sec`,
+`tool_time_sec`, `reward_time_sec`, `prompt_tokens`, `response_tokens`, `trainable_tokens`,
+`tokens_per_sec_total`, `tokens_per_sec_trainable`, and `trajectories_per_sec` through verl's console metrics.
 
 Evaluate a trained GRPO checkpoint on Spider validation:
 
