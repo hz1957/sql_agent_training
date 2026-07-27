@@ -20,14 +20,14 @@ torch = pytest.importorskip("torch")
 
 from sql_agent_training.agent.trace_format import TokenizedTrajectory
 from sql_agent_training.train.grpo_batch import GrpoBatch, GrpoGroup, build_grpo_batch
-from sql_agent_training.train.grpo_train import (
-    GrpoLossConfig,
-    GrpoTrainer,
-    GrpoTrainingBatch,
-    create_tiny_causal_lm,
+from sql_agent_training.train.grpo_ray_pipeline import (
+    LearnerStepResult,
+    ReferenceLogprobWorker,
+    _prepare_ray_config,
+    _ray_runtime_env,
+    _role_num_gpus,
 )
-from sql_agent_training.train.grpo_ray_pipeline import LearnerStepResult, ReferenceLogprobWorker, _role_num_gpus
-
+from sql_agent_training.train.grpo_train import GrpoLossConfig, GrpoTrainer, GrpoTrainingBatch, create_tiny_causal_lm
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -321,3 +321,56 @@ def test_grpo_train_main_accepts_ray_flag(monkeypatch: pytest.MonkeyPatch, tmp_p
 
     assert len(called_with) == 1
     assert called_with[0].get("dry_run") is True
+
+
+def test_prepare_ray_config_absolutizes_local_paths(tmp_path: Path) -> None:
+    """Ray workers should read local data/models from shared absolute paths."""
+
+    config = {
+        "model": {
+            "path": "data/models/Qwen2.5-Coder-14B-Instruct",
+            "adapter_path": "artifacts/checkpoints/sft/checkpoint-300",
+            "reference_path": "Qwen/Qwen2.5-Coder-14B-Instruct",
+        },
+        "tokenizer": {"path": "data/models/Qwen2.5-Coder-14B-Instruct"},
+        "data": {"data_dir": "data/spider", "train_file": "train_spider.json"},
+        "output": {
+            "checkpoint_dir": "artifacts/checkpoints/grpo_ray",
+            "rollouts_jsonl": "logs/rollouts.jsonl",
+        },
+    }
+
+    prepared = _prepare_ray_config(config, base_dir=tmp_path)
+
+    assert prepared["model"]["path"] == str((tmp_path / "data/models/Qwen2.5-Coder-14B-Instruct").resolve())
+    assert prepared["model"]["adapter_path"] == str((tmp_path / "artifacts/checkpoints/sft/checkpoint-300").resolve())
+    assert prepared["model"]["reference_path"] == "Qwen/Qwen2.5-Coder-14B-Instruct"
+    assert prepared["tokenizer"]["path"] == str((tmp_path / "data/models/Qwen2.5-Coder-14B-Instruct").resolve())
+    assert prepared["data"]["data_dir"] == str((tmp_path / "data/spider").resolve())
+    assert prepared["output"]["checkpoint_dir"] == str((tmp_path / "artifacts/checkpoints/grpo_ray").resolve())
+    assert prepared["output"]["rollouts_jsonl"] == str((tmp_path / "logs/rollouts.jsonl").resolve())
+    assert config["data"]["data_dir"] == "data/spider"
+
+
+def test_ray_runtime_env_excludes_large_local_artifacts() -> None:
+    """Ray package excludes should skip datasets, models, checkpoints, and caches."""
+
+    runtime_env = _ray_runtime_env(
+        {
+            "ray": {
+                "runtime_env": {"env_vars": {"TOKENIZERS_PARALLELISM": "false"}, "excludes": ["custom/**"]},
+                "runtime_env_excludes": ["extra-large-dir/**"],
+            }
+        }
+    )
+
+    excludes = runtime_env["excludes"]
+    assert runtime_env["env_vars"] == {"TOKENIZERS_PARALLELISM": "false"}
+    assert "custom/**" in excludes
+    assert "extra-large-dir/**" in excludes
+    assert "data/**" in excludes
+    assert "artifacts/**" in excludes
+    assert "logs/**" in excludes
+    assert ".venv/**" in excludes
+    assert "*.safetensors" in excludes
+    assert "*.sqlite" in excludes

@@ -29,13 +29,14 @@ Usage::
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
 import random
 import subprocess
-import time
 import tempfile
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -44,6 +45,109 @@ from typing import Any
 import yaml
 
 logger = logging.getLogger(__name__)
+
+
+_DEFAULT_RAY_RUNTIME_ENV_EXCLUDES = [
+    "data",
+    "data/**",
+    "artifacts",
+    "artifacts/**",
+    "logs",
+    "logs/**",
+    ".venv",
+    ".venv/**",
+    ".venv-*",
+    ".venv-*/**",
+    ".uv_cache",
+    ".uv_cache/**",
+    ".xdg_cache",
+    ".xdg_cache/**",
+    ".cache",
+    ".cache/**",
+    ".pytest_*",
+    ".pytest_*/**",
+    "__pycache__",
+    "__pycache__/**",
+    "*.safetensors",
+    "*.bin",
+    "*.pt",
+    "*.pth",
+    "*.sqlite",
+    "*.db",
+]
+
+
+def _looks_like_local_path(value: Any) -> bool:
+    """Return whether a config value should be resolved against the current directory."""
+
+    if not isinstance(value, (str, os.PathLike)):
+        return False
+    path_text = os.fspath(value)
+    if not path_text:
+        return False
+    path = Path(path_text).expanduser()
+    if path.is_absolute() or path.exists():
+        return True
+    normalized = path_text.replace("\\", "/")
+    return normalized.startswith(("./", "../", "~/", "data/", "artifacts/", "logs/", "configs/"))
+
+
+def _absolute_path_value(value: Any, base_dir: Path) -> Any:
+    """Resolve local path-like config values while leaving remote model ids unchanged."""
+
+    if not _looks_like_local_path(value):
+        return value
+    path = Path(os.fspath(value)).expanduser()
+    if not path.is_absolute():
+        path = base_dir / path
+    return str(path.resolve())
+
+
+def _prepare_ray_config(config: dict[str, Any], *, base_dir: Path | None = None) -> dict[str, Any]:
+    """Copy config and make worker-visible local paths absolute.
+
+    Ray workers run in packaged runtime directories. Large data/model directories
+    are excluded from that package, so workers must read them through absolute
+    paths on the shared filesystem instead of through packaged relative paths.
+    """
+
+    prepared = copy.deepcopy(config)
+    root = (base_dir or Path.cwd()).resolve()
+
+    model = prepared.get("model", {})
+    for key in ("path", "adapter_path", "reference_path", "reference_adapter_path", "tokenizer_path"):
+        if key in model:
+            model[key] = _absolute_path_value(model[key], root)
+
+    tokenizer = prepared.get("tokenizer", {})
+    if "path" in tokenizer:
+        tokenizer["path"] = _absolute_path_value(tokenizer["path"], root)
+
+    data = prepared.get("data", {})
+    if "data_dir" in data:
+        data["data_dir"] = _absolute_path_value(data["data_dir"], root)
+
+    output = prepared.get("output", {})
+    for key in ("checkpoint_dir", "rollouts_jsonl", "metrics_jsonl"):
+        if key in output:
+            output[key] = _absolute_path_value(output[key], root)
+
+    return prepared
+
+
+def _ray_runtime_env(config: dict[str, Any]) -> dict[str, Any]:
+    """Build Ray runtime env while excluding large local-only artifacts."""
+
+    ray_cfg = config.get("ray", {})
+    runtime_env = copy.deepcopy(ray_cfg.get("runtime_env", {}))
+    if not isinstance(runtime_env, dict):
+        raise TypeError("ray.runtime_env must be a mapping when provided")
+
+    excludes = list(runtime_env.get("excludes", []))
+    excludes.extend(_DEFAULT_RAY_RUNTIME_ENV_EXCLUDES)
+    excludes.extend(ray_cfg.get("runtime_env_excludes", []))
+    runtime_env["excludes"] = list(dict.fromkeys(str(item) for item in excludes if str(item)))
+    return runtime_env
 
 
 # ---------------------------------------------------------------------------
@@ -274,11 +378,8 @@ class RolloutActor:
         Returns:
             `GrpoBatch` containing scored tokenized trajectories.
         """
-        from sql_agent_training.train.grpo_rollouts import (
-            RolloutJsonlWriter,
-            _build_batch_from_examples,
-        )
         from sql_agent_training.agent.tokenization import ExistingHuggingFaceTokenizer
+        from sql_agent_training.train.grpo_rollouts import RolloutJsonlWriter, _build_batch_from_examples
 
         text_tokenizer = ExistingHuggingFaceTokenizer(self._tokenizer)
         lora_name = "policy" if self._adapter_path else None
@@ -312,8 +413,9 @@ class RolloutActor:
             lora_state_dict: LoRA adapter state dict from `LearnerWorker`.
             lora_name: The named LoRA slot registered in vLLM.
         """
-        from sql_agent_training.agent.model_client import VllmOpenAIModelClient
         import torch
+
+        from sql_agent_training.agent.model_client import VllmOpenAIModelClient
 
         # Write state dict to a temporary directory vLLM can read from
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -544,13 +646,14 @@ class LearnerWorker:
             `LearnerStepResult` with metrics, LoRA state dict, and batch stats.
         """
         import torch
+
+        from sql_agent_training.train.grpo_batch import summarize_grpo_batch
         from sql_agent_training.train.grpo_train import (
-            compute_group_advantages,
-            build_training_tensors,
             GrpoTrainingBatch,
             _sequence_logprobs_microbatched,
+            build_training_tensors,
+            compute_group_advantages,
         )
-        from sql_agent_training.train.grpo_batch import summarize_grpo_batch
 
         batch_stats = summarize_grpo_batch(grpo_batch)
         advantages = compute_group_advantages(
@@ -729,6 +832,7 @@ def _save_lora_checkpoint(
     copied alongside the new weights so the checkpoint is self-contained.
     """
     import shutil
+
     import torch
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -754,9 +858,12 @@ def train_grpo_ray(config: dict[str, Any]) -> dict[str, Any]:
     Returns:
         Summary dict with final metrics, checkpoint path, and rollout counts.
     """
+    config = _prepare_ray_config(config)
     ray = _require_ray()
     if not ray.is_initialized():
-        ray.init()
+        runtime_env = _ray_runtime_env(config)
+        logger.info("Initialising Ray with runtime_env excludes: %s", runtime_env.get("excludes", []))
+        ray.init(runtime_env=runtime_env)
     logger.info("Ray initialised: %s", ray.cluster_resources())
 
     seed = int(config.get("training", {}).get("seed", 0))
