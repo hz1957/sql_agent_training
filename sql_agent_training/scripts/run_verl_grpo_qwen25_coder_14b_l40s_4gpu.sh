@@ -78,6 +78,14 @@ if [[ "${ROLLOUT_PP}" != "1" ]]; then
   exit 2
 fi
 
+ROLLOUT_GLOBAL_BATCH_SIZE=$((TRAIN_BATCH_SIZE * ROLLOUT_N))
+if (( ROLLOUT_GLOBAL_BATCH_SIZE < NGPUS_PER_NODE )); then
+  echo "ERROR: TRAIN_BATCH_SIZE * ROLLOUT_N must be >= NGPUS_PER_NODE when trainer.balance_batch=True."
+  echo "Current values: TRAIN_BATCH_SIZE=${TRAIN_BATCH_SIZE}, ROLLOUT_N=${ROLLOUT_N}, NGPUS_PER_NODE=${NGPUS_PER_NODE}."
+  echo "Increase TRAIN_BATCH_SIZE or ROLLOUT_N. For GRPO, prefer increasing ROLLOUT_N so each prompt has a group."
+  exit 2
+fi
+
 export CUDA_VISIBLE_DEVICES
 export RAY_ENABLE_UV_RUN_RUNTIME_ENV="${RAY_ENABLE_UV_RUN_RUNTIME_ENV:-0}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
