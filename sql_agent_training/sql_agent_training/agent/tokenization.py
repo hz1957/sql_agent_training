@@ -138,14 +138,6 @@ def _metadata_token_ids(value: object) -> list[int] | None:
     return list(value)
 
 
-def _metadata_reward(value: object) -> float:
-    if isinstance(value, bool):
-        return float(value)
-    if isinstance(value, int | float):
-        return float(value)
-    return 0.0
-
-
 def _transition_rewards(
     *,
     final_reward: float,
@@ -163,11 +155,7 @@ def _transition_rewards(
         raise ValueError("transition reward gamma must be between 0 and 1")
 
     last_index = len(own_rewards) - 1
-    rewards: list[float] = []
-    for index, own_reward in enumerate(own_rewards):
-        discounted_final = final_reward * (reward_gamma ** (last_index - index))
-        rewards.append(max(own_reward, discounted_final))
-    return rewards
+    return [final_reward * (reward_gamma ** (last_index - index)) for index in range(len(own_rewards))]
 
 
 def trajectory_to_tokenized_transitions(
@@ -209,7 +197,6 @@ def trajectory_to_tokenized_transitions(
         response_ids = _metadata_token_ids(turn.metadata.get("response_ids")) or tokenizer.encode(response_text)
         turn_index = int(turn.metadata.get("turn_index", action_index))
         prompt_text = str(turn.metadata.get("prompt_text") or current_prompt)
-        own_reward = _metadata_reward(tool_metadata.get("reward"))
         transition_rows.append(
             {
                 "turn_index": turn_index,
@@ -217,7 +204,7 @@ def trajectory_to_tokenized_transitions(
                 "response_ids": response_ids,
                 "prompt_text": prompt_text,
                 "response_text": response_text,
-                "own_reward": own_reward,
+                "own_reward": 0.0,
                 "tool_metadata": tool_metadata,
                 "turn_metadata": turn.metadata,
             }

@@ -173,6 +173,8 @@ class SqlAgentLoop:
         previous_feedback: str | None = None
         final_sql: str | None = None
         final_sql_source = "none"
+        last_executable_sql: str | None = None
+        last_executable_turn_index: int | None = None
         num_execute_calls = 0
         num_parse_errors = 0
         num_check_calls = 0
@@ -227,11 +229,6 @@ class SqlAgentLoop:
             num_execute_calls += 1
             execution = self.sqlite_tool.execute(sqlite_path, candidate_sql)
             feedback = _format_execution_feedback(execution.ok, execution.rows, execution.error)
-            candidate_reward = (
-                spider_execution_reward(candidate_sql, sample.gold_sql, sqlite_path)
-                if sample.gold_sql and execution.ok
-                else None
-            )
             turns.append(
                 AgentTurn(
                     role="tool",
@@ -243,14 +240,13 @@ class SqlAgentLoop:
                         "error": execution.error,
                         "elapsed_seconds": execution.elapsed_seconds,
                         "safety_reason": execution.safety_reason,
-                        "reward": candidate_reward,
+                        "reward": None,
                     },
                 )
             )
             if execution.ok:
-                final_sql = candidate_sql
-                final_sql_source = "executed_successfully"
-                reward = candidate_reward
+                last_executable_sql = candidate_sql
+                last_executable_turn_index = turn_index
 
             check_turn = self._build_check_turn(sample, query=candidate_sql, execution=feedback)
             raw_check = next_response([check_turn], "check_query")
@@ -258,6 +254,8 @@ class SqlAgentLoop:
                 raw_check = _default_checker_feedback(execution.ok)
             if raw_check is None:
                 if execution.ok:
+                    final_sql = candidate_sql
+                    final_sql_source = "executed_successfully"
                     break
                 previous_sql = candidate_sql
                 previous_execution = feedback
@@ -294,7 +292,6 @@ class SqlAgentLoop:
             if verdict is True and execution.ok:
                 final_sql = candidate_sql
                 final_sql_source = "checker_approved"
-                reward = candidate_reward
                 break
 
             previous_sql = candidate_sql
@@ -303,6 +300,15 @@ class SqlAgentLoop:
 
         else:
             ran_out_of_turns = True
+
+        if (
+            final_sql is None
+            and ran_out_of_turns
+            and last_executable_sql is not None
+            and last_executable_turn_index == self.max_turns - 1
+        ):
+            final_sql = last_executable_sql
+            final_sql_source = "ran_out_of_turns"
 
         if final_sql and sample.gold_sql and reward is None:
             reward = spider_execution_reward(final_sql, sample.gold_sql, sqlite_path)

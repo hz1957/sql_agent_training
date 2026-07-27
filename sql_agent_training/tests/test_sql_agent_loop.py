@@ -104,6 +104,51 @@ def test_rollout_rewrites_after_checker_rejects_executable_wrong_answer(tmp_path
     assert trajectory.metadata["ran_out_of_turns"] is False
     assert trajectory.reward == 1.0
     assert "The query returns a count" in trajectory.turns[4].content
+    assert trajectory.turns[2].metadata["reward"] is None
+
+
+def test_rollout_scores_only_final_sql_after_checker_rejection(tmp_path: Path) -> None:
+    db_path = tmp_path / "music.sqlite"
+    _make_db(db_path)
+
+    trajectory = SqlAgentLoop(max_turns=2).run_with_responses(
+        _sample(),
+        [
+            "SELECT COUNT(*) FROM Singer",
+            "I cannot decide.",
+        ],
+        db_path,
+        checker_responses=[
+            "The query returns a count, not the singer names.\nTHE QUERY IS INCORRECT.",
+        ],
+    )
+
+    assert trajectory.final_sql is None
+    assert trajectory.final_sql_source == "none"
+    assert trajectory.reward == 0.0
+    assert trajectory.metadata["ran_out_of_turns"] is True
+    assert trajectory.turns[2].metadata["ok"] is True
+    assert trajectory.turns[2].metadata["reward"] is None
+    assert trajectory.metadata["num_parse_errors"] == 1
+
+
+def test_rollout_scores_last_attempt_when_max_turns_exhausted(tmp_path: Path) -> None:
+    db_path = tmp_path / "music.sqlite"
+    _make_db(db_path)
+
+    trajectory = SqlAgentLoop(max_turns=1).run_with_responses(
+        _sample(),
+        ["SELECT COUNT(*) FROM Singer"],
+        db_path,
+        checker_responses=[
+            "The query returns a count, not the singer names.\nTHE QUERY IS INCORRECT.",
+        ],
+    )
+
+    assert trajectory.final_sql == "SELECT COUNT(*) FROM Singer"
+    assert trajectory.final_sql_source == "ran_out_of_turns"
+    assert trajectory.reward == 0.0
+    assert trajectory.turns[2].metadata["reward"] is None
 
 
 def test_rollout_max_turns_without_executable_sql_returns_no_final_sql(tmp_path: Path) -> None:

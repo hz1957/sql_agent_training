@@ -102,7 +102,7 @@ def test_trajectory_to_tokenized_transitions_can_discount_final_reward() -> None
     assert transitions[0].metadata["transition_reward_gamma"] == 0.4
 
 
-def test_discounted_final_reward_preserves_correct_intermediate_sql() -> None:
+def test_discounted_final_reward_does_not_preserve_intermediate_sql_reward() -> None:
     trajectory = AgentTrajectory(
         uid="music:0",
         rollout_id="music:0:0",
@@ -138,7 +138,8 @@ def test_discounted_final_reward_preserves_correct_intermediate_sql() -> None:
         reward_gamma=0.4,
     )
 
-    assert [transition.reward for transition in transitions] == [1.0, 0.0]
+    assert [transition.reward for transition in transitions] == [0.0, 0.0]
+    assert [transition.metadata["own_sql_reward"] for transition in transitions] == [0.0, 0.0]
 
 
 def test_trajectory_to_tokenized_transitions_prefers_model_token_ids() -> None:

@@ -285,7 +285,10 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         previous_feedback: str | None = None
         final_sql: str | None = None
         final_sql_source = "none"
+        last_executable_sql: str | None = None
+        last_executable_turn_index: int | None = None
         reward: float | None = None
+        ran_out_of_turns = False
         num_execute_calls = 0
         num_check_calls = 0
         num_parse_errors = 0
@@ -348,17 +351,9 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 execution = await self._run_sqlite(sqlite_path, candidate_sql)
             metrics["tool_calls"] = metrics.get("tool_calls", 0.0) + float(tool_metrics.get("tool_calls", 0.0))
             feedback = _format_execution_feedback(execution.ok, execution.rows, execution.error)
-            candidate_reward = None
             if execution.ok:
-                score_metrics: dict[str, Any] = {}
-                with simple_timer("compute_score", score_metrics):
-                    candidate_reward = await self._score_sql(candidate_sql, gold_sql, sqlite_path)
-                metrics["compute_score"] = metrics.get("compute_score", 0.0) + float(
-                    score_metrics.get("compute_score", 0.0)
-                )
-                final_sql = candidate_sql
-                final_sql_source = "executed_successfully"
-                reward = candidate_reward
+                last_executable_sql = candidate_sql
+                last_executable_turn_index = turn_index
 
             check_prompt = build_check_query_prompt(
                 fields["question"],
@@ -375,6 +370,8 @@ class SpiderSqlAgentLoop(AgentLoopBase):
             )
             if len(response_ids) == before_len:
                 if execution.ok:
+                    final_sql = candidate_sql
+                    final_sql_source = "executed_successfully"
                     break
                 previous_sql = candidate_sql
                 previous_execution = feedback
@@ -392,6 +389,8 @@ class SpiderSqlAgentLoop(AgentLoopBase):
             )
             if check_output is None:
                 if execution.ok:
+                    final_sql = candidate_sql
+                    final_sql_source = "executed_successfully"
                     break
                 previous_sql = candidate_sql
                 previous_execution = feedback
@@ -415,14 +414,24 @@ class SpiderSqlAgentLoop(AgentLoopBase):
             if verdict is True and execution.ok:
                 final_sql = candidate_sql
                 final_sql_source = "checker_approved"
-                reward = candidate_reward
                 break
 
             previous_sql = candidate_sql
             previous_execution = feedback
             previous_feedback = check_text
+        else:
+            ran_out_of_turns = True
 
-        if final_sql and reward is None:
+        if (
+            final_sql is None
+            and ran_out_of_turns
+            and last_executable_sql is not None
+            and last_executable_turn_index == self.max_turns - 1
+        ):
+            final_sql = last_executable_sql
+            final_sql_source = "ran_out_of_turns"
+
+        if final_sql:
             score_metrics = {}
             with simple_timer("compute_score", score_metrics):
                 reward = await self._score_sql(final_sql, gold_sql, sqlite_path)
