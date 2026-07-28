@@ -57,6 +57,19 @@ ACTOR_LORA_TARGET_MODULES=${ACTOR_LORA_TARGET_MODULES:-all-linear}
 USE_KL_IN_REWARD=${USE_KL_IN_REWARD:-False}
 USE_KL_LOSS=${USE_KL_LOSS:-False}
 KL_LOSS_COEF=${KL_LOSS_COEF:-0.01}
+GRPO_REWARD_SCHEME=${GRPO_REWARD_SCHEME:-outcome}
+GRPO_REWARD_GAMMA=${GRPO_REWARD_GAMMA:-0.9}
+GRPO_EXECUTABLE_FALLBACK_BETA=${GRPO_EXECUTABLE_FALLBACK_BETA:-0.1}
+if [[ -z "${GRPO_ADV_ESTIMATOR:-}" ]]; then
+  case "${GRPO_REWARD_SCHEME}" in
+    chain_final|chain-final|s1|chain_executable|chain-executable|s2) GRPO_ADV_ESTIMATOR=grpo_multi_step ;;
+    *) GRPO_ADV_ESTIMATOR=grpo ;;
+  esac
+fi
+VERL_ENTRYPOINT=${VERL_ENTRYPOINT:-verl.trainer.main_ppo}
+if [[ "${GRPO_ADV_ESTIMATOR}" == "grpo_multi_step" ]]; then
+  VERL_ENTRYPOINT=sql_agent_training.train.verl_grpo_multi_step_main
+fi
 SAVE_FREQ=${SAVE_FREQ:-25}
 TEST_FREQ=${TEST_FREQ:-25}
 MAX_TURNS=${MAX_TURNS:-3}
@@ -179,6 +192,8 @@ echo "verl ROLLOUT_TP=${ROLLOUT_TP} ROLLOUT_PP=${ROLLOUT_PP} ROLLOUT_GPU_MEMORY_
 echo "verl ROLLOUT_MAX_NUM_BATCHED_TOKENS=${ROLLOUT_MAX_NUM_BATCHED_TOKENS} ROLLOUT_MAX_NUM_SEQS=${ROLLOUT_MAX_NUM_SEQS} ROLLOUT_LAYERED_SUMMON=${ROLLOUT_LAYERED_SUMMON}"
 echo "verl ROLLOUT_DO_SAMPLE=${ROLLOUT_DO_SAMPLE} ROLLOUT_TEMPERATURE=${ROLLOUT_TEMPERATURE} ROLLOUT_TOP_P=${ROLLOUT_TOP_P} ROLLOUT_TOP_K=${ROLLOUT_TOP_K}"
 echo "verl USE_KL_IN_REWARD=${USE_KL_IN_REWARD} USE_KL_LOSS=${USE_KL_LOSS} KL_LOSS_COEF=${KL_LOSS_COEF}"
+echo "verl GRPO_ADV_ESTIMATOR=${GRPO_ADV_ESTIMATOR} GRPO_REWARD_SCHEME=${GRPO_REWARD_SCHEME} GRPO_REWARD_GAMMA=${GRPO_REWARD_GAMMA} GRPO_EXECUTABLE_FALLBACK_BETA=${GRPO_EXECUTABLE_FALLBACK_BETA}"
+echo "verl VERL_ENTRYPOINT=${VERL_ENTRYPOINT}"
 echo "verl ACTOR_USE_TORCH_COMPILE=${ACTOR_USE_TORCH_COMPILE} ROLLOUT_ENFORCE_EAGER=${ROLLOUT_ENFORCE_EAGER}"
 echo "verl LOG_PROB_USE_DYNAMIC_BSZ=${LOG_PROB_USE_DYNAMIC_BSZ} LOG_PROB_MICRO_BATCH_SIZE_PER_GPU=${LOG_PROB_MICRO_BATCH_SIZE_PER_GPU}"
 echo "verl ACTOR_PARAM_OFFLOAD=${ACTOR_PARAM_OFFLOAD} ACTOR_OPTIMIZER_OFFLOAD=${ACTOR_OPTIMIZER_OFFLOAD} REF_PARAM_OFFLOAD=${REF_PARAM_OFFLOAD}"
@@ -190,7 +205,7 @@ echo "verl ENABLE_GPU_MONITOR=${ENABLE_GPU_MONITOR} GPU_MONITOR_INTERVAL_SEC=${G
 echo "verl CHECK_FLASH_ATTN=${CHECK_FLASH_ATTN} CHECK_PEFT_TRANSFORMERS_COMPAT=${CHECK_PEFT_TRANSFORMERS_COMPAT}"
 
 DATA=(
-  algorithm.adv_estimator=grpo
+  algorithm.adv_estimator="${GRPO_ADV_ESTIMATOR}"
   algorithm.use_kl_in_reward="${USE_KL_IN_REWARD}"
   data.train_files="['${TRAIN_FILES}']"
   data.val_files="['${VAL_FILES}']"
@@ -270,11 +285,17 @@ ROLLOUT=(
   actor_rollout_ref.rollout.agent.agent_loop_config_path="${AGENT_LOOP_CONFIG_PATH}"
   actor_rollout_ref.rollout.agent.default_agent_loop=sql_agent
   actor_rollout_ref.rollout.agent.num_workers="${TRAIN_BATCH_SIZE}"
+  ++actor_rollout_ref.rollout.agent.reward_scheme="${GRPO_REWARD_SCHEME}"
+  ++actor_rollout_ref.rollout.agent.reward_gamma="${GRPO_REWARD_GAMMA}"
+  ++actor_rollout_ref.rollout.agent.executable_fallback_beta="${GRPO_EXECUTABLE_FALLBACK_BETA}"
   actor_rollout_ref.rollout.multi_turn.enable=True
   actor_rollout_ref.rollout.multi_turn.max_assistant_turns="${MAX_TURNS}"
   actor_rollout_ref.rollout.multi_turn.max_user_turns="${MAX_TURNS}"
   actor_rollout_ref.rollout.multi_turn.max_parallel_calls=1
 )
+if [[ "${GRPO_ADV_ESTIMATOR}" == "grpo_multi_step" ]]; then
+  ROLLOUT+=(++actor_rollout_ref.rollout.agent.agent_loop_manager_class=sql_agent_training.train.verl_grpo_multi_step.MultiStepRewardAgentLoopManager)
+fi
 
 REF=(
   actor_rollout_ref.ref.log_prob_use_dynamic_bsz="${LOG_PROB_USE_DYNAMIC_BSZ}"
@@ -341,7 +362,7 @@ python -m sql_agent_training.train.verl_grpo_config \
   "${VALIDATOR_ARGS[@]}"
 
 VERL_CMD=(
-  python -m verl.trainer.main_ppo
+  python -m "${VERL_ENTRYPOINT}"
   "${DATA[@]}"
   "${MODEL[@]}"
   "${ACTOR[@]}"

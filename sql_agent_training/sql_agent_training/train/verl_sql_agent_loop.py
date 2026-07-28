@@ -138,16 +138,76 @@ def _rollout_extra_fields(
     num_execute_calls: int,
     num_check_calls: int,
     num_parse_errors: int,
+    multi_step_turn_rewards: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Return only rollout-owned fields so verl can safely union batches."""
 
-    return {
+    fields: dict[str, Any] = {
         "final_sql": final_sql,
         "final_sql_source": final_sql_source,
         "num_execute_calls": num_execute_calls,
         "num_check_calls": num_check_calls,
         "num_parse_errors": num_parse_errors,
     }
+    if multi_step_turn_rewards is not None:
+        fields["multi_step_turn_rewards"] = multi_step_turn_rewards
+    return fields
+
+
+def _normalize_reward_scheme(value: Any) -> str:
+    scheme = str(_to_python(value) or "outcome").strip().lower().replace("-", "_")
+    aliases = {
+        "": "outcome",
+        "none": "outcome",
+        "off": "outcome",
+        "disabled": "outcome",
+        "final": "chain_final",
+        "s1": "chain_final",
+        "executable": "chain_executable",
+        "s2": "chain_executable",
+    }
+    scheme = aliases.get(scheme, scheme)
+    allowed = {"outcome", "chain_final", "chain_executable"}
+    if scheme not in allowed:
+        raise ValueError(f"Unsupported SQL-agent reward_scheme={scheme!r}; expected one of {sorted(allowed)}")
+    return scheme
+
+
+def _build_multi_step_turn_rewards(
+    *,
+    turn_records: list[dict[str, Any]],
+    final_reward: float,
+    success_turn_index: int | None,
+    reward_scheme: str,
+    gamma: float,
+    executable_fallback_beta: float,
+) -> list[dict[str, Any]]:
+    """Build per-SQL-turn rewards for S1/S2 without flattening trajectories."""
+
+    scheme = _normalize_reward_scheme(reward_scheme)
+    if scheme == "outcome":
+        return []
+
+    success = final_reward > 0.0 and success_turn_index is not None
+    rewards: list[dict[str, Any]] = []
+    for record in turn_records:
+        turn_index = int(record["turn_index"])
+        if success:
+            raw_reward = float(final_reward) * (float(gamma) ** max(int(success_turn_index) - turn_index, 0))
+        elif scheme == "chain_executable" and bool(record.get("executable", False)):
+            raw_reward = float(executable_fallback_beta)
+        else:
+            raw_reward = 0.0
+        rewards.append(
+            {
+                "turn_index": turn_index,
+                "response_start": int(record["response_start"]),
+                "response_end": int(record["response_end"]),
+                "executable": bool(record.get("executable", False)),
+                "reward": raw_reward,
+            }
+        )
+    return rewards
 
 
 @register("sql_agent")
@@ -160,6 +220,11 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         super().__init__(*args, **kwargs)
         self.response_length = int(_cfg_get(self.rollout_config, ("response_length",), 2048))
         self.max_turns = int(_cfg_get(self.rollout_config, ("multi_turn", "max_assistant_turns"), 3))
+        self.reward_scheme = _normalize_reward_scheme(_cfg_get(self.rollout_config, ("agent", "reward_scheme"), "outcome"))
+        self.reward_gamma = float(_cfg_get(self.rollout_config, ("agent", "reward_gamma"), 0.9))
+        self.executable_fallback_beta = float(
+            _cfg_get(self.rollout_config, ("agent", "executable_fallback_beta"), 0.1)
+        )
         self.sqlite_tool = SQLiteTool()
 
     async def _encode_user_prompt(self, content: str, *, remove_system_prompt: bool) -> list[int]:
@@ -305,9 +370,11 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         previous_feedback: str | None = None
         final_sql: str | None = None
         final_sql_source = "none"
+        final_sql_turn_index: int | None = None
         last_executable_sql: str | None = None
         last_executable_turn_index: int | None = None
         reward: float | None = None
+        sql_turn_records: list[dict[str, Any]] = []
         ran_out_of_turns = False
         num_execute_calls = 0
         num_check_calls = 0
@@ -347,6 +414,7 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 break
             generated_ids = list(getattr(output, "token_ids", output))
             generated_text = self._decode(generated_ids)
+            sql_response_start = len(response_ids)
             response_logprobs = self._append_tokens(
                 response_ids=response_ids,
                 response_mask=response_mask,
@@ -355,11 +423,22 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 mask_value=1,
                 log_probs=getattr(output, "log_probs", None),
             )
+            sql_response_end = len(response_ids) - 1
+            current_turn_record: dict[str, Any] | None = None
+            if sql_response_end >= sql_response_start:
+                current_turn_record = {
+                    "turn_index": turn_index,
+                    "response_start": sql_response_start,
+                    "response_end": sql_response_end,
+                    "executable": False,
+                }
             num_turns += 1
 
             candidate_sql = extract_sql_candidate(generated_text)
             if candidate_sql is None:
                 num_parse_errors += 1
+                if current_turn_record is not None:
+                    sql_turn_records.append(current_turn_record)
                 previous_sql = None
                 previous_execution = "No SQL query found. Return only one read-only SQLite SELECT query."
                 previous_feedback = previous_execution
@@ -371,6 +450,9 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 execution = await self._run_sqlite(sqlite_path, candidate_sql)
             metrics["tool_calls"] = metrics.get("tool_calls", 0.0) + float(tool_metrics.get("tool_calls", 0.0))
             feedback = _format_execution_feedback(execution.ok, execution.rows, execution.error)
+            if current_turn_record is not None:
+                current_turn_record["executable"] = bool(execution.ok)
+                sql_turn_records.append(current_turn_record)
             if execution.ok:
                 last_executable_sql = candidate_sql
                 last_executable_turn_index = turn_index
@@ -392,6 +474,7 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 if execution.ok:
                     final_sql = candidate_sql
                     final_sql_source = "executed_successfully"
+                    final_sql_turn_index = turn_index
                     break
                 previous_sql = candidate_sql
                 previous_execution = feedback
@@ -411,6 +494,7 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 if execution.ok:
                     final_sql = candidate_sql
                     final_sql_source = "executed_successfully"
+                    final_sql_turn_index = turn_index
                     break
                 previous_sql = candidate_sql
                 previous_execution = feedback
@@ -434,6 +518,7 @@ class SpiderSqlAgentLoop(AgentLoopBase):
             if verdict is True and execution.ok:
                 final_sql = candidate_sql
                 final_sql_source = "checker_approved"
+                final_sql_turn_index = turn_index
                 break
 
             previous_sql = candidate_sql
@@ -450,6 +535,7 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         ):
             final_sql = last_executable_sql
             final_sql_source = "ran_out_of_turns"
+            final_sql_turn_index = last_executable_turn_index
 
         if final_sql:
             score_metrics = {}
@@ -465,6 +551,15 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         response_mask = response_mask[: self.response_length]
         if response_logprobs is not None:
             response_logprobs = response_logprobs[: self.response_length]
+        success_turn_index = final_sql_turn_index if reward and reward > 0.0 else None
+        multi_step_turn_rewards = _build_multi_step_turn_rewards(
+            turn_records=sql_turn_records,
+            final_reward=float(reward or 0.0),
+            success_turn_index=success_turn_index,
+            reward_scheme=self.reward_scheme,
+            gamma=self.reward_gamma,
+            executable_fallback_beta=self.executable_fallback_beta,
+        )
 
         rollout_time_sec = max(time.perf_counter() - rollout_start, 1e-9)
         prompt_tokens = len(prompt_ids)
@@ -505,5 +600,6 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 num_execute_calls=num_execute_calls,
                 num_check_calls=num_check_calls,
                 num_parse_errors=num_parse_errors,
+                multi_step_turn_rewards=multi_step_turn_rewards if self.reward_scheme != "outcome" else None,
             ),
         )
