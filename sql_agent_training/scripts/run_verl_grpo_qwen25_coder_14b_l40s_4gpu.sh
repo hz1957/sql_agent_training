@@ -127,6 +127,43 @@ export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
 export CUDA_MODULE_LOADING="${CUDA_MODULE_LOADING:-LAZY}"
 export VLLM_WORKER_MULTIPROC_METHOD="${VLLM_WORKER_MULTIPROC_METHOD:-spawn}"
 
+ACTOR_CHECKPOINT_SAVE_LORA_ONLY_SUPPORTED=unknown
+if [[ "${DRY_RUN:-0}" != "1" ]]; then
+  CHECKPOINT_CONFIG_FIELDS="$(
+    python - <<'PY'
+import dataclasses
+import inspect
+
+try:
+    from verl.trainer.config.config import CheckpointConfig
+except Exception as exc:  # pragma: no cover - server environment check
+    raise SystemExit(f"ERROR: failed to import verl CheckpointConfig: {exc}")
+
+if dataclasses.is_dataclass(CheckpointConfig):
+    fields = [field.name for field in dataclasses.fields(CheckpointConfig)]
+else:
+    fields = list(inspect.signature(CheckpointConfig).parameters)
+print(",".join(fields))
+PY
+  )"
+  case ",${CHECKPOINT_CONFIG_FIELDS}," in
+    *,save_lora_only,*) ACTOR_CHECKPOINT_SAVE_LORA_ONLY_SUPPORTED=True ;;
+    *) ACTOR_CHECKPOINT_SAVE_LORA_ONLY_SUPPORTED=False ;;
+  esac
+
+  case "${ACTOR_CHECKPOINT_SAVE_LORA_ONLY}" in
+    1|true|True|TRUE|yes|Yes|YES)
+      if [[ "${ACTOR_CHECKPOINT_SAVE_LORA_ONLY_SUPPORTED}" != "True" ]]; then
+        echo "ERROR: installed verl CheckpointConfig does not support save_lora_only."
+        echo "Supported CheckpointConfig fields: ${CHECKPOINT_CONFIG_FIELDS}"
+        echo "Use ACTOR_CHECKPOINT_SAVE_LORA_ONLY=False to run with model-only full-model checkpoints,"
+        echo "or upgrade verl to a version whose CheckpointConfig supports save_lora_only."
+        exit 2
+      fi
+      ;;
+  esac
+fi
+
 echo "verl PROJECT_DIR=${PROJECT_DIR}"
 echo "verl MODEL_PATH=${MODEL_PATH}"
 echo "verl LORA_ADAPTER_PATH=${LORA_ADAPTER_PATH:-<none>}"
@@ -142,7 +179,7 @@ echo "verl ACTOR_USE_TORCH_COMPILE=${ACTOR_USE_TORCH_COMPILE} ROLLOUT_ENFORCE_EA
 echo "verl LOG_PROB_USE_DYNAMIC_BSZ=${LOG_PROB_USE_DYNAMIC_BSZ} LOG_PROB_MICRO_BATCH_SIZE_PER_GPU=${LOG_PROB_MICRO_BATCH_SIZE_PER_GPU}"
 echo "verl ACTOR_PARAM_OFFLOAD=${ACTOR_PARAM_OFFLOAD} ACTOR_OPTIMIZER_OFFLOAD=${ACTOR_OPTIMIZER_OFFLOAD} REF_PARAM_OFFLOAD=${REF_PARAM_OFFLOAD}"
 echo "verl CHECKPOINT_DIR=${CHECKPOINT_DIR}"
-echo "verl ACTOR_CHECKPOINT_SAVE_LORA_ONLY=${ACTOR_CHECKPOINT_SAVE_LORA_ONLY} ACTOR_CHECKPOINT_SAVE_CONTENTS=${ACTOR_CHECKPOINT_SAVE_CONTENTS} ACTOR_CHECKPOINT_LOAD_CONTENTS=${ACTOR_CHECKPOINT_LOAD_CONTENTS}"
+echo "verl ACTOR_CHECKPOINT_SAVE_LORA_ONLY=${ACTOR_CHECKPOINT_SAVE_LORA_ONLY} ACTOR_CHECKPOINT_SAVE_LORA_ONLY_SUPPORTED=${ACTOR_CHECKPOINT_SAVE_LORA_ONLY_SUPPORTED} ACTOR_CHECKPOINT_SAVE_CONTENTS=${ACTOR_CHECKPOINT_SAVE_CONTENTS} ACTOR_CHECKPOINT_LOAD_CONTENTS=${ACTOR_CHECKPOINT_LOAD_CONTENTS}"
 echo "verl MODEL_USE_REMOVE_PADDING=${MODEL_USE_REMOVE_PADDING} MODEL_ATTN_IMPLEMENTATION=${MODEL_ATTN_IMPLEMENTATION}"
 echo "verl DATA_TRUST_REMOTE_CODE=${DATA_TRUST_REMOTE_CODE} MODEL_TRUST_REMOTE_CODE=${MODEL_TRUST_REMOTE_CODE}"
 echo "verl ENABLE_GPU_MONITOR=${ENABLE_GPU_MONITOR} GPU_MONITOR_INTERVAL_SEC=${GPU_MONITOR_INTERVAL_SEC}"
@@ -178,6 +215,14 @@ if [[ -n "${LORA_ADAPTER_PATH}" ]]; then
   MODEL+=(actor_rollout_ref.model.lora_adapter_path="${LORA_ADAPTER_PATH}")
 fi
 
+ACTOR_CHECKPOINT=(
+  actor_rollout_ref.actor.checkpoint.save_contents="${ACTOR_CHECKPOINT_SAVE_CONTENTS}"
+  actor_rollout_ref.actor.checkpoint.load_contents="${ACTOR_CHECKPOINT_LOAD_CONTENTS}"
+)
+if [[ "${ACTOR_CHECKPOINT_SAVE_LORA_ONLY_SUPPORTED}" == "True" ]]; then
+  ACTOR_CHECKPOINT+=(+actor_rollout_ref.actor.checkpoint.save_lora_only="${ACTOR_CHECKPOINT_SAVE_LORA_ONLY}")
+fi
+
 ACTOR=(
   actor_rollout_ref.actor.strategy=fsdp
   actor_rollout_ref.actor.optim.lr="${ACTOR_LR}"
@@ -193,9 +238,7 @@ ACTOR=(
   actor_rollout_ref.actor.fsdp_config.param_offload="${ACTOR_PARAM_OFFLOAD}"
   actor_rollout_ref.actor.fsdp_config.optimizer_offload="${ACTOR_OPTIMIZER_OFFLOAD}"
   actor_rollout_ref.actor.fsdp_config.use_torch_compile="${ACTOR_USE_TORCH_COMPILE}"
-  +actor_rollout_ref.actor.checkpoint.save_lora_only="${ACTOR_CHECKPOINT_SAVE_LORA_ONLY}"
-  actor_rollout_ref.actor.checkpoint.save_contents="${ACTOR_CHECKPOINT_SAVE_CONTENTS}"
-  actor_rollout_ref.actor.checkpoint.load_contents="${ACTOR_CHECKPOINT_LOAD_CONTENTS}"
+  "${ACTOR_CHECKPOINT[@]}"
 )
 
 ROLLOUT=(

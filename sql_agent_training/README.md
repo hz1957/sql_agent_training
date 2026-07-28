@@ -196,9 +196,12 @@ ship the working directory. The script also sets `RAY_ENABLE_UV_RUN_RUNTIME_ENV=
 verl checkpoints are written under `artifacts/checkpoints/verl/<experiment_name>/` by default. Put run logs under
 `artifacts/logs/` as well so generated training outputs stay under the single `artifacts/` root; for example, from the
 outer workspace root redirect to `sql_agent_training/artifacts/logs/<run_name>.log`.
-By default the verl actor checkpoint saves only LoRA adapter model weights via
+By default the verl actor checkpoint attempts to save only LoRA adapter model weights via
 `actor_rollout_ref.actor.checkpoint.save_lora_only=True` and
-`actor_rollout_ref.actor.checkpoint.save_contents=["model"]`. This keeps checkpoints small, but does not preserve
+`actor_rollout_ref.actor.checkpoint.save_contents=["model"]`. The launch script checks the installed verl
+`CheckpointConfig` before starting Ray and fails early if that verl build does not support `save_lora_only`.
+Set `ACTOR_CHECKPOINT_SAVE_LORA_ONLY=False` to run with model-only full-model checkpoints on older verl builds, or
+upgrade verl if small LoRA-only checkpoints are required. LoRA-only checkpoints keep storage small, but do not preserve
 optimizer or extra RNG/scheduler state for exact training resume. Override `ACTOR_CHECKPOINT_SAVE_CONTENTS` and
 `ACTOR_CHECKPOINT_LOAD_CONTENTS` if a fully resumable checkpoint is needed.
 For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=16`, `RAY_OBJECT_STORE_MEMORY=1073741824`, and
