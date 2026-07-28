@@ -225,6 +225,7 @@ docker/data/
 sql_agent_training/data/
 sql_agent_training/artifacts/
 sql_agent_training/logs/
+sql_agent_training/checkpoints/
 
 # Source package directory, not a virtual environment.
 !sql_agent_training/sql_agent_training/env/

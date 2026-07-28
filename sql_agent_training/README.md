@@ -193,6 +193,14 @@ The script assumes a single local Ray node by default and does not pass a Ray `r
 current project checkout directly. Set `ENABLE_RAY_RUNTIME_ENV=1` only for a deployment that needs Ray to package and
 ship the working directory. The script also sets `RAY_ENABLE_UV_RUN_RUNTIME_ENV=0` by default, because Ray's automatic
 `uv run` runtime hook can otherwise rewrite `runtime_env.working_dir` and package the whole project.
+verl checkpoints are written under `artifacts/checkpoints/verl/<experiment_name>/` by default. Put run logs under
+`artifacts/logs/` as well so generated training outputs stay under the single `artifacts/` root; for example, from the
+outer workspace root redirect to `sql_agent_training/artifacts/logs/<run_name>.log`.
+By default the verl actor checkpoint saves only LoRA adapter model weights via
+`actor_rollout_ref.actor.checkpoint.save_lora_only=True` and
+`actor_rollout_ref.actor.checkpoint.save_contents=["model"]`. This keeps checkpoints small, but does not preserve
+optimizer or extra RNG/scheduler state for exact training resume. Override `ACTOR_CHECKPOINT_SAVE_CONTENTS` and
+`ACTOR_CHECKPOINT_LOAD_CONTENTS` if a fully resumable checkpoint is needed.
 For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=16`, `RAY_OBJECT_STORE_MEMORY=1073741824`, and
 `RAY_INCLUDE_DASHBOARD=False` by default to avoid slow local worker/dashboard startup and oversized Ray object-store
 allocation inside memory-limited jobs; override those environment variables when more CPU-side rollout workers are
