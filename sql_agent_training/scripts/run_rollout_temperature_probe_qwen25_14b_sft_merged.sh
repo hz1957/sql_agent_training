@@ -18,7 +18,7 @@ resolve_project_path() {
 MODEL_PATH="$(resolve_project_path "${MODEL_PATH:-data/models/Qwen2.5-Coder-14B-Instruct-SFT-Merged}")"
 TOKENIZER_PATH="$(resolve_project_path "${TOKENIZER_PATH:-${MODEL_PATH}}")"
 OUTPUT_DIR="$(resolve_project_path "${OUTPUT_DIR:-artifacts/rollout_temperature_probe/qwen25_14b_sft_merged_n4_limit16_seed13}")"
-LOG_DIR="$(resolve_project_path "${LOG_DIR:-logs}")"
+LOG_DIR="$(resolve_project_path "${LOG_DIR:-artifacts/logs}")"
 VLLM_LOG="${VLLM_LOG:-${LOG_DIR}/vllm_qwen25_14b_sft_merged_temperature_probe.log}"
 
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
