@@ -287,11 +287,6 @@ memory becomes the bottleneck, lower `ROLLOUT_GPU_MEMORY_UTILIZATION` or `ROLLOU
 `ROLLOUT_LAYERED_SUMMON=True`, QLoRA, or moving rollout to separate vLLM GPUs.
 
 This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
-By default the AgentLoop keeps the old baseline reward behavior, `SQL_AGENT_REWARD_SCHEME=final_shared`, where every
-trajectory receives the final execution reward as a scalar. For Experiment 1 S1, set
-`SQL_AGENT_REWARD_SCHEME=chain_final` and `SQL_AGENT_REWARD_GAMMA=0.9`; this discounts successful trajectories by the
-SQL turn that produced the final SQL: first-turn success gets `1`, one rewrite gets `gamma`, and two rewrites get
-`gamma^2`.
 The 4x L40S script writes lightweight experiment metrics into the same log: `GPU_MONITOR` lines sample
 `memory_used_mb` and `gpu_utilization_pct`, while the SQL AgentLoop reports `rollout_time_sec`, `generate_time_sec`,
 `tool_time_sec`, `reward_time_sec`, `prompt_tokens`, `response_tokens`, `trainable_tokens`,

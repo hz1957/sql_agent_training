@@ -568,27 +568,7 @@ F. Seed confirmation: final best, strongest baseline, and corresponding no-execu
 The current verl AgentLoop can represent a complete multi-turn trajectory as one training sample with masks applied
 only to SQL write/rewrite tokens.
 
-`S1 Chain-final` is supported in the current verl AgentLoop through:
-
-```text
-SQL_AGENT_REWARD_SCHEME=chain_final
-SQL_AGENT_REWARD_GAMMA=0.9
-```
-
-The implementation uses verl's current one-trajectory AgentLoop API. Therefore the scalar trajectory reward is:
-
-```text
-final_execution_reward * gamma ^ final_success_turn_index
-```
-
-where `final_success_turn_index` is `0` for first-turn success, `1` for success after one rewrite, and `2` for
-success after two rewrites. The previous baseline behavior is still available as:
-
-```text
-SQL_AGENT_REWARD_SCHEME=final_shared
-```
-
-Independent chain sampling is the closest to the current path and should be used for S1/S2 first.
+Independent chain sampling is the closest to the current path.
 
 Tree sampling requires an explicit branching rollout orchestrator or AgentLoop extension. It should be treated as a
 separate implementation change, not just a config switch.
