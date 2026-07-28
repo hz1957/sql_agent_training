@@ -25,7 +25,7 @@ rollout_n: 4
 max_turns: 3
 max_prompt_length: 2048
 max_response_length: 2048
-learning_rate: 5e-7
+learning_rate: 5e-5
 clip_epsilon: 0.2
 normalize_advantages: true
 systems stack: current verl + vLLM + FSDP stack
@@ -153,7 +153,7 @@ beta = 0.1
 temperature: chosen value from A
 rollout_n: chosen value from A, initially 4
 kl_beta: 0.005
-learning_rate: 5e-7
+learning_rate: 5e-5
 clip_epsilon: 0.2
 seed: fixed
 ```
@@ -388,7 +388,7 @@ executability reward: disabled
 temperature: chosen value from A
 rollout_n: chosen value from A
 kl_beta: 0.005
-learning_rate: 5e-7
+learning_rate: 5e-5
 clip_epsilon: 0.2
 seed: fixed
 ```
@@ -418,7 +418,7 @@ gamma: best gamma from C
 temperature: chosen value from A
 rollout_n: chosen value from A
 kl_beta: 0.005
-learning_rate: 5e-7
+learning_rate: 5e-5
 clip_epsilon: 0.2
 seed: fixed
 ```
@@ -478,7 +478,7 @@ temperature: chosen value from A
 reward design: chosen value from B/C/D
 gamma: chosen value from C
 beta: chosen value from D, if used
-learning_rate: 5e-7 initially
+learning_rate: 5e-5 initially
 clip_epsilon: 0.2
 rollout_n: chosen value from A
 ```
@@ -493,9 +493,9 @@ or repeated KL/clip spikes.
 After KL, tune learning rate if needed:
 
 ```text
-learning_rate = 2e-7
-learning_rate = 5e-7
-learning_rate = 1e-6
+learning_rate = 1e-5
+learning_rate = 5e-5
+learning_rate = 1e-4
 ```
 
 Only tune `clip_epsilon` if logs show clipping is the bottleneck:

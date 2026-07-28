@@ -62,7 +62,7 @@ training:
   max_steps: 500
   task_batch_size: 4
   update_epochs: 1
-  learning_rate: 0.0000005
+  learning_rate: 0.00005
   kl_beta: 0.01
   clip_epsilon: 0.2
   normalize_advantages: true
@@ -305,7 +305,7 @@ SFT starting checkpoint
 systems stack
 kl_beta = 0.01 initially
 clip_epsilon = 0.2
-learning_rate = 5e-7
+learning_rate = 5e-5
 rollout.n = 4
 task_batch_size = 4
 eval set
@@ -363,14 +363,14 @@ Suggested first sweep:
 ```text
 kl_beta: 0.0, 0.003, 0.01, 0.03
 clip_epsilon: fixed at 0.2
-learning_rate: fixed at 5e-7
+learning_rate: fixed at 5e-5
 ```
 
 Second sweep, only after choosing a reasonable `kl_beta`:
 
 ```text
 clip_epsilon: 0.1, 0.2, 0.3
-learning_rate: 2e-7, 5e-7, 1e-6
+learning_rate: 1e-5, 5e-5, 1e-4
 ```
 
 Required logs:

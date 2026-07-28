@@ -58,7 +58,7 @@ esac
   GRPO_ADV_ESTIMATOR=grpo_multi_step \
   USE_KL_IN_REWARD=False \
   USE_KL_LOSS=False \
-  ACTOR_LR=5e-7 \
+  ACTOR_LR=5e-5 \
   ACTOR_CHECKPOINT_SAVE_LORA_ONLY=True \
   uv run --no-sync bash "${SCRIPT_DIR}/run_verl_grpo_qwen25_coder_14b_l40s_4gpu.sh"
 
