@@ -28,6 +28,20 @@ train = [
   "peft>=0.17,<0.19",
   "protobuf",
 ]
+verl-cu126 = [
+  "accelerate==1.14.0",
+  "flash-attn==2.8.3",
+  "ninja>=1.11",
+  "packaging>=20.0",
+  "peft==0.17.1",
+  "psutil>=7.0",
+  "ray==2.56.1",
+  "setuptools>=80",
+  "torch==2.9.0",
+  "transformers==4.57.6",
+  "verl @ git+https://github.com/verl-project/verl.git@main",
+  "vllm==0.12.0",
+]
 
 [dependency-groups]
 dev = [

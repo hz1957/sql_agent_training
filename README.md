@@ -14,7 +14,19 @@ The branch is intentionally small. It keeps:
 - A local SQL agent rollout loop
 - GRPO-style trajectory grouping and an online PPO-style GRPO trainer
 
-It removes the previous AutoDL and VERL launcher code so the main logic is easier to read.
+It keeps the local trainer readable while also carrying a server-side verl/vLLM launch path for larger GRPO runs.
+
+## Project Files
+
+There are two `pyproject.toml` files on purpose:
+
+- `pyproject.toml`: workspace-level uv configuration. It declares the inner package as a workspace member and keeps
+  resolver-wide rules such as mutually exclusive extras and `flash-attn` build isolation handling.
+- `sql_agent_training/pyproject.toml`: package-level metadata. It declares the actual Python package dependencies,
+  including separate extras for SFT/local training and the server-side `verl-cu126` stack.
+
+The verl/vLLM GPU environment should be reproduced from `sql_agent_training[verl-cu126]`, not from a committed
+`.venv` or a full `pip freeze`.
 
 ## Quick Start
 

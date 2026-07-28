@@ -204,8 +204,8 @@ Set `ACTOR_CHECKPOINT_SAVE_LORA_ONLY=False` to run with model-only full-model ch
 upgrade verl if small LoRA-only checkpoints are required. LoRA-only checkpoints keep storage small, but do not preserve
 optimizer or extra RNG/scheduler state for exact training resume. Override `ACTOR_CHECKPOINT_SAVE_CONTENTS` and
 `ACTOR_CHECKPOINT_LOAD_CONTENTS` if a fully resumable checkpoint is needed.
-The safest upgrade path is to keep the already-working CUDA/PyTorch/vLLM stack fixed and replace only the Python verl
-package from GitHub main:
+The server-side H100/CUDA 12.6 verl environment is recorded as the `verl-cu126` extra in
+`sql_agent_training/pyproject.toml`. Use it from the outer workspace root:
 
 ```bash
 cd /home/hice1/hzhang961/scratch/sql_agent_training
@@ -215,8 +215,7 @@ export UV_TORCH_BACKEND=cu126
 export CUDA_HOME="$(dirname "$(dirname "$(which nvcc)")")"
 
 uv run --no-sync ray stop -f || true
-uv pip install --python .venv/bin/python --no-deps --force-reinstall \
-  "verl @ git+https://github.com/verl-project/verl.git@main"
+uv sync --python 3.12 --package sql-agent-training --extra verl-cu126 --group dev
 
 uv run --no-sync python - <<'PY'
 import dataclasses
@@ -245,9 +244,21 @@ PREFLIGHT=1 ACTOR_CHECKPOINT_SAVE_LORA_ONLY=True \
   uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_4gpu.sh
 ```
 
-Do not run `uv sync --extra train` in this verl environment after the overlay install; that extra is for the simpler
-local training stack and pins `torch<2.6`, while this verl/vLLM path has been validated with the CUDA 12.6
-`torch 2.9.0` / `vllm 0.12.0` stack.
+The outer workspace `pyproject.toml` marks `verl-cu126` as incompatible with the older `sft` and `train` extras, so uv
+will refuse to install both stacks into one environment. Do not run `uv sync --extra train` in the verl environment:
+that extra is for the simpler local training stack and pins `torch<2.6`, while this verl/vLLM path has been validated
+with the CUDA 12.6 `torch 2.9.0` / `vllm 0.12.0` stack. The workspace config also sets
+`no-build-isolation-package = ["flash-attn"]`, so `flash-attn` can build against the already-resolved PyTorch/CUDA
+environment during `uv sync`.
+
+If an existing server environment is already good and only the PyPI `verl` package lacks
+`checkpoint.save_lora_only`, the lowest-churn repair remains replacing only the verl package without touching
+torch/vLLM:
+
+```bash
+uv pip install --python .venv/bin/python --no-deps --force-reinstall \
+  "verl @ git+https://github.com/verl-project/verl.git@main"
+```
 For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=16`, `RAY_OBJECT_STORE_MEMORY=1073741824`, and
 `RAY_INCLUDE_DASHBOARD=False` by default to avoid slow local worker/dashboard startup and oversized Ray object-store
 allocation inside memory-limited jobs; override those environment variables when more CPU-side rollout workers are

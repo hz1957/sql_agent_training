@@ -7,6 +7,17 @@ dependencies = []
 
 [tool.uv]
 package = false
+no-build-isolation-package = ["flash-attn"]
+conflicts = [
+  [
+    { package = "sql-agent-training", extra = "sft" },
+    { package = "sql-agent-training", extra = "verl-cu126" },
+  ],
+  [
+    { package = "sql-agent-training", extra = "train" },
+    { package = "sql-agent-training", extra = "verl-cu126" },
+  ],
+]
 
 [tool.uv.workspace]
 members = ["sql_agent_training"]
