@@ -228,9 +228,19 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         super().__init__(*args, **kwargs)
         self.response_length = int(_cfg_get(self.rollout_config, ("response_length",), 2048))
         self.max_turns = int(_cfg_get(self.rollout_config, ("multi_turn", "max_assistant_turns"), 3))
-        self.reward_scheme = _normalize_reward_scheme(os.environ.get("GRPO_REWARD_SCHEME", "outcome"))
-        self.reward_gamma = _env_float("GRPO_REWARD_GAMMA", 0.9)
-        self.executable_fallback_beta = _env_float("GRPO_EXECUTABLE_FALLBACK_BETA", 0.1)
+        self.reward_scheme = _normalize_reward_scheme(
+            _cfg_get(self.rollout_config, ("agent", "reward_scheme"), os.environ.get("GRPO_REWARD_SCHEME", "outcome"))
+        )
+        self.reward_gamma = float(
+            _cfg_get(self.rollout_config, ("agent", "reward_gamma"), _env_float("GRPO_REWARD_GAMMA", 0.9))
+        )
+        self.executable_fallback_beta = float(
+            _cfg_get(
+                self.rollout_config,
+                ("agent", "executable_fallback_beta"),
+                _env_float("GRPO_EXECUTABLE_FALLBACK_BETA", 0.1),
+            )
+        )
         self.sqlite_tool = SQLiteTool()
 
     async def _encode_user_prompt(self, content: str, *, remove_system_prompt: bool) -> list[int]:

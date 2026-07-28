@@ -187,7 +187,13 @@ if _VerlAgentLoopWorker is not None:
                 input_non_tensor_batch=input_non_tensor_batch,
                 **kwargs,
             )
-            scheme = str(os.environ.get("GRPO_REWARD_SCHEME", "outcome")).lower().replace("-", "_")
+            scheme = str(
+                _cfg_get(
+                    self.rollout_config.agent,
+                    "reward_scheme",
+                    os.environ.get("GRPO_REWARD_SCHEME", "outcome"),
+                )
+            ).lower().replace("-", "_")
             if scheme not in {"chain_final", "chain_executable"}:
                 return output
 

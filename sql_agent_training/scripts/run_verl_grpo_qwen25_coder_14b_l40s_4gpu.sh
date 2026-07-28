@@ -36,6 +36,7 @@ MAX_RESPONSE_LENGTH=${MAX_RESPONSE_LENGTH:-2048}
 TOTAL_TRAINING_STEPS=${TOTAL_TRAINING_STEPS:-500}
 DATALOADER_NUM_WORKERS=${DATALOADER_NUM_WORKERS:-0}
 FILTER_OVERLONG_PROMPTS_WORKERS=${FILTER_OVERLONG_PROMPTS_WORKERS:-1}
+ROLLOUT_N_WAS_SET=${ROLLOUT_N+x}
 ROLLOUT_N=${ROLLOUT_N:-4}
 ROLLOUT_TP=${ROLLOUT_TP:-4}
 ROLLOUT_PP=${ROLLOUT_PP:-1}
@@ -60,19 +61,47 @@ KL_LOSS_COEF=${KL_LOSS_COEF:-0.01}
 GRPO_REWARD_SCHEME=${GRPO_REWARD_SCHEME:-outcome}
 GRPO_REWARD_GAMMA=${GRPO_REWARD_GAMMA:-0.9}
 GRPO_EXECUTABLE_FALLBACK_BETA=${GRPO_EXECUTABLE_FALLBACK_BETA:-0.1}
+GRPO_TREE_BRANCH_N=${GRPO_TREE_BRANCH_N:-4}
+GRPO_TREE_BEAM_SIZE=${GRPO_TREE_BEAM_SIZE:-4}
+GRPO_TREE_BEAM_TAU=${GRPO_TREE_BEAM_TAU:-1.0}
+GRPO_TREE_BEAM_EPSILON_RANDOM=${GRPO_TREE_BEAM_EPSILON_RANDOM:-0.1}
+GRPO_TREE_PRUNE_ON_GOLD_REWARD=${GRPO_TREE_PRUNE_ON_GOLD_REWARD:-True}
 if [[ -z "${GRPO_ADV_ESTIMATOR:-}" ]]; then
   case "${GRPO_REWARD_SCHEME}" in
     chain_final|chain-final|s1|chain_executable|chain-executable|s2) GRPO_ADV_ESTIMATOR=grpo_multi_step ;;
+    tree_final|tree-final|s3) GRPO_ADV_ESTIMATOR=grpo_tree ;;
     *) GRPO_ADV_ESTIMATOR=grpo ;;
   esac
 fi
 VERL_ENTRYPOINT=${VERL_ENTRYPOINT:-verl.trainer.main_ppo}
-if [[ "${GRPO_ADV_ESTIMATOR}" == "grpo_multi_step" ]]; then
+if [[ "${GRPO_ADV_ESTIMATOR}" == "grpo_multi_step" || "${GRPO_ADV_ESTIMATOR}" == "grpo_tree" ]]; then
   VERL_ENTRYPOINT=sql_agent_training.train.verl_grpo_multi_step_main
 fi
 SAVE_FREQ=${SAVE_FREQ:-25}
+TEST_FREQ_WAS_SET=${TEST_FREQ+x}
 TEST_FREQ=${TEST_FREQ:-25}
 MAX_TURNS=${MAX_TURNS:-3}
+DEFAULT_AGENT_LOOP=${DEFAULT_AGENT_LOOP:-sql_agent}
+if [[ "${GRPO_ADV_ESTIMATOR}" == "grpo_tree" ]]; then
+  TREE_SLOT_COUNT=$((GRPO_TREE_BRANCH_N + (MAX_TURNS - 1) * GRPO_TREE_BEAM_SIZE * GRPO_TREE_BRANCH_N))
+  DEFAULT_AGENT_LOOP=sql_agent_tree
+  if [[ -z "${TEST_FREQ_WAS_SET}" ]]; then
+    TEST_FREQ=-1
+  elif (( TEST_FREQ > 0 )); then
+    echo "ERROR: S3 tree rollout currently requires TEST_FREQ=-1."
+    echo "verl validation chunks the repeated validation batch differently and can split tree slot groups."
+    echo "Run checkpoint evaluation separately until tree validation is implemented."
+    exit 2
+  fi
+  if [[ -z "${ROLLOUT_N_WAS_SET}" ]]; then
+    ROLLOUT_N="${TREE_SLOT_COUNT}"
+  elif (( ROLLOUT_N != TREE_SLOT_COUNT )); then
+    echo "ERROR: S3 tree rollout requires ROLLOUT_N to equal tree slot count."
+    echo "Current ROLLOUT_N=${ROLLOUT_N}, tree slot count=${TREE_SLOT_COUNT}."
+    echo "slot_count = branch_n + (max_turns - 1) * beam_size * branch_n."
+    exit 2
+  fi
+fi
 PROJECT_NAME=${PROJECT_NAME:-sql_agent_training}
 EXPERIMENT_NAME=${EXPERIMENT_NAME:-verl_grpo_qwen25_coder_14b_l40s_4gpu}
 CHECKPOINT_DIR="$(resolve_project_path "${CHECKPOINT_DIR:-artifacts/checkpoints/verl/${EXPERIMENT_NAME}}")"
@@ -193,6 +222,7 @@ echo "verl ROLLOUT_MAX_NUM_BATCHED_TOKENS=${ROLLOUT_MAX_NUM_BATCHED_TOKENS} ROLL
 echo "verl ROLLOUT_DO_SAMPLE=${ROLLOUT_DO_SAMPLE} ROLLOUT_TEMPERATURE=${ROLLOUT_TEMPERATURE} ROLLOUT_TOP_P=${ROLLOUT_TOP_P} ROLLOUT_TOP_K=${ROLLOUT_TOP_K}"
 echo "verl USE_KL_IN_REWARD=${USE_KL_IN_REWARD} USE_KL_LOSS=${USE_KL_LOSS} KL_LOSS_COEF=${KL_LOSS_COEF}"
 echo "verl GRPO_ADV_ESTIMATOR=${GRPO_ADV_ESTIMATOR} GRPO_REWARD_SCHEME=${GRPO_REWARD_SCHEME} GRPO_REWARD_GAMMA=${GRPO_REWARD_GAMMA} GRPO_EXECUTABLE_FALLBACK_BETA=${GRPO_EXECUTABLE_FALLBACK_BETA}"
+echo "verl GRPO_TREE_BRANCH_N=${GRPO_TREE_BRANCH_N} GRPO_TREE_BEAM_SIZE=${GRPO_TREE_BEAM_SIZE} GRPO_TREE_BEAM_TAU=${GRPO_TREE_BEAM_TAU} GRPO_TREE_BEAM_EPSILON_RANDOM=${GRPO_TREE_BEAM_EPSILON_RANDOM} GRPO_TREE_PRUNE_ON_GOLD_REWARD=${GRPO_TREE_PRUNE_ON_GOLD_REWARD}"
 echo "verl VERL_ENTRYPOINT=${VERL_ENTRYPOINT}"
 echo "verl ACTOR_USE_TORCH_COMPILE=${ACTOR_USE_TORCH_COMPILE} ROLLOUT_ENFORCE_EAGER=${ROLLOUT_ENFORCE_EAGER}"
 echo "verl LOG_PROB_USE_DYNAMIC_BSZ=${LOG_PROB_USE_DYNAMIC_BSZ} LOG_PROB_MICRO_BATCH_SIZE_PER_GPU=${LOG_PROB_MICRO_BATCH_SIZE_PER_GPU}"
@@ -283,8 +313,16 @@ ROLLOUT=(
   actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu="${LOG_PROB_MICRO_BATCH_SIZE_PER_GPU}"
   actor_rollout_ref.rollout.log_prob_max_token_len_per_gpu="${PPO_MAX_TOKEN_LEN_PER_GPU}"
   actor_rollout_ref.rollout.agent.agent_loop_config_path="${AGENT_LOOP_CONFIG_PATH}"
-  actor_rollout_ref.rollout.agent.default_agent_loop=sql_agent
+  actor_rollout_ref.rollout.agent.default_agent_loop="${DEFAULT_AGENT_LOOP}"
   actor_rollout_ref.rollout.agent.num_workers="${TRAIN_BATCH_SIZE}"
+  ++actor_rollout_ref.rollout.agent.reward_scheme="${GRPO_REWARD_SCHEME}"
+  ++actor_rollout_ref.rollout.agent.reward_gamma="${GRPO_REWARD_GAMMA}"
+  ++actor_rollout_ref.rollout.agent.executable_fallback_beta="${GRPO_EXECUTABLE_FALLBACK_BETA}"
+  ++actor_rollout_ref.rollout.agent.tree_branch_n="${GRPO_TREE_BRANCH_N}"
+  ++actor_rollout_ref.rollout.agent.tree_beam_size="${GRPO_TREE_BEAM_SIZE}"
+  ++actor_rollout_ref.rollout.agent.tree_beam_tau="${GRPO_TREE_BEAM_TAU}"
+  ++actor_rollout_ref.rollout.agent.tree_beam_epsilon_random="${GRPO_TREE_BEAM_EPSILON_RANDOM}"
+  ++actor_rollout_ref.rollout.agent.tree_prune_on_gold_reward="${GRPO_TREE_PRUNE_ON_GOLD_REWARD}"
   actor_rollout_ref.rollout.multi_turn.enable=True
   actor_rollout_ref.rollout.multi_turn.max_assistant_turns="${MAX_TURNS}"
   actor_rollout_ref.rollout.multi_turn.max_user_turns="${MAX_TURNS}"
@@ -292,6 +330,8 @@ ROLLOUT=(
 )
 if [[ "${GRPO_ADV_ESTIMATOR}" == "grpo_multi_step" ]]; then
   ROLLOUT+=(++actor_rollout_ref.rollout.agent.agent_loop_manager_class=sql_agent_training.train.verl_grpo_multi_step.MultiStepRewardAgentLoopManager)
+elif [[ "${GRPO_ADV_ESTIMATOR}" == "grpo_tree" ]]; then
+  ROLLOUT+=(++actor_rollout_ref.rollout.agent.agent_loop_manager_class=sql_agent_training.train.verl_grpo_tree.TreeRewardAgentLoopManager)
 fi
 
 REF=(

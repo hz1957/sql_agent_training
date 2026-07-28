@@ -9,6 +9,9 @@ from verl.trainer import main_ppo as verl_main_ppo
 
 def _import_multi_step_extensions() -> None:
     import sql_agent_training.train.verl_grpo_multi_step  # noqa: F401
+    from sql_agent_training.train.verl_grpo_tree import patch_verl_compute_advantage
+
+    patch_verl_compute_advantage()
 
 
 def _patch_task_runner_run(task_runner_cls) -> bool:  # type: ignore[no-untyped-def]
