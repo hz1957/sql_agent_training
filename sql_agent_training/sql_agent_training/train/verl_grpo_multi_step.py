@@ -181,8 +181,12 @@ if _VerlAgentLoopWorker is not None:
     class MultiStepRewardAgentLoopWorker(_VerlAgentLoopWorker):
         """AgentLoopWorker that replaces scalar terminal rewards with turn rewards."""
 
-        def _postprocess(self, inputs, input_non_tensor_batch=None):  # type: ignore[no-untyped-def]
-            output = super()._postprocess(inputs, input_non_tensor_batch=input_non_tensor_batch)
+        def _postprocess(self, inputs, input_non_tensor_batch=None, **kwargs):  # type: ignore[no-untyped-def]
+            output = super()._postprocess(
+                inputs,
+                input_non_tensor_batch=input_non_tensor_batch,
+                **kwargs,
+            )
             scheme = str(os.environ.get("GRPO_REWARD_SCHEME", "outcome")).lower().replace("-", "_")
             if scheme not in {"chain_final", "chain_executable"}:
                 return output
