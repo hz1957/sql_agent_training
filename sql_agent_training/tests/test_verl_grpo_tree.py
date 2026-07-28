@@ -12,6 +12,7 @@ from sql_agent_training.train.verl_grpo_tree import (
     select_frontier_nodes,
     tree_slot_count,
 )
+from sql_agent_training.train.verl_sql_agent_loop import _normalize_reward_scheme
 
 
 def _node(
@@ -55,6 +56,30 @@ def test_backup_tree_values_uses_final_reward_mean_backup() -> None:
     assert direct.value == 1.0
     assert repaired_parent.value == 0.45
     assert failed.value == 0.0
+
+
+def test_backup_tree_values_can_use_executable_fallback() -> None:
+    executable_leaf = _node("executable_leaf", execution_ok=True)
+    failed_leaf = _node("failed_leaf", execution_ok=False)
+    repaired_parent = _node("repaired_parent", execution_ok=False)
+    repaired_parent.children = [_node("rewrite_exec", execution_ok=True), _node("rewrite_bad", execution_ok=False)]
+
+    backup_tree_values(
+        [executable_leaf, failed_leaf, repaired_parent],
+        gamma=0.9,
+        executable_fallback_beta=0.1,
+    )
+
+    assert executable_leaf.value == 0.1
+    assert failed_leaf.value == 0.0
+    assert math.isclose(repaired_parent.value, 0.045)
+
+
+def test_tree_reward_scheme_aliases() -> None:
+    assert _normalize_reward_scheme("s3") == "tree_final"
+    assert _normalize_reward_scheme("tree-final") == "tree_final"
+    assert _normalize_reward_scheme("s4") == "tree_executable"
+    assert _normalize_reward_scheme("tree-executable") == "tree_executable"
 
 
 def test_select_frontier_nodes_uses_proxy_not_gold_reward() -> None:

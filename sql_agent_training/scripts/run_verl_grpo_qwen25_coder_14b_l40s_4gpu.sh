@@ -69,7 +69,7 @@ GRPO_TREE_PRUNE_ON_GOLD_REWARD=${GRPO_TREE_PRUNE_ON_GOLD_REWARD:-True}
 if [[ -z "${GRPO_ADV_ESTIMATOR:-}" ]]; then
   case "${GRPO_REWARD_SCHEME}" in
     chain_final|chain-final|s1|chain_executable|chain-executable|s2) GRPO_ADV_ESTIMATOR=grpo_multi_step ;;
-    tree_final|tree-final|s3) GRPO_ADV_ESTIMATOR=grpo_tree ;;
+    tree_final|tree-final|s3|tree_executable|tree-executable|s4) GRPO_ADV_ESTIMATOR=grpo_tree ;;
     *) GRPO_ADV_ESTIMATOR=grpo ;;
   esac
 fi

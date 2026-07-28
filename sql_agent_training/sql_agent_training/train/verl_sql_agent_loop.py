@@ -166,9 +166,12 @@ def _normalize_reward_scheme(value: Any) -> str:
         "s1": "chain_final",
         "executable": "chain_executable",
         "s2": "chain_executable",
+        "tree": "tree_final",
+        "s3": "tree_final",
+        "s4": "tree_executable",
     }
     scheme = aliases.get(scheme, scheme)
-    allowed = {"outcome", "chain_final", "chain_executable"}
+    allowed = {"outcome", "chain_final", "chain_executable", "tree_final", "tree_executable"}
     if scheme not in allowed:
         raise ValueError(f"Unsupported SQL-agent reward_scheme={scheme!r}; expected one of {sorted(allowed)}")
     return scheme

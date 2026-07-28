@@ -1,9 +1,9 @@
 """Tree-structured GRPO support for verl SQL-agent rollouts.
 
-S3 uses one training row per tree node: the prompt is the node's parent state,
-the response is one sampled SQL action, and the group id is the parent state id.
-The custom worker keeps verl's repeated-batch shape fixed by filling unused tree
-slots with fully masked dummy rows.
+S3/S4 use one training row per tree node: the prompt is the node's parent
+state, the response is one sampled SQL action, and the group id is the parent
+state id. The custom worker keeps verl's repeated-batch shape fixed by filling
+unused tree slots with fully masked dummy rows.
 """
 
 from __future__ import annotations
@@ -200,14 +200,18 @@ def select_frontier_nodes(
     return selected
 
 
-def backup_tree_values(nodes: list[TreeNode], *, gamma: float) -> None:
-    """Assign S3 values with final-reward mean backup."""
+def backup_tree_values(nodes: list[TreeNode], *, gamma: float, executable_fallback_beta: float = 0.0) -> None:
+    """Assign tree values with final-reward mean backup and optional executable fallback."""
 
     def value_for(node: TreeNode) -> float:
         if node.correct:
             node.value = 1.0
         elif node.children:
-            node.value = float(gamma) * sum(value_for(child) for child in node.children) / len(node.children)
+            backed_up_value = float(gamma) * sum(value_for(child) for child in node.children) / len(node.children)
+            executable_value = float(executable_fallback_beta) if node.execution_ok else 0.0
+            node.value = max(backed_up_value, executable_value)
+        elif node.execution_ok:
+            node.value = float(executable_fallback_beta)
         else:
             node.value = 0.0
         return node.value
@@ -617,7 +621,12 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
                 break
 
         root_nodes = [node for node in all_nodes if node.turn_index == 0]
-        backup_tree_values(root_nodes, gamma=self.reward_gamma)
+        executable_fallback_beta = self.executable_fallback_beta if self.reward_scheme == "tree_executable" else 0.0
+        backup_tree_values(
+            root_nodes,
+            gamma=self.reward_gamma,
+            executable_fallback_beta=executable_fallback_beta,
+        )
         rollout_time_sec = max(time.perf_counter() - rollout_start, 1e-9)
         metrics.update(
             {
