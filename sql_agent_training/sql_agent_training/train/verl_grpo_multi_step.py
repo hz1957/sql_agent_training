@@ -8,6 +8,7 @@ normalizes rewards by ``(uid, turn_index)``.
 from __future__ import annotations
 
 from collections import defaultdict
+import os
 from typing import Any
 
 import numpy as np
@@ -182,7 +183,7 @@ if _VerlAgentLoopWorker is not None:
 
         def _postprocess(self, inputs, input_non_tensor_batch=None):  # type: ignore[no-untyped-def]
             output = super()._postprocess(inputs, input_non_tensor_batch=input_non_tensor_batch)
-            scheme = str(_cfg_get(self.rollout_config.agent, "reward_scheme", "outcome")).lower().replace("-", "_")
+            scheme = str(os.environ.get("GRPO_REWARD_SCHEME", "outcome")).lower().replace("-", "_")
             if scheme not in {"chain_final", "chain_executable"}:
                 return output
 
