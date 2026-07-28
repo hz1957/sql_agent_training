@@ -28,19 +28,26 @@ train = [
   "peft>=0.17,<0.19",
   "protobuf",
 ]
-verl-cu126 = [
+verl-cu128 = [
   "accelerate==1.14.0",
+  "datasets>=2.18",
+  "fsspec[http]==2026.2.0",
   "flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl",
   "nvidia-cutlass-dsl==4.5.2",
+  "nvidia-cutlass-dsl-libs-base==4.5.2",
   "ninja>=1.11",
+  "numpy==2.2.6",
   "packaging>=20.0",
   "peft==0.17.1",
   "psutil>=7.0",
   "ray==2.56.1",
-  "setuptools>=80",
+  "setuptools==80.9.0",
+  "tensordict==0.10.0",
   "torch==2.9.0",
+  "torchaudio==2.9.0",
+  "torchvision==0.24.0",
   "transformers==4.57.6",
-  "verl @ git+https://github.com/verl-project/verl.git@main",
+  "verl @ git+https://github.com/verl-project/verl.git@f663282327d784068263c7c3736a4884830eea44",
   "vllm==0.12.0",
 ]
 

@@ -204,18 +204,18 @@ Set `ACTOR_CHECKPOINT_SAVE_LORA_ONLY=False` to run with model-only full-model ch
 upgrade verl if small LoRA-only checkpoints are required. LoRA-only checkpoints keep storage small, but do not preserve
 optimizer or extra RNG/scheduler state for exact training resume. Override `ACTOR_CHECKPOINT_SAVE_CONTENTS` and
 `ACTOR_CHECKPOINT_LOAD_CONTENTS` if a fully resumable checkpoint is needed.
-The server-side H100/CUDA 12.6 verl environment is recorded as the `verl-cu126` extra in
+The server-side H100/CUDA 12.8 verl environment is recorded as the `verl-cu128` extra in
 `sql_agent_training/pyproject.toml`. Use it from the outer workspace root:
 
 ```bash
 cd /home/hice1/hzhang961/scratch/sql_agent_training
-module load cuda/12.6.1
+module load cuda/12.9.1
 export UV_LINK_MODE=copy
-export UV_TORCH_BACKEND=cu126
+export UV_TORCH_BACKEND=cu128
 export CUDA_HOME="$(dirname "$(dirname "$(which nvcc)")")"
 
 uv run --no-sync ray stop -f || true
-uv sync --python 3.12 --package sql-agent-training --extra verl-cu126 --group dev
+uv sync --python 3.12 --package sql-agent-training --extra verl-cu128 --group dev
 
 uv run --no-sync python - <<'PY'
 import dataclasses
@@ -244,14 +244,17 @@ PREFLIGHT=1 ACTOR_CHECKPOINT_SAVE_LORA_ONLY=True \
   uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_4gpu.sh
 ```
 
-The outer workspace `pyproject.toml` marks `verl-cu126` as incompatible with the older `sft` and `train` extras, so uv
+The outer workspace `pyproject.toml` marks `verl-cu128` as incompatible with the older `sft` and `train` extras, so uv
 will refuse to install both stacks into one environment. Do not run `uv sync --extra train` in the verl environment:
 that extra is for the simpler local training stack and pins `torch<2.6`, while this verl/vLLM path has been validated
-with the CUDA 12.6 `torch 2.9.0` / `vllm 0.12.0` stack. The `verl-cu126` extra points `flash-attn` at the official
-GitHub release wheel for Linux x86_64, Python 3.12, CUDA 12.x, and Torch 2.9, so uv should download a prebuilt wheel
-instead of compiling `flash-attn` from source. It also pins `nvidia-cutlass-dsl==4.5.2`; newer CUTLASS DSL releases
-remove deprecated `cute.core.ThrMma` / `cute.core.ThrCopy` aliases that `flash-attn 2.8.3` can still import through
-vLLM's FlashAttention interface.
+with the CUDA 12.8 `torch 2.9.0` / `vllm 0.12.0` stack. The `verl-cu128` extra pins verl to git commit
+`f663282327d784068263c7c3736a4884830eea44` instead of floating `main`. It points `flash-attn` at the official GitHub
+release wheel for Linux x86_64, Python 3.12, CUDA 12.x, and Torch 2.9, so uv should download a prebuilt wheel instead
+of compiling `flash-attn` from source. It also pins `numpy==2.2.6`, `tensordict==0.10.0`, `setuptools==80.9.0`,
+`fsspec[http]==2026.2.0`, `nvidia-cutlass-dsl==4.5.2`, and `nvidia-cutlass-dsl-libs-base==4.5.2` to match the server
+environment that passed `uv pip check` and started the 4x H100 GRPO run. Newer CUTLASS DSL releases remove deprecated
+`cute.core.ThrMma` / `cute.core.ThrCopy` aliases that `flash-attn 2.8.3` can still import through vLLM's
+FlashAttention interface.
 
 If an existing server environment is already good and only the PyPI `verl` package lacks
 `checkpoint.save_lora_only`, the lowest-churn repair remains replacing only the verl package without touching
@@ -259,7 +262,7 @@ torch/vLLM:
 
 ```bash
 uv pip install --python .venv/bin/python --no-deps --force-reinstall \
-  "verl @ git+https://github.com/verl-project/verl.git@main"
+  "verl @ git+https://github.com/verl-project/verl.git@f663282327d784068263c7c3736a4884830eea44"
 ```
 The launch script defaults `TRAINER_USE_V1=False` and passes `++trainer.use_v1=False` to keep using the legacy
 RayPPOTrainer path that worked in smoke tests. The newer V1 trainer path imports `transfer_queue`; do not enable it

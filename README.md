@@ -21,11 +21,11 @@ It keeps the local trainer readable while also carrying a server-side verl/vLLM 
 There are two `pyproject.toml` files on purpose:
 
 - `pyproject.toml`: workspace-level uv configuration. It declares the inner package as a workspace member and keeps
-  resolver-wide rules such as mutually exclusive extras and `flash-attn` build isolation handling.
+  resolver-wide rules such as mutually exclusive extras.
 - `sql_agent_training/pyproject.toml`: package-level metadata. It declares the actual Python package dependencies,
-  including separate extras for SFT/local training and the server-side `verl-cu126` stack.
+  including separate extras for SFT/local training and the server-side `verl-cu128` stack.
 
-The verl/vLLM GPU environment should be reproduced from `sql_agent_training[verl-cu126]`, not from a committed
+The verl/vLLM GPU environment should be reproduced from `sql_agent_training[verl-cu128]`, not from a committed
 `.venv` or a full `pip freeze`.
 
 ## Quick Start

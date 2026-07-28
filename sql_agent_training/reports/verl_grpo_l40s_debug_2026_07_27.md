@@ -778,3 +778,192 @@ LORA_ADAPTER_PATH=none
 ```
 
 so the next H100 smoke should no longer route the old SFT LoRA adapter through the PEFT/FSDP meta-tensor load path.
+
+## 2026-07-28 H100 GRPO Environment Stabilization
+
+The 4x H100 GRPO run exposed a separate class of failures: the training recipe itself was standard for verl
+AgentLoop GRPO, but the exact `verl + vLLM + torch + flash-attn + CUTLASS + tensordict` matrix had to be pinned
+tightly. The final environment that passed import checks and `uv pip check` was:
+
+```text
+torch: 2.9.0
+torch cuda: 12.8
+torchvision: 0.24.0
+torchaudio: 2.9.0
+vllm: 0.12.0
+verl: 0.9.0.dev0
+verl git commit: f663282327d784068263c7c3736a4884830eea44
+flash_attn: 2.8.3
+numpy: 2.2.6
+setuptools: 80.9.0
+fsspec: 2026.2.0
+tensordict: 0.10.0
+nvidia-cutlass-dsl: 4.5.2
+nvidia-cutlass-dsl-libs-base: 4.5.2
+uv pip check: All installed packages are compatible
+```
+
+This is now recorded in `sql_agent_training/pyproject.toml` as the `verl-cu128` optional extra. The name is `cu128`
+because the server environment reports `torch.version.cuda == 12.8`; the earlier `verl-cu126` label was misleading.
+The `flash-attn` dependency is recorded as the official GitHub release wheel:
+
+```text
+flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
+```
+
+This avoids the PyPI source build path.
+
+### Failure Chain
+
+1. `verl==0.8.0` could run the GRPO smoke path, but its `CheckpointConfig` did not support
+   `actor_rollout_ref.actor.checkpoint.save_lora_only`.
+2. Upgrading only `verl` to GitHub commit `f663282327d784068263c7c3736a4884830eea44` made `save_lora_only`
+   available, but the default trainer path changed to V1:
+
+```text
+TaskRunnerV1 -> import transfer_queue as tq
+ModuleNotFoundError: No module named 'transfer_queue'
+```
+
+The launch script now passes:
+
+```text
+++trainer.use_v1=False
+```
+
+through `TRAINER_USE_V1=False`, keeping the run on the legacy RayPPOTrainer path that previously passed smoke.
+
+3. `flash-attn 2.8.3` plus a newer `nvidia-cutlass-dsl` failed during vLLM import:
+
+```text
+AttributeError: module 'cutlass.cute.core' has no attribute 'ThrMma'
+```
+
+The compatible stack pins:
+
+```text
+nvidia-cutlass-dsl==4.5.2
+nvidia-cutlass-dsl-libs-base==4.5.2
+```
+
+and removes the incompatible leftover `nvidia-cutlass-dsl-libs-cu12==4.6.1`. It is OK for
+`nvidia-cutlass-dsl-libs-cu12` to be absent in the 4.5.2 stack; `uv pip check` is the authority.
+
+4. `tensordict` was another narrow constraint. `verl` code asserted that `DataProto.to_tensordict()` requires
+`tensordict >= 0.10`, while package metadata rejected newer versions:
+
+```text
+verl requires tensordict>=0.8.0,!=0.9.0,<=0.10.0
+```
+
+Therefore the working pin is:
+
+```text
+tensordict==0.10.0
+```
+
+5. An attempted resolver repair temporarily made the environment inconsistent:
+
+```text
+torch: 2.13.0
+numpy: 2.5.1
+setuptools: 83.0.0
+fsspec: 2026.6.0
+```
+
+This broke `vllm`, `torchaudio`, `torchvision`, `mistral-common`, `numba`, and `datasets` constraints. The repaired
+pins are:
+
+```text
+torch==2.9.0
+torchvision==0.24.0
+torchaudio==2.9.0
+numpy==2.2.6
+setuptools==80.9.0
+fsspec[http]==2026.2.0
+```
+
+6. A 4x H100 run with `--mem=196G` died in `checkpoint_manager.update_weights()`, but the confirmed root cause was
+CPU/RAM cgroup OOM, not GPU OOM:
+
+```text
+Memory cgroup out of memory: Killed process 894711 (ray::WorkerDict)
+anon-rss:34272040kB
+```
+
+The NCCL broken pipes and `ActorDiedError` were secondary effects after the Ray worker was killed. The next 4x H100
+run should request substantially more host memory, e.g. `--mem=384G` or `--mem=512G`.
+
+### Preflight Checks That Avoid Loading 14B
+
+Before launching the full model, use lightweight import and dependency checks:
+
+```bash
+uv run --no-sync python - <<'PY'
+import dataclasses
+import importlib.metadata as md
+from packaging.version import parse
+
+for p in [
+    "torch", "torchvision", "torchaudio", "vllm", "verl", "flash_attn",
+    "numpy", "setuptools", "fsspec", "tensordict",
+    "nvidia-cutlass-dsl", "nvidia-cutlass-dsl-libs-base",
+]:
+    print(f"{p}: {md.version(p)}")
+
+import torch
+print("torch cuda:", torch.version.cuda, "available:", torch.cuda.is_available())
+
+import tensordict
+assert parse(tensordict.__version__) == parse("0.10.0")
+
+from verl.trainer.config.config import CheckpointConfig
+fields = [field.name for field in dataclasses.fields(CheckpointConfig)]
+assert "save_lora_only" in fields, fields
+
+import cutlass.cute as cute
+assert hasattr(cute.core, "ThrMma")
+
+import vllm.vllm_flash_attn.flash_attn_interface
+from verl.protocol import DataProto
+print("verl/vLLM preflight ok")
+PY
+
+uv pip check
+```
+
+Then run the script preflight:
+
+```bash
+PREFLIGHT=1 ACTOR_CHECKPOINT_SAVE_LORA_ONLY=True \
+  uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_4gpu.sh
+```
+
+Only after both checks pass should the full 14B run start.
+
+### Current Working Training Shape
+
+The active 4x H100 run uses:
+
+```text
+TRAIN_BATCH_SIZE=8
+PPO_MINI_BATCH_SIZE=8
+ROLLOUT_N=4
+ROLLOUT_TP=4
+MAX_PROMPT_LENGTH=2048
+MAX_RESPONSE_LENGTH=2048
+MAX_TURNS=3
+TRAINER_USE_V1=False
+ACTOR_CHECKPOINT_SAVE_LORA_ONLY=True
+SAVE_FREQ=25
+```
+
+If this still fails on host memory despite `--mem=384G+`, reduce rollout pressure before changing package versions:
+
+```text
+TRAIN_BATCH_SIZE=4
+PPO_MINI_BATCH_SIZE=4
+ROLLOUT_MAX_NUM_SEQS=4
+```
+
+and increase total steps to preserve the approximate number of sampled trajectories.

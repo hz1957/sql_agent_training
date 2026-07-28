@@ -10,11 +10,11 @@ package = false
 conflicts = [
   [
     { package = "sql-agent-training", extra = "sft" },
-    { package = "sql-agent-training", extra = "verl-cu126" },
+    { package = "sql-agent-training", extra = "verl-cu128" },
   ],
   [
     { package = "sql-agent-training", extra = "train" },
-    { package = "sql-agent-training", extra = "verl-cu126" },
+    { package = "sql-agent-training", extra = "verl-cu128" },
   ],
 ]
 
