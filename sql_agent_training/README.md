@@ -119,7 +119,7 @@ ROLLOUT_TP=4 \
 ROLLOUT_PP=1 \
 ROLLOUT_GPU_MEMORY_UTILIZATION=0.32 \
 ROLLOUT_MAX_NUM_SEQS=1 \
-ROLLOUT_LAYERED_SUMMON=True \
+ROLLOUT_LAYERED_SUMMON=False \
 USE_KL_IN_REWARD=False \
 USE_KL_LOSS=False \
 ACTOR_PARAM_OFFLOAD=False \
@@ -163,9 +163,11 @@ uv run --no-sync python sql_agent_training/scripts/merge_lora_adapter.py \
 
 For a 2x H100 node, use the H100 wrapper. It defaults to the same small smoke shape, but uses the merged SFT model
 as `MODEL_PATH`, sets `LORA_ADAPTER_PATH=none`, initializes a fresh trainable GRPO LoRA, and uses `ROLLOUT_TP=2`,
-`NGPUS_PER_NODE=2`, no offload, `ROLLOUT_GPU_MEMORY_UTILIZATION=0.30`, and `ROLLOUT_LAYERED_SUMMON=True` so LoRA
-parameter sync does not need to summon the full FSDP model at once. H100 smoke defaults use `ROLLOUT_N=4` and
-`ROLLOUT_TEMPERATURE=1.2` to make same-prompt rollouts more likely to produce non-zero GRPO advantages.
+`NGPUS_PER_NODE=2`, no offload, `ROLLOUT_GPU_MEMORY_UTILIZATION=0.30`, and `ROLLOUT_LAYERED_SUMMON=False`.
+Keeping layered summon off shifts the vLLM weight-sync peak away from CPU RAM and toward GPU memory, which is the
+safer default after CPU cgroup OOMs. Turn it on only when GPU memory is the bottleneck or FSDP offload is enabled.
+H100 smoke defaults use `ROLLOUT_N=4` and `ROLLOUT_TEMPERATURE=1.2` to make same-prompt rollouts more likely to
+produce non-zero GRPO advantages.
 The wrapper unsets allocator
 `expandable_segments:True` when present because it is incompatible with vLLM's CuMem memory pool:
 
@@ -279,9 +281,10 @@ dependencies. For this verl vLLM rollout path, `ROLLOUT_PP` must remain `1`; the
 `pipeline_model_parallel_size > 1`. Qwen2.5-Coder-14B has 40 attention heads, so `ROLLOUT_TP` must divide 40. On a
 4x L40S node this means the conservative smoke path uses `ROLLOUT_TP=4`, no FSDP offload, `ROLLOUT_MAX_NUM_SEQS=1`,
 reference/KL disabled via `USE_KL_LOSS=False` and `USE_KL_IN_REWARD=False`, and a default `ROLLOUT_MAX_MODEL_LEN` of
-`MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`. It also enables `ROLLOUT_LAYERED_SUMMON=True` to reduce peak memory while
-syncing LoRA weights into vLLM. If this still cannot fit, lower `ROLLOUT_GPU_MEMORY_UTILIZATION` first, then consider
-QLoRA or moving rollout to separate vLLM GPUs.
+`MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH`. It defaults `ROLLOUT_LAYERED_SUMMON=False` so FSDP-to-vLLM weight sync
+does not redundantly copy full unsharded parameters into CPU RAM. This uses more GPU peak memory during sync; if GPU
+memory becomes the bottleneck, lower `ROLLOUT_GPU_MEMORY_UTILIZATION` or `ROLLOUT_MAX_NUM_SEQS` first, then consider
+`ROLLOUT_LAYERED_SUMMON=True`, QLoRA, or moving rollout to separate vLLM GPUs.
 
 This path uses `sql_agent_training.train.verl_sql_agent_loop.SpiderSqlAgentLoop` as a custom verl AgentLoop. SQL write/rewrite tokens are trainable, checker/environment tokens are masked out, and the final reward is computed with the existing Spider SQLite execution reward.
 The 4x L40S script writes lightweight experiment metrics into the same log: `GPU_MONITOR` lines sample

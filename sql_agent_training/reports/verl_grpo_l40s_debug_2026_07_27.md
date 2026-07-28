@@ -894,6 +894,31 @@ anon-rss:34272040kB
 The NCCL broken pipes and `ActorDiedError` were secondary effects after the Ray worker was killed. The next 4x H100
 run should request substantially more host memory, e.g. `--mem=384G` or `--mem=512G`.
 
+7. The FSDP-to-vLLM weight-sync stage also emitted a CPU-memory warning:
+
+```text
+offload_to_cpu=True and rank0_only=False may result in the unsharded parameters being redundantly copied to CPU memory
+for GPUs sharing the same CPU memory, which risks CPU OOM
+```
+
+This belongs to the `vLLM update_weights` / FSDP weight-sync path, not the rollout generation path. It is a GPU-vs-CPU
+tradeoff:
+
+- `ROLLOUT_LAYERED_SUMMON=True` can reduce GPU peak memory during weight sync, but may summon/copy full unsharded FSDP
+  parameters through CPU RAM on every rank.
+- `ROLLOUT_LAYERED_SUMMON=False` avoids that CPU RAM spike, but shifts more of the peak pressure back to GPU memory.
+
+Because the current H100 run has no actor/optimizer/reference offload and the previous failure was confirmed as CPU
+cgroup OOM, the launch scripts now default to:
+
+```text
+ROLLOUT_LAYERED_SUMMON=False
+```
+
+If a future run fails with CUDA OOM during `update_weights` while CPU RAM is healthy, lower
+`ROLLOUT_GPU_MEMORY_UTILIZATION` or `ROLLOUT_MAX_NUM_SEQS` first. Re-enable `ROLLOUT_LAYERED_SUMMON=True` only when GPU
+memory is the confirmed bottleneck or when FSDP offload is intentionally enabled.
+
 ### Preflight Checks That Avoid Loading 14B
 
 Before launching the full model, use lightweight import and dependency checks:
@@ -956,6 +981,7 @@ MAX_TURNS=3
 TRAINER_USE_V1=False
 ACTOR_CHECKPOINT_SAVE_LORA_ONLY=True
 SAVE_FREQ=25
+ROLLOUT_LAYERED_SUMMON=False
 ```
 
 If this still fails on host memory despite `--mem=384G+`, reduce rollout pressure before changing package versions:

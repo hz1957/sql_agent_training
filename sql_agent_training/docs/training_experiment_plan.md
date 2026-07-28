@@ -541,7 +541,9 @@ Notes:
 reference_logprob_time_sec is absent when reference/KL is disabled.
 learner_train_time_sec, checkpoint_time_sec, and exact step_wall_time_sec require patching verl's trainer loop.
 The lightweight fields are enough to identify rollout bottlenecks, token throughput, and GPU idle/memory pressure.
-For L40S memory pressure during vLLM wake-up, try layered_summon before switching the learner to QLoRA.
+layered_summon is a GPU-vs-CPU tradeoff during FSDP-to-vLLM weight sync: False spends more GPU peak memory, while
+True can reduce GPU pressure but may copy full unsharded parameters into CPU RAM. Keep it False after CPU cgroup OOMs;
+try True only when GPU memory is the confirmed bottleneck or FSDP offload is enabled.
 ```
 
 Success criteria:
