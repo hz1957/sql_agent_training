@@ -30,7 +30,7 @@ train = [
 ]
 verl-cu126 = [
   "accelerate==1.14.0",
-  "flash-attn==2.8.3",
+  "flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl",
   "ninja>=1.11",
   "packaging>=20.0",
   "peft==0.17.1",

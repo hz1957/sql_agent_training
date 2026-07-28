@@ -247,9 +247,9 @@ PREFLIGHT=1 ACTOR_CHECKPOINT_SAVE_LORA_ONLY=True \
 The outer workspace `pyproject.toml` marks `verl-cu126` as incompatible with the older `sft` and `train` extras, so uv
 will refuse to install both stacks into one environment. Do not run `uv sync --extra train` in the verl environment:
 that extra is for the simpler local training stack and pins `torch<2.6`, while this verl/vLLM path has been validated
-with the CUDA 12.6 `torch 2.9.0` / `vllm 0.12.0` stack. The workspace config also sets
-`no-build-isolation-package = ["flash-attn"]`, so `flash-attn` can build against the already-resolved PyTorch/CUDA
-environment during `uv sync`.
+with the CUDA 12.6 `torch 2.9.0` / `vllm 0.12.0` stack. The `verl-cu126` extra points `flash-attn` at the official
+GitHub release wheel for Linux x86_64, Python 3.12, CUDA 12.x, and Torch 2.9, so uv should download a prebuilt wheel
+instead of compiling `flash-attn` from source.
 
 If an existing server environment is already good and only the PyPI `verl` package lacks
 `checkpoint.save_lora_only`, the lowest-churn repair remains replacing only the verl package without touching
