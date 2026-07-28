@@ -157,7 +157,9 @@ PY
         echo "ERROR: installed verl CheckpointConfig does not support save_lora_only."
         echo "Supported CheckpointConfig fields: ${CHECKPOINT_CONFIG_FIELDS}"
         echo "Use ACTOR_CHECKPOINT_SAVE_LORA_ONLY=False to run with model-only full-model checkpoints,"
-        echo "or upgrade verl to a version whose CheckpointConfig supports save_lora_only."
+        echo "or install a verl build whose CheckpointConfig supports save_lora_only."
+        echo "The PyPI release may lag the latest docs; the lowest-churn upgrade is replacing only"
+        echo "the verl package from GitHub main with --no-deps after the torch/vLLM stack is working."
         exit 2
       fi
       ;;

@@ -204,6 +204,50 @@ Set `ACTOR_CHECKPOINT_SAVE_LORA_ONLY=False` to run with model-only full-model ch
 upgrade verl if small LoRA-only checkpoints are required. LoRA-only checkpoints keep storage small, but do not preserve
 optimizer or extra RNG/scheduler state for exact training resume. Override `ACTOR_CHECKPOINT_SAVE_CONTENTS` and
 `ACTOR_CHECKPOINT_LOAD_CONTENTS` if a fully resumable checkpoint is needed.
+The safest upgrade path is to keep the already-working CUDA/PyTorch/vLLM stack fixed and replace only the Python verl
+package from GitHub main:
+
+```bash
+cd /home/hice1/hzhang961/scratch/sql_agent_training
+module load cuda/12.6.1
+export UV_LINK_MODE=copy
+export UV_TORCH_BACKEND=cu126
+export CUDA_HOME="$(dirname "$(dirname "$(which nvcc)")")"
+
+uv run --no-sync ray stop -f || true
+uv pip install --python .venv/bin/python --no-deps --force-reinstall \
+  "verl @ git+https://github.com/verl-project/verl.git@main"
+
+uv run --no-sync python - <<'PY'
+import dataclasses
+import importlib.metadata as md
+
+import flash_attn
+import peft
+import torch
+import transformers
+import vllm
+from verl.trainer.config.config import CheckpointConfig
+
+fields = [field.name for field in dataclasses.fields(CheckpointConfig)]
+print("torch:", torch.__version__, torch.version.cuda)
+print("vllm:", vllm.__version__)
+print("peft:", peft.__version__)
+print("transformers:", transformers.__version__)
+print("flash_attn:", getattr(flash_attn, "__version__", "unknown"))
+print("verl:", md.version("verl"))
+print("CheckpointConfig fields:", fields)
+assert "save_lora_only" in fields, fields
+PY
+
+uv pip check
+PREFLIGHT=1 ACTOR_CHECKPOINT_SAVE_LORA_ONLY=True \
+  uv run --no-sync bash sql_agent_training/scripts/run_verl_grpo_qwen25_coder_14b_l40s_4gpu.sh
+```
+
+Do not run `uv sync --extra train` in this verl environment after the overlay install; that extra is for the simpler
+local training stack and pins `torch<2.6`, while this verl/vLLM path has been validated with the CUDA 12.6
+`torch 2.9.0` / `vllm 0.12.0` stack.
 For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=16`, `RAY_OBJECT_STORE_MEMORY=1073741824`, and
 `RAY_INCLUDE_DASHBOARD=False` by default to avoid slow local worker/dashboard startup and oversized Ray object-store
 allocation inside memory-limited jobs; override those environment variables when more CPU-side rollout workers are
