@@ -188,7 +188,7 @@ fixed after two rewrites: gamma^2
 failed trajectory: 0
 ```
 
-This is the basic trajectory-level GRPO baseline.
+This is the basic chain-sampled final-reward baseline.
 
 ### Scheme 2: Chain Sampling With Executability Fallback Reward
 
@@ -565,30 +565,49 @@ F. Seed confirmation: final best, strongest baseline, and corresponding no-execu
 
 ## Notes On Implementation Status
 
-The current verl AgentLoop can represent a complete multi-turn trajectory as one training sample with masks applied
-only to SQL write/rewrite tokens.
+The current verl AgentLoop API accepts one `AgentLoopOutput` per sampled row. For S1 we therefore make each returned
+row a single SQL-action transition rather than returning the whole multi-turn response.
 
 `S1 Chain-final` is supported in the current verl AgentLoop through:
 
 ```text
 SQL_AGENT_REWARD_SCHEME=chain_final
 SQL_AGENT_REWARD_GAMMA=0.9
+SQL_AGENT_TRANSITION_SELECTION=round_robin
 ```
 
-The implementation uses verl's current one-trajectory AgentLoop API. Therefore the scalar trajectory reward is:
+The AgentLoop still runs the complete write/check/rewrite trajectory to compute the final SQL execution reward, but
+the row returned to verl is:
 
 ```text
-final_execution_reward * gamma ^ final_success_turn_index
+prompt_ids    = context immediately before one SQL action
+response_ids  = that SQL action only
+response_mask = all ones for that SQL action
+reward_score  = final_execution_reward * gamma ^ distance_from_final_sql_action
 ```
 
-where `final_success_turn_index` is `0` for first-turn success, `1` for success after one rewrite, and `2` for
-success after two rewrites. The previous baseline behavior is still available as:
+For a successful three-SQL chain this gives:
+
+```text
+SQL1 reward = gamma^2
+SQL2 reward = gamma
+SQL3 reward = 1
+```
+
+For failed trajectories all SQL-action transition rewards are `0`.
+
+Because upstream verl currently postprocesses one `AgentLoopOutput` per sampled row, `round_robin` chooses one SQL
+action transition per repeated rollout for the same task. This keeps the training row itself transition-level while
+avoiding a vendored patch to verl's worker/postprocess internals.
+
+The previous baseline behavior is still available as:
 
 ```text
 SQL_AGENT_REWARD_SCHEME=final_shared
 ```
 
-Independent chain sampling is the closest to the current path and should be used for S1/S2 first.
+`final_shared` returns the complete trajectory row and preserves the old scalar final reward behavior. Independent
+chain sampling is the closest to the current path and should be used for S1/S2 first.
 
 Tree sampling requires an explicit branching rollout orchestrator or AgentLoop extension. It should be treated as a
 separate implementation change, not just a config switch.
