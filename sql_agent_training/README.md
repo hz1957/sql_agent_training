@@ -261,6 +261,9 @@ torch/vLLM:
 uv pip install --python .venv/bin/python --no-deps --force-reinstall \
   "verl @ git+https://github.com/verl-project/verl.git@main"
 ```
+The launch script defaults `TRAINER_USE_V1=False` and passes `++trainer.use_v1=False` to keep using the legacy
+RayPPOTrainer path that worked in smoke tests. The newer V1 trainer path imports `transfer_queue`; do not enable it
+unless TransferQueue is intentionally part of the experiment.
 For SLURM smoke tests, it also fixes Ray at `RAY_NUM_CPUS=16`, `RAY_OBJECT_STORE_MEMORY=1073741824`, and
 `RAY_INCLUDE_DASHBOARD=False` by default to avoid slow local worker/dashboard startup and oversized Ray object-store
 allocation inside memory-limited jobs; override those environment variables when more CPU-side rollout workers are
