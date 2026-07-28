@@ -169,6 +169,14 @@ export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
 export MALLOC_ARENA_MAX="${MALLOC_ARENA_MAX:-2}"
 export CUDA_MODULE_LOADING="${CUDA_MODULE_LOADING:-LAZY}"
 export VLLM_WORKER_MULTIPROC_METHOD="${VLLM_WORKER_MULTIPROC_METHOD:-spawn}"
+export GRPO_REWARD_SCHEME
+export GRPO_REWARD_GAMMA
+export GRPO_EXECUTABLE_FALLBACK_BETA
+export GRPO_TREE_BRANCH_N
+export GRPO_TREE_BEAM_SIZE
+export GRPO_TREE_BEAM_TAU
+export GRPO_TREE_BEAM_EPSILON_RANDOM
+export GRPO_TREE_PRUNE_ON_GOLD_REWARD
 
 ACTOR_CHECKPOINT_SAVE_LORA_ONLY_SUPPORTED=unknown
 if [[ "${DRY_RUN:-0}" != "1" ]]; then
@@ -315,14 +323,6 @@ ROLLOUT=(
   actor_rollout_ref.rollout.agent.agent_loop_config_path="${AGENT_LOOP_CONFIG_PATH}"
   actor_rollout_ref.rollout.agent.default_agent_loop="${DEFAULT_AGENT_LOOP}"
   actor_rollout_ref.rollout.agent.num_workers="${TRAIN_BATCH_SIZE}"
-  ++actor_rollout_ref.rollout.agent.reward_scheme="${GRPO_REWARD_SCHEME}"
-  ++actor_rollout_ref.rollout.agent.reward_gamma="${GRPO_REWARD_GAMMA}"
-  ++actor_rollout_ref.rollout.agent.executable_fallback_beta="${GRPO_EXECUTABLE_FALLBACK_BETA}"
-  ++actor_rollout_ref.rollout.agent.tree_branch_n="${GRPO_TREE_BRANCH_N}"
-  ++actor_rollout_ref.rollout.agent.tree_beam_size="${GRPO_TREE_BEAM_SIZE}"
-  ++actor_rollout_ref.rollout.agent.tree_beam_tau="${GRPO_TREE_BEAM_TAU}"
-  ++actor_rollout_ref.rollout.agent.tree_beam_epsilon_random="${GRPO_TREE_BEAM_EPSILON_RANDOM}"
-  ++actor_rollout_ref.rollout.agent.tree_prune_on_gold_reward="${GRPO_TREE_PRUNE_ON_GOLD_REWARD}"
   actor_rollout_ref.rollout.multi_turn.enable=True
   actor_rollout_ref.rollout.multi_turn.max_assistant_turns="${MAX_TURNS}"
   actor_rollout_ref.rollout.multi_turn.max_user_turns="${MAX_TURNS}"
