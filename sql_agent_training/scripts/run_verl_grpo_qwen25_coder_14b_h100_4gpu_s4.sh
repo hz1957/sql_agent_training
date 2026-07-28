@@ -11,7 +11,7 @@ cd "${PROJECT_DIR}"
 LOG_DIR="${PROJECT_DIR}/artifacts/logs/verl"
 mkdir -p "${LOG_DIR}"
 
-RUN_NAME="${RUN_NAME:-verl_grpo_s4_tree_executable_14b_h100_4gpu_150step_bs8_n20_t10_turn3_g09_beta01_branch4_beam2_$(date +%Y%m%d_%H%M%S)}"
+RUN_NAME="${RUN_NAME:-verl_grpo_s4_tree_executable_14b_h100_4gpu_150step_bs2_n20_t10_turn3_g09_beta01_branch4_beam2_$(date +%Y%m%d_%H%M%S)}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/${RUN_NAME}.log}"
 
 export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
@@ -37,8 +37,8 @@ esac
   TOTAL_TRAINING_STEPS=150 \
   SAVE_FREQ=25 \
   TEST_FREQ=-1 \
-  TRAIN_BATCH_SIZE=8 \
-  PPO_MINI_BATCH_SIZE=8 \
+  TRAIN_BATCH_SIZE=2 \
+  PPO_MINI_BATCH_SIZE=2 \
   PPO_MICRO_BATCH_SIZE_PER_GPU=1 \
   ROLLOUT_TP=4 \
   ROLLOUT_PP=1 \
