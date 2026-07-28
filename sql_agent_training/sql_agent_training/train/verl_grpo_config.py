@@ -128,6 +128,16 @@ def validate_runtime_dependencies(
                 "The trainer converts padded batches with verl.workers.utils.padding.left_right_2_no_padding "
                 "during old/reference log-prob and actor updates."
             ) from exc
+        try:
+            importlib.import_module("vllm.vllm_flash_attn.flash_attn_interface")
+        except Exception as exc:
+            raise RuntimeError(
+                "vLLM failed to import its FlashAttention interface. This usually means the installed "
+                "flash-attn wheel and nvidia-cutlass-dsl package are incompatible. For the validated "
+                "Torch 2.9 / flash-attn 2.8.3 stack, pin nvidia-cutlass-dsl==4.5.2; newer CUTLASS DSL "
+                "releases removed deprecated cute.core.ThrMma / cute.core.ThrCopy aliases that this "
+                "flash-attn wheel still imports."
+            ) from exc
 
     if require_peft_transformers_compat:
         try:
