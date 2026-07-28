@@ -12,7 +12,6 @@ import logging
 import os
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -28,10 +27,6 @@ logger = logging.getLogger(__name__)
 REWARD_SCHEME_FINAL_SHARED = "final_shared"
 REWARD_SCHEME_CHAIN_FINAL = "chain_final"
 VALID_REWARD_SCHEMES = {REWARD_SCHEME_FINAL_SHARED, REWARD_SCHEME_CHAIN_FINAL}
-TRANSITION_SELECTION_ROUND_ROBIN = "round_robin"
-TRANSITION_SELECTION_FINAL = "final"
-VALID_TRANSITION_SELECTIONS = {TRANSITION_SELECTION_ROUND_ROBIN, TRANSITION_SELECTION_FINAL}
-_TRANSITION_COUNTERS: dict[str, int] = {}
 
 try:  # pragma: no cover - exercised on the verl runtime.
     from verl.experimental.agent_loop.agent_loop import AgentLoopBase, AgentLoopOutput, register
@@ -124,60 +119,32 @@ def _normalize_reward_gamma(value: Any) -> float:
     return gamma
 
 
-def _normalize_transition_selection(value: Any) -> str:
-    selection = str(value or TRANSITION_SELECTION_ROUND_ROBIN).strip().lower()
-    if selection not in VALID_TRANSITION_SELECTIONS:
-        raise ValueError(
-            f"Unknown SQL-agent transition selection: {selection}. "
-            f"Expected one of {sorted(VALID_TRANSITION_SELECTIONS)}"
-        )
-    return selection
-
-
-def _compute_transition_rewards(
+def _compute_trajectory_reward(
     *,
     final_execution_reward: float,
+    final_success_turn_index: int | None,
     reward_scheme: str,
     reward_gamma: float,
-    num_transitions: int,
-) -> list[tuple[float, int]]:
-    """Assign final execution reward to SQL-action transitions.
+) -> tuple[float, int | None]:
+    """Map final SQL execution correctness to the scalar reward consumed by verl GRPO.
 
-    `final_shared` preserves the old complete-trajectory behavior. `chain_final`
-    matches the local GRPO transition splitter: the final SQL action gets the
-    final reward, and earlier SQL actions receive gamma-discounted credit by
-    distance from that final action.
+    verl's AgentLoop API returns one trajectory for each sampled prompt and places
+    a scalar reward on the last response token. `chain_final` therefore discounts
+    the trajectory value by the SQL turn that produced the final SQL:
+    first-turn success = 1, one rewrite = gamma, two rewrites = gamma^2.
     """
 
-    if num_transitions <= 0:
-        return []
     final_reward = float(final_execution_reward)
+    if final_reward <= 0.0:
+        return 0.0, None
     if reward_scheme == REWARD_SCHEME_FINAL_SHARED:
-        return [(final_reward, 0)]
+        return final_reward, 0
     if reward_scheme == REWARD_SCHEME_CHAIN_FINAL:
-        last_index = num_transitions - 1
-        return [
-            (final_reward * (reward_gamma ** (last_index - index)), last_index - index)
-            for index in range(num_transitions)
-        ]
+        if final_success_turn_index is None:
+            return 0.0, None
+        discount_power = max(0, int(final_success_turn_index))
+        return final_reward * (reward_gamma**discount_power), discount_power
     raise ValueError(f"Unknown SQL-agent reward scheme: {reward_scheme}")
-
-
-def _select_transition_index(
-    *,
-    uid: str,
-    num_transitions: int,
-    selection: str,
-) -> int:
-    if num_transitions <= 0:
-        raise ValueError("num_transitions must be positive")
-    if selection == TRANSITION_SELECTION_FINAL:
-        return num_transitions - 1
-    if selection == TRANSITION_SELECTION_ROUND_ROBIN:
-        cursor = _TRANSITION_COUNTERS.get(uid, 0)
-        _TRANSITION_COUNTERS[uid] = cursor + 1
-        return cursor % num_transitions
-    raise ValueError(f"Unknown SQL-agent transition selection: {selection}")
 
 
 def _raw_prompt_content(raw_prompt: Any) -> str | None:
@@ -218,22 +185,6 @@ def _sample_fields(kwargs: dict[str, Any]) -> dict[str, str]:
     return fields
 
 
-@dataclass
-class _SqlActionTransition:
-    turn_index: int
-    agent_step: str
-    prompt_ids: list[int]
-    response_ids: list[int]
-    response_logprobs: list[float] | None
-    response_text: str
-    candidate_sql: str | None = None
-    tool_ok: bool = False
-    tool_error: str | None = None
-    final_execution_reward: float = 0.0
-    transition_reward: float = 0.0
-    reward_discount_power: int = 0
-
-
 def _rollout_extra_fields(
     *,
     final_sql: str | None,
@@ -242,17 +193,11 @@ def _rollout_extra_fields(
     num_check_calls: int,
     num_parse_errors: int,
     final_execution_reward: float,
-    transition_reward: float,
+    trajectory_reward: float,
     reward_scheme: str,
     reward_gamma: float,
     reward_discount_power: int | None,
     final_success_turn_index: int | None,
-    selected_transition_index: int | None,
-    num_sql_transitions: int,
-    transition_selection: str,
-    selected_transition_turn_index: int | None,
-    selected_transition_agent_step: str | None,
-    selected_transition_tool_ok: bool | None,
 ) -> dict[str, Any]:
     """Return only rollout-owned fields so verl can safely union batches."""
 
@@ -263,18 +208,11 @@ def _rollout_extra_fields(
         "num_check_calls": num_check_calls,
         "num_parse_errors": num_parse_errors,
         "final_execution_reward": final_execution_reward,
-        "trajectory_reward": final_execution_reward,
-        "transition_reward": transition_reward,
+        "trajectory_reward": trajectory_reward,
         "reward_scheme": reward_scheme,
         "reward_gamma": reward_gamma,
         "reward_discount_power": reward_discount_power,
         "final_success_turn_index": final_success_turn_index,
-        "selected_transition_index": selected_transition_index,
-        "num_sql_transitions": num_sql_transitions,
-        "transition_selection": transition_selection,
-        "selected_transition_turn_index": selected_transition_turn_index,
-        "selected_transition_agent_step": selected_transition_agent_step,
-        "selected_transition_tool_ok": selected_transition_tool_ok,
     }
 
 
@@ -286,7 +224,6 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         if AgentLoopOutput is None:  # pragma: no cover - dependency guard.
             raise RuntimeError("Install verl to instantiate SpiderSqlAgentLoop.")
         super().__init__(*args, **kwargs)
-        self.prompt_length = int(_cfg_get(self.rollout_config, ("prompt_length",), 2048))
         self.response_length = int(_cfg_get(self.rollout_config, ("response_length",), 2048))
         self.max_turns = int(_cfg_get(self.rollout_config, ("multi_turn", "max_assistant_turns"), 3))
         self.reward_scheme = _normalize_reward_scheme(
@@ -299,14 +236,6 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         )
         self.reward_gamma = _normalize_reward_gamma(
             _cfg_or_env(self.rollout_config, ("agent", "reward_gamma"), "SQL_AGENT_REWARD_GAMMA", 0.9)
-        )
-        self.transition_selection = _normalize_transition_selection(
-            _cfg_or_env(
-                self.rollout_config,
-                ("agent", "transition_selection"),
-                "SQL_AGENT_TRANSITION_SELECTION",
-                TRANSITION_SELECTION_ROUND_ROBIN,
-            )
         )
         self.sqlite_tool = SQLiteTool()
 
@@ -465,7 +394,6 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         num_parse_errors = 0
         num_turns = 1
         request_id = f"{fields['uid']}-{priority}-{uuid4().hex}"
-        sql_transitions: list[_SqlActionTransition] = []
 
         for turn_index in range(self.max_turns):
             if turn_index > 0:
@@ -487,7 +415,6 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                     break
                 num_turns += 1
 
-            action_prompt_ids = (prompt_ids + response_ids)[-self.prompt_length :]
             output = await self._generate(
                 request_id=request_id,
                 prompt_ids=prompt_ids + response_ids,
@@ -500,22 +427,6 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 break
             generated_ids = list(getattr(output, "token_ids", output))
             generated_text = self._decode(generated_ids)
-            generated_logprobs_raw = getattr(output, "log_probs", None)
-            generated_logprobs = None
-            if generated_logprobs_raw is not None:
-                generated_logprobs = [float(value) for value in list(generated_logprobs_raw)[: len(generated_ids)]]
-                if len(generated_logprobs) < len(generated_ids):
-                    generated_logprobs.extend([0.0] * (len(generated_ids) - len(generated_logprobs)))
-            sql_transitions.append(
-                _SqlActionTransition(
-                    turn_index=turn_index,
-                    agent_step="write_query" if turn_index == 0 else "rewrite_query",
-                    prompt_ids=action_prompt_ids,
-                    response_ids=generated_ids,
-                    response_logprobs=generated_logprobs,
-                    response_text=generated_text,
-                )
-            )
             response_logprobs = self._append_tokens(
                 response_ids=response_ids,
                 response_mask=response_mask,
@@ -533,7 +444,6 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 previous_execution = "No SQL query found. Return only one read-only SQLite SELECT query."
                 previous_feedback = previous_execution
                 continue
-            sql_transitions[-1].candidate_sql = candidate_sql
 
             num_execute_calls += 1
             tool_metrics: dict[str, Any] = {}
@@ -541,8 +451,6 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 execution = await self._run_sqlite(sqlite_path, candidate_sql)
             metrics["tool_calls"] = metrics.get("tool_calls", 0.0) + float(tool_metrics.get("tool_calls", 0.0))
             feedback = _format_execution_feedback(execution.ok, execution.rows, execution.error)
-            sql_transitions[-1].tool_ok = bool(execution.ok)
-            sql_transitions[-1].tool_error = execution.error
             if execution.ok:
                 last_executable_sql = candidate_sql
                 last_executable_turn_index = turn_index
@@ -634,47 +542,17 @@ class SpiderSqlAgentLoop(AgentLoopBase):
             metrics["compute_score"] = metrics.get("compute_score", 0.0) + float(
                 score_metrics.get("compute_score", 0.0)
             )
-        transition_rewards = _compute_transition_rewards(
+        reward, reward_discount_power = _compute_trajectory_reward(
             final_execution_reward=final_execution_reward,
+            final_success_turn_index=final_success_turn_index,
             reward_scheme=self.reward_scheme,
             reward_gamma=self.reward_gamma,
-            num_transitions=len(sql_transitions),
         )
-        for transition, (transition_reward, discount_power) in zip(
-            sql_transitions, transition_rewards, strict=False
-        ):
-            transition.final_execution_reward = final_execution_reward
-            transition.transition_reward = transition_reward
-            transition.reward_discount_power = discount_power
 
-        selected_transition_index: int | None = None
-        selected_transition: _SqlActionTransition | None = None
-        full_response_tokens = len(response_ids)
-        full_trainable_tokens = int(sum(int(value) for value in response_mask))
-        if self.reward_scheme == REWARD_SCHEME_CHAIN_FINAL and sql_transitions:
-            selected_transition_index = _select_transition_index(
-                uid=fields["uid"],
-                num_transitions=len(sql_transitions),
-                selection=self.transition_selection,
-            )
-            selected_transition = sql_transitions[selected_transition_index]
-            prompt_ids = selected_transition.prompt_ids[-self.prompt_length :]
-            response_ids = selected_transition.response_ids[: self.response_length]
-            response_mask = [1] * len(response_ids)
-            response_logprobs = (
-                selected_transition.response_logprobs[: self.response_length]
-                if selected_transition.response_logprobs is not None
-                else None
-            )
-            reward = selected_transition.transition_reward
-            reward_discount_power = selected_transition.reward_discount_power
-        else:
-            reward = final_execution_reward
-            reward_discount_power = 0 if final_execution_reward > 0.0 else None
-            response_ids = response_ids[: self.response_length]
-            response_mask = response_mask[: self.response_length]
-            if response_logprobs is not None:
-                response_logprobs = response_logprobs[: self.response_length]
+        response_ids = response_ids[: self.response_length]
+        response_mask = response_mask[: self.response_length]
+        if response_logprobs is not None:
+            response_logprobs = response_logprobs[: self.response_length]
 
         rollout_time_sec = max(time.perf_counter() - rollout_start, 1e-9)
         prompt_tokens = len(prompt_ids)
@@ -691,8 +569,6 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 "response_tokens": response_tokens,
                 "trainable_tokens": trainable_tokens,
                 "total_tokens": total_tokens,
-                "full_response_tokens": full_response_tokens,
-                "full_trainable_tokens": full_trainable_tokens,
                 "tokens_per_sec_total": total_tokens / rollout_time_sec,
                 "tokens_per_sec_trainable": trainable_tokens / rollout_time_sec,
                 "trajectories_per_sec": 1.0 / rollout_time_sec,
@@ -701,23 +577,10 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 "num_check_calls": num_check_calls,
                 "num_parse_errors": num_parse_errors,
                 "final_execution_reward": final_execution_reward,
-                "transition_reward": float(reward),
                 "reward_scheme": self.reward_scheme,
                 "reward_gamma": self.reward_gamma,
                 "reward_discount_power": -1 if reward_discount_power is None else reward_discount_power,
                 "final_success_turn_index": -1 if final_success_turn_index is None else final_success_turn_index,
-                "selected_transition_index": -1 if selected_transition_index is None else selected_transition_index,
-                "selected_transition_turn_index": -1
-                if selected_transition is None
-                else selected_transition.turn_index,
-                "selected_transition_tool_ok": -1
-                if selected_transition is None
-                else int(selected_transition.tool_ok),
-                "selected_transition_agent_step": "full_trajectory"
-                if selected_transition is None
-                else selected_transition.agent_step,
-                "num_sql_transitions": len(sql_transitions),
-                "transition_selection": self.transition_selection,
             }
         )
 
@@ -736,16 +599,10 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 num_check_calls=num_check_calls,
                 num_parse_errors=num_parse_errors,
                 final_execution_reward=final_execution_reward,
-                transition_reward=float(reward),
+                trajectory_reward=float(reward),
                 reward_scheme=self.reward_scheme,
                 reward_gamma=self.reward_gamma,
                 reward_discount_power=reward_discount_power,
                 final_success_turn_index=final_success_turn_index,
-                selected_transition_index=selected_transition_index,
-                num_sql_transitions=len(sql_transitions),
-                transition_selection=self.transition_selection,
-                selected_transition_turn_index=None if selected_transition is None else selected_transition.turn_index,
-                selected_transition_agent_step=None if selected_transition is None else selected_transition.agent_step,
-                selected_transition_tool_ok=None if selected_transition is None else selected_transition.tool_ok,
             ),
         )
