@@ -193,7 +193,7 @@ ACTOR=(
   actor_rollout_ref.actor.fsdp_config.param_offload="${ACTOR_PARAM_OFFLOAD}"
   actor_rollout_ref.actor.fsdp_config.optimizer_offload="${ACTOR_OPTIMIZER_OFFLOAD}"
   actor_rollout_ref.actor.fsdp_config.use_torch_compile="${ACTOR_USE_TORCH_COMPILE}"
-  actor_rollout_ref.actor.checkpoint.save_lora_only="${ACTOR_CHECKPOINT_SAVE_LORA_ONLY}"
+  +actor_rollout_ref.actor.checkpoint.save_lora_only="${ACTOR_CHECKPOINT_SAVE_LORA_ONLY}"
   actor_rollout_ref.actor.checkpoint.save_contents="${ACTOR_CHECKPOINT_SAVE_CONTENTS}"
   actor_rollout_ref.actor.checkpoint.load_contents="${ACTOR_CHECKPOINT_LOAD_CONTENTS}"
 )
