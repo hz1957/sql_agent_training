@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -22,6 +23,10 @@ from sql_agent_training.env.sqlite_tool import SQLiteTool
 from sql_agent_training.reward.spider_reward import spider_execution_reward
 
 logger = logging.getLogger(__name__)
+
+REWARD_SCHEME_FINAL_SHARED = "final_shared"
+REWARD_SCHEME_CHAIN_FINAL = "chain_final"
+VALID_REWARD_SCHEMES = {REWARD_SCHEME_FINAL_SHARED, REWARD_SCHEME_CHAIN_FINAL}
 
 try:  # pragma: no cover - exercised on the verl runtime.
     from verl.experimental.agent_loop.agent_loop import AgentLoopBase, AgentLoopOutput, register
@@ -93,6 +98,55 @@ def _cfg_get(config: Any, path: tuple[str, ...], default: Any) -> Any:
     return current
 
 
+def _cfg_or_env(config: Any, path: tuple[str, ...], env_name: str, default: Any) -> Any:
+    env_value = os.environ.get(env_name)
+    if env_value is not None and env_value != "":
+        return env_value
+    return _cfg_get(config, path, default)
+
+
+def _normalize_reward_scheme(value: Any) -> str:
+    scheme = str(value or REWARD_SCHEME_FINAL_SHARED).strip().lower()
+    if scheme not in VALID_REWARD_SCHEMES:
+        raise ValueError(f"Unknown SQL-agent reward scheme: {scheme}. Expected one of {sorted(VALID_REWARD_SCHEMES)}")
+    return scheme
+
+
+def _normalize_reward_gamma(value: Any) -> float:
+    gamma = float(value)
+    if not 0.0 <= gamma <= 1.0:
+        raise ValueError(f"SQL-agent reward gamma must be between 0 and 1, got {gamma}.")
+    return gamma
+
+
+def _compute_trajectory_reward(
+    *,
+    final_execution_reward: float,
+    final_success_turn_index: int | None,
+    reward_scheme: str,
+    reward_gamma: float,
+) -> tuple[float, int | None]:
+    """Map final SQL execution correctness to the scalar reward consumed by verl GRPO.
+
+    verl's AgentLoop API returns one trajectory for each sampled prompt and places
+    a scalar reward on the last response token. `chain_final` therefore discounts
+    the trajectory value by the SQL turn that produced the final SQL:
+    first-turn success = 1, one rewrite = gamma, two rewrites = gamma^2.
+    """
+
+    final_reward = float(final_execution_reward)
+    if final_reward <= 0.0:
+        return 0.0, None
+    if reward_scheme == REWARD_SCHEME_FINAL_SHARED:
+        return final_reward, 0
+    if reward_scheme == REWARD_SCHEME_CHAIN_FINAL:
+        if final_success_turn_index is None:
+            return 0.0, None
+        discount_power = max(0, int(final_success_turn_index))
+        return final_reward * (reward_gamma**discount_power), discount_power
+    raise ValueError(f"Unknown SQL-agent reward scheme: {reward_scheme}")
+
+
 def _raw_prompt_content(raw_prompt: Any) -> str | None:
     raw_prompt = _to_python(raw_prompt)
     if isinstance(raw_prompt, tuple):
@@ -138,6 +192,12 @@ def _rollout_extra_fields(
     num_execute_calls: int,
     num_check_calls: int,
     num_parse_errors: int,
+    final_execution_reward: float,
+    trajectory_reward: float,
+    reward_scheme: str,
+    reward_gamma: float,
+    reward_discount_power: int | None,
+    final_success_turn_index: int | None,
 ) -> dict[str, Any]:
     """Return only rollout-owned fields so verl can safely union batches."""
 
@@ -147,6 +207,12 @@ def _rollout_extra_fields(
         "num_execute_calls": num_execute_calls,
         "num_check_calls": num_check_calls,
         "num_parse_errors": num_parse_errors,
+        "final_execution_reward": final_execution_reward,
+        "trajectory_reward": trajectory_reward,
+        "reward_scheme": reward_scheme,
+        "reward_gamma": reward_gamma,
+        "reward_discount_power": reward_discount_power,
+        "final_success_turn_index": final_success_turn_index,
     }
 
 
@@ -160,6 +226,17 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         super().__init__(*args, **kwargs)
         self.response_length = int(_cfg_get(self.rollout_config, ("response_length",), 2048))
         self.max_turns = int(_cfg_get(self.rollout_config, ("multi_turn", "max_assistant_turns"), 3))
+        self.reward_scheme = _normalize_reward_scheme(
+            _cfg_or_env(
+                self.rollout_config,
+                ("agent", "reward_scheme"),
+                "SQL_AGENT_REWARD_SCHEME",
+                REWARD_SCHEME_FINAL_SHARED,
+            )
+        )
+        self.reward_gamma = _normalize_reward_gamma(
+            _cfg_or_env(self.rollout_config, ("agent", "reward_gamma"), "SQL_AGENT_REWARD_GAMMA", 0.9)
+        )
         self.sqlite_tool = SQLiteTool()
 
     async def _encode_user_prompt(self, content: str, *, remove_system_prompt: bool) -> list[int]:
@@ -305,9 +382,12 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         previous_feedback: str | None = None
         final_sql: str | None = None
         final_sql_source = "none"
+        final_success_turn_index: int | None = None
         last_executable_sql: str | None = None
         last_executable_turn_index: int | None = None
         reward: float | None = None
+        final_execution_reward = 0.0
+        reward_discount_power: int | None = None
         ran_out_of_turns = False
         num_execute_calls = 0
         num_check_calls = 0
@@ -392,6 +472,7 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 if execution.ok:
                     final_sql = candidate_sql
                     final_sql_source = "executed_successfully"
+                    final_success_turn_index = turn_index
                     break
                 previous_sql = candidate_sql
                 previous_execution = feedback
@@ -411,6 +492,7 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 if execution.ok:
                     final_sql = candidate_sql
                     final_sql_source = "executed_successfully"
+                    final_success_turn_index = turn_index
                     break
                 previous_sql = candidate_sql
                 previous_execution = feedback
@@ -434,6 +516,7 @@ class SpiderSqlAgentLoop(AgentLoopBase):
             if verdict is True and execution.ok:
                 final_sql = candidate_sql
                 final_sql_source = "checker_approved"
+                final_success_turn_index = turn_index
                 break
 
             previous_sql = candidate_sql
@@ -450,16 +533,21 @@ class SpiderSqlAgentLoop(AgentLoopBase):
         ):
             final_sql = last_executable_sql
             final_sql_source = "ran_out_of_turns"
+            final_success_turn_index = last_executable_turn_index
 
         if final_sql:
             score_metrics = {}
             with simple_timer("compute_score", score_metrics):
-                reward = await self._score_sql(final_sql, gold_sql, sqlite_path)
+                final_execution_reward = await self._score_sql(final_sql, gold_sql, sqlite_path)
             metrics["compute_score"] = metrics.get("compute_score", 0.0) + float(
                 score_metrics.get("compute_score", 0.0)
             )
-        elif not final_sql:
-            reward = 0.0
+        reward, reward_discount_power = _compute_trajectory_reward(
+            final_execution_reward=final_execution_reward,
+            final_success_turn_index=final_success_turn_index,
+            reward_scheme=self.reward_scheme,
+            reward_gamma=self.reward_gamma,
+        )
 
         response_ids = response_ids[: self.response_length]
         response_mask = response_mask[: self.response_length]
@@ -488,6 +576,11 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 "num_execute_calls": num_execute_calls,
                 "num_check_calls": num_check_calls,
                 "num_parse_errors": num_parse_errors,
+                "final_execution_reward": final_execution_reward,
+                "reward_scheme": self.reward_scheme,
+                "reward_gamma": self.reward_gamma,
+                "reward_discount_power": -1 if reward_discount_power is None else reward_discount_power,
+                "final_success_turn_index": -1 if final_success_turn_index is None else final_success_turn_index,
             }
         )
 
@@ -505,5 +598,11 @@ class SpiderSqlAgentLoop(AgentLoopBase):
                 num_execute_calls=num_execute_calls,
                 num_check_calls=num_check_calls,
                 num_parse_errors=num_parse_errors,
+                final_execution_reward=final_execution_reward,
+                trajectory_reward=float(reward),
+                reward_scheme=self.reward_scheme,
+                reward_gamma=self.reward_gamma,
+                reward_discount_power=reward_discount_power,
+                final_success_turn_index=final_success_turn_index,
             ),
         )
