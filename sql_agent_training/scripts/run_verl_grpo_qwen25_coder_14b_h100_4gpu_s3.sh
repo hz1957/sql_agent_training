@@ -11,7 +11,7 @@ cd "${PROJECT_DIR}"
 LOG_DIR="${PROJECT_DIR}/artifacts/logs/verl"
 mkdir -p "${LOG_DIR}"
 
-RUN_NAME="${RUN_NAME:-verl_grpo_s3_tree_final_14b_h100_4gpu_150step_bs8_n36_t10_turn3_g09_branch4_beam4_$(date +%Y%m%d_%H%M%S)}"
+RUN_NAME="${RUN_NAME:-verl_grpo_s3_tree_final_14b_h100_4gpu_150step_bs8_n20_t10_turn3_g09_branch4_beam2_$(date +%Y%m%d_%H%M%S)}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/${RUN_NAME}.log}"
 
 export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
@@ -56,7 +56,7 @@ esac
   GRPO_REWARD_SCHEME=tree_final \
   GRPO_REWARD_GAMMA=0.9 \
   GRPO_TREE_BRANCH_N=4 \
-  GRPO_TREE_BEAM_SIZE=4 \
+  GRPO_TREE_BEAM_SIZE=2 \
   GRPO_TREE_BEAM_TAU=1.0 \
   GRPO_TREE_BEAM_EPSILON_RANDOM=0.1 \
   GRPO_TREE_PRUNE_ON_GOLD_REWARD=True \
