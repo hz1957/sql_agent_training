@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-from typing import Any
 
 from verl.trainer import main_ppo as verl_main_ppo
 
@@ -12,20 +11,22 @@ def _import_multi_step_extensions() -> None:
     import sql_agent_training.train.verl_grpo_multi_step  # noqa: F401
 
 
-def _wrap_task_runner(base_cls: type[Any], *, module_name: str, attr_name: str) -> type[Any]:
-    class MultiStepTaskRunner(base_cls):  # type: ignore[misc, valid-type]
-        """Import project extensions inside the Ray TaskRunner process."""
+def _patch_task_runner_run(task_runner_cls) -> bool:  # type: ignore[no-untyped-def]
+    """Patch a regular class or Ray ActorClass without subclassing it."""
 
-        _sql_agent_multi_step_patched = True
+    metadata = getattr(task_runner_cls, "__ray_metadata__", None)
+    target_cls = getattr(metadata, "modified_class", task_runner_cls)
+    original_run = getattr(target_cls, "run", None)
+    if original_run is None or getattr(original_run, "_sql_agent_multi_step_patched", False):
+        return False
 
-        def run(self, config):  # type: ignore[no-untyped-def]
-            _import_multi_step_extensions()
-            return super().run(config)
+    def run_with_multi_step_extensions(self, config, *args, **kwargs):  # type: ignore[no-untyped-def]
+        _import_multi_step_extensions()
+        return original_run(self, config, *args, **kwargs)
 
-    MultiStepTaskRunner.__name__ = attr_name
-    MultiStepTaskRunner.__qualname__ = attr_name
-    MultiStepTaskRunner.__module__ = module_name
-    return MultiStepTaskRunner
+    run_with_multi_step_extensions._sql_agent_multi_step_patched = True  # type: ignore[attr-defined]
+    setattr(target_cls, "run", run_with_multi_step_extensions)
+    return True
 
 
 def _patch_verl_task_runners() -> list[str]:
@@ -40,10 +41,10 @@ def _patch_verl_task_runners() -> list[str]:
             continue
         for attr_name in ("TaskRunner", "TaskRunnerV1"):
             base_cls = getattr(module, attr_name, None)
-            if base_cls is None or getattr(base_cls, "_sql_agent_multi_step_patched", False):
+            if base_cls is None:
                 continue
-            setattr(module, attr_name, _wrap_task_runner(base_cls, module_name=module_name, attr_name=attr_name))
-            patched.append(f"{module_name}.{attr_name}")
+            if _patch_task_runner_run(base_cls):
+                patched.append(f"{module_name}.{attr_name}")
     if not patched:
         raise RuntimeError("Could not find a verl TaskRunner/TaskRunnerV1 class to patch.")
     return patched
