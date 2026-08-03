@@ -1,0 +1,9 @@
+stages:
+  - sft
+  - grpo
+
+sft_config: configs/sft.local_dryrun.yaml
+grpo_config: configs/grpo.local_dryrun.yaml
+
+sft_dry_run: true
+grpo_dry_run: true

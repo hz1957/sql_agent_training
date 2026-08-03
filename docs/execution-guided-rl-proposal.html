@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Proposal: Execution-Guided RL for Text-to-SQL Agents</title>
+  <style>
+    :root {
+      --ink: #14202b;
+      --muted: #5f6b76;
+      --line: #d7dee6;
+      --paper: #f7f9fb;
+      --white: #ffffff;
+      --blue: #1b6fd8;
+      --teal: #128474;
+      --amber: #b86b00;
+      --green: #3b7f45;
+      --shadow: 0 18px 42px rgba(20, 32, 43, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background:
+        linear-gradient(90deg, rgba(27, 111, 216, 0.08) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(18, 132, 116, 0.06) 1px, transparent 1px),
+        var(--paper);
+      background-size: 34px 34px;
+      color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+
+    .slide {
+      width: min(100vw, 1600px);
+      aspect-ratio: 16 / 9;
+      max-height: 100vh;
+      padding: clamp(20px, 2.1vw, 38px);
+      background: var(--white);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: clamp(12px, 1.2vw, 20px);
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1.22fr 0.78fr;
+      gap: 24px;
+      align-items: end;
+      border-bottom: 3px solid var(--ink);
+      padding-bottom: clamp(10px, 1vw, 16px);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(31px, 3vw, 54px);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 10px 0 0;
+      max-width: 980px;
+      color: var(--muted);
+      font-size: clamp(15px, 1.08vw, 20px);
+      line-height: 1.42;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .badge {
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--blue);
+      padding: 7px 10px;
+      font-size: clamp(12px, 0.88vw, 15px);
+      font-weight: 750;
+      background: #fbfdff;
+      white-space: nowrap;
+    }
+
+    main {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1.25fr 0.92fr;
+      gap: clamp(12px, 1.1vw, 18px);
+    }
+
+    section {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-top: 6px solid var(--blue);
+      padding: clamp(12px, 1vw, 17px);
+      display: flex;
+      flex-direction: column;
+      gap: clamp(9px, 0.88vw, 14px);
+      background: #fff;
+    }
+
+    section:nth-child(2) {
+      border-top-color: var(--teal);
+    }
+
+    section:nth-child(3) {
+      border-top-color: var(--amber);
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(18px, 1.32vw, 25px);
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .kicker {
+      margin: -4px 0 0;
+      color: var(--muted);
+      font-size: clamp(11px, 0.76vw, 14px);
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .point-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 8px;
+    }
+
+    .point-list li {
+      position: relative;
+      padding-left: 18px;
+      color: var(--ink);
+      font-size: clamp(13px, 0.88vw, 16px);
+      line-height: 1.34;
+    }
+
+    .point-list li::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      position: absolute;
+      left: 0;
+      top: 0.52em;
+      background: var(--blue);
+    }
+
+    .loop-visual {
+      min-height: 288px;
+      display: grid;
+      place-items: center;
+    }
+
+    .loop-svg {
+      width: 100%;
+      max-width: 760px;
+      height: auto;
+      overflow: visible;
+    }
+
+    .loop-path {
+      fill: none;
+      stroke-width: 4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .loop-path.core {
+      stroke: var(--teal);
+    }
+
+    .loop-path.input {
+      stroke: var(--blue);
+    }
+
+    .loop-path.warning {
+      stroke: var(--amber);
+    }
+
+    .loop-path.success {
+      stroke: var(--green);
+    }
+
+    .loop-label {
+      fill: var(--ink);
+      font-size: 18px;
+      font-weight: 800;
+      text-anchor: middle;
+    }
+
+    .loop-sub {
+      fill: var(--muted);
+      font-size: 12px;
+      text-anchor: middle;
+    }
+
+    .loop-note {
+      font-size: 11px;
+      font-weight: 800;
+      text-anchor: middle;
+      text-transform: uppercase;
+    }
+
+    .loop-note.warning {
+      fill: var(--amber);
+    }
+
+    .loop-note.success {
+      fill: var(--green);
+    }
+
+    .finalize-circle {
+      fill: #f1faef;
+      stroke: var(--green);
+      stroke-width: 4;
+    }
+
+    .claim {
+      padding: 10px 12px;
+      background: #eef8f6;
+      border-left: 5px solid var(--teal);
+      color: #173d38;
+      font-size: clamp(12px, 0.84vw, 15px);
+      line-height: 1.34;
+      font-weight: 700;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      padding: 10px;
+      min-height: 82px;
+      display: grid;
+      align-content: start;
+      gap: 5px;
+      background: #fffaf2;
+    }
+
+    .metric strong {
+      font-size: clamp(15px, 1.08vw, 20px);
+      color: var(--amber);
+      line-height: 1;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: clamp(11px, 0.76vw, 14px);
+      line-height: 1.24;
+    }
+
+    .stack {
+      display: grid;
+      gap: 8px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      gap: 9px;
+      align-items: start;
+      font-size: clamp(12px, 0.82vw, 15px);
+      line-height: 1.32;
+    }
+
+    .row b {
+      color: var(--green);
+    }
+
+    .row span {
+      color: var(--muted);
+    }
+
+    footer {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      padding-top: 2px;
+      color: var(--muted);
+      font-size: clamp(11px, 0.78vw, 14px);
+    }
+
+    .takeaway {
+      color: var(--ink);
+      font-weight: 780;
+    }
+
+    @media (max-width: 980px) {
+      body {
+        display: block;
+        background: var(--paper);
+      }
+
+      .slide {
+        width: 100%;
+        min-height: 100vh;
+        aspect-ratio: auto;
+        max-height: none;
+        overflow: visible;
+      }
+
+      header,
+      main,
+      footer {
+        grid-template-columns: 1fr;
+      }
+
+      .badges {
+        justify-content: flex-start;
+      }
+
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .loop-visual {
+        min-height: 240px;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .slide {
+        width: 100vw;
+        height: 100vh;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <article class="slide" aria-label="Proposal for execution-guided reinforcement learning for text-to-SQL agents">
+    <header>
+      <div>
+        <h1>Proposal: Execution-Guided RL for Text-to-SQL Agents</h1>
+        <p class="subtitle">
+          Train a SQL agent through interaction with a database environment: propose a query, observe execution feedback, revise when needed, and optimize the policy toward correct final results in a CUDA training setup.
+        </p>
+      </div>
+      <div class="badges" aria-label="proposal tags">
+        <div class="badge">Idea: Interactive Agent Loop</div>
+        <div class="badge">Signal: Execution Feedback</div>
+        <div class="badge">Learning: Reinforcement Learning</div>
+        <div class="badge">Compute: CUDA Environment</div>
+      </div>
+    </header>
+
+    <main>
+      <section>
+        <p class="kicker">Research Idea</p>
+        <h2>Motivation and Hypothesis</h2>
+        <ul class="point-list">
+          <li><strong>Problem:</strong> Text-to-SQL models are often trained to imitate gold SQL, but real task success depends on whether the query actually executes and returns the right result.</li>
+          <li><strong>Idea:</strong> Treat the database as an interactive environment rather than a passive label source.</li>
+          <li><strong>Hypothesis:</strong> RL over execution-grounded trajectories can improve correctness, self-repair, and schema grounding beyond an SFT-only policy.</li>
+          <li><strong>Why now:</strong> Strong code LMs plus GPU training make it practical to test agent-level learning instead of only prompt engineering.</li>
+        </ul>
+        <div class="claim">
+          Claim to test: a SQL agent should be optimized on complete interaction trajectories, not just one-shot SQL strings.
+        </div>
+      </section>
+
+      <section>
+        <p class="kicker">Agent-Centric Method</p>
+        <h2>The Agent Loop Is the Training Unit</h2>
+        <div class="loop-visual" aria-label="write check rewrite agent loop diagram">
+          <svg class="loop-svg" viewBox="0 0 760 300" role="img" aria-labelledby="loop-title loop-desc">
+            <title id="loop-title">Write check rewrite agent loop</title>
+            <desc id="loop-desc">
+              The agent receives a question and schema, writes SQL, checks execution, rewrites after feedback, and finalizes when successful.
+            </desc>
+            <defs>
+              <marker id="arrow-blue" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#1b6fd8"></path>
+              </marker>
+              <marker id="arrow-teal" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#128474"></path>
+              </marker>
+              <marker id="arrow-amber" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#b86b00"></path>
+              </marker>
+              <marker id="arrow-green" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b7f45"></path>
+              </marker>
+            </defs>
+
+            <path class="loop-path input" d="M 125 118 C 178 70, 246 54, 326 62" marker-end="url(#arrow-blue)"></path>
+            <path class="loop-path core" d="M 410 72 C 475 76, 526 102, 538 132" marker-end="url(#arrow-teal)"></path>
+            <path class="loop-path warning" d="M 536 168 C 518 214, 465 236, 416 235" marker-end="url(#arrow-amber)"></path>
+            <path class="loop-path warning" d="M 344 235 C 292 230, 245 204, 231 166" marker-end="url(#arrow-amber)"></path>
+            <path class="loop-path core" d="M 232 126 C 250 88, 304 68, 352 70" marker-end="url(#arrow-teal)"></path>
+            <path class="loop-path success" d="M 560 148 C 592 148, 618 148, 642 148" marker-end="url(#arrow-green)"></path>
+
+            <text class="loop-label" x="82" y="105">Question</text>
+            <text class="loop-sub" x="82" y="122">+ Schema</text>
+
+            <text class="loop-label" x="382" y="52">Write SQL</text>
+            <text class="loop-sub" x="382" y="69">candidate query</text>
+
+            <text class="loop-label" x="548" y="143">Check</text>
+            <text class="loop-sub" x="548" y="160">execute + score</text>
+
+            <text class="loop-label" x="382" y="255">Feedback</text>
+            <text class="loop-sub" x="382" y="272">rows / errors</text>
+
+            <text class="loop-label" x="218" y="143">Rewrite</text>
+            <text class="loop-sub" x="218" y="160">repair SQL</text>
+
+            <text class="loop-note warning" x="548" y="214">fail</text>
+            <text class="loop-note warning" x="254" y="214">retry</text>
+            <text class="loop-note success" x="604" y="132">success</text>
+
+            <circle class="finalize-circle" cx="694" cy="148" r="48"></circle>
+            <text class="loop-label" x="694" y="143">Finalize</text>
+            <text class="loop-sub" x="694" y="161">SQL</text>
+          </svg>
+        </div>
+        <div class="claim">
+          The full write-check-rewrite trajectory becomes the RL training signal; success exits the loop and finalizes the answer.
+        </div>
+      </section>
+
+      <section>
+        <p class="kicker">Evaluation Plan</p>
+        <h2>Metrics, Baselines, and Risks</h2>
+        <div class="metric-grid">
+          <div class="metric">
+            <strong>Exec Acc</strong>
+            <span>Primary metric: final SQL returns the same result as the reference query on held-out databases.</span>
+          </div>
+          <div class="metric">
+            <strong>Repair Rate</strong>
+            <span>How often the agent turns an initially failing query into a correct final answer after feedback.</span>
+          </div>
+          <div class="metric">
+            <strong>Generalization</strong>
+            <span>Performance across unseen schemas, harder joins, nested queries, and aggregation-heavy questions.</span>
+          </div>
+          <div class="metric">
+            <strong>RL Stability</strong>
+            <span>Reward trend, KL drift, invalid SQL rate, and execution failure rate during training.</span>
+          </div>
+        </div>
+        <div class="stack">
+          <div class="row">
+            <b>Baselines</b>
+            <span>Compare SFT-only and prompt-only agents against an RL-trained interactive agent.</span>
+          </div>
+          <div class="row">
+            <b>Models</b>
+            <span>Use capable code-oriented LMs in the CUDA environment; scale model size with available GPU budget.</span>
+          </div>
+          <div class="row">
+            <b>Risks</b>
+            <span>Sparse rewards, execution-equivalent SQL, overfitting to feedback patterns, and unsafe query behavior.</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="takeaway">Expected contribution: a proposal for turning text-to-SQL from one-shot generation into an execution-grounded RL agent problem.</div>
+      <div>One-page web deck</div>
+    </footer>
+  </article>
+</body>
+</html>

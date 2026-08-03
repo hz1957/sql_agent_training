@@ -1,0 +1,62 @@
+model:
+  path: data/models/Qwen2.5-Coder-14B-Instruct
+
+tokenizer:
+  kind: hf
+
+data:
+  data_dir: data/spider
+  train_file: train_spider.json
+  validation_file: dev.json
+  preformatted_sft_jsonl: artifacts/sft_trajectory/qwen25_coder_14b_sft_merged_q1000_n4_target1600_seed43_t09/mixed_sft_gold3200_direct1137_rewrite463_seed42.jsonl
+
+output:
+  sft_jsonl: artifacts/sft_trajectory/qwen25_coder_14b_sft_merged_q1000_n4_target1600_seed43_t09/mixed_sft_gold3200_direct1137_rewrite463_seed42.jsonl
+  checkpoint_dir: artifacts/checkpoints/sft_14b_from_base_mixed_gold3200_direct1137_rewrite463_lr3e5_r32
+
+eval:
+  sample_size: 100
+  train_sample_size: 100
+  sample_seed: 0
+
+training:
+  max_prompt_length: 3584
+  max_response_length: 512
+  learning_rate: 0.00003
+  num_train_epochs: 1
+  max_steps: 300
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 4
+  gradient_checkpointing: true
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  lr_scheduler_type: linear
+  max_grad_norm: 1.0
+  seed: 42
+  data_seed: 42
+  logging_steps: 10
+  eval_strategy: steps
+  eval_steps: 100
+  per_device_eval_batch_size: 1
+  eval_accumulation_steps: 1
+  save_strategy: steps
+  save_steps: 100
+  bf16: true
+  fp16: false
+  report_to: none
+  deepspeed: configs/deepspeed_zero2_h100.json
+
+lora:
+  enabled: true
+  r: 32
+  alpha: 64
+  dropout: 0.05
+  bias: none
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj

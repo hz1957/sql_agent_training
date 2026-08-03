@@ -1,0 +1,72 @@
+[project]
+name = "sql-agent-training"
+version = "0.1.0"
+description = "Minimal Spider SQL agent training stack with SFT and a local GRPO trainer."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "datasets>=2.18",
+  "huggingface-hub>=0.24",
+  "pyyaml>=6.0",
+  "sqlparse>=0.5",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+sft = [
+  "torch>=2.5.1,<2.6",
+  "transformers>=4.45,<5",
+  "accelerate",
+  "deepspeed>=0.16,<0.17",
+  "peft>=0.17,<0.19",
+  "protobuf",
+]
+train = [
+  "torch>=2.5.1,<2.6",
+  "transformers>=4.45,<5",
+  "accelerate",
+  "peft>=0.17,<0.19",
+  "protobuf",
+]
+verl-cu128 = [
+  "accelerate==1.14.0",
+  "datasets>=2.18",
+  "fsspec[http]==2026.2.0",
+  "flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl",
+  "nvidia-cutlass-dsl==4.5.2",
+  "nvidia-cutlass-dsl-libs-base==4.5.2",
+  "ninja>=1.11",
+  "numpy==2.2.6",
+  "packaging>=20.0",
+  "peft==0.17.1",
+  "psutil>=7.0",
+  "ray==2.56.1",
+  "setuptools==80.9.0",
+  "tensordict==0.10.0",
+  "torch==2.9.0",
+  "torchaudio==2.9.0",
+  "torchvision==0.24.0",
+  "transformers==4.57.6",
+  "verl @ git+https://github.com/verl-project/verl.git@f663282327d784068263c7c3736a4884830eea44",
+  "vllm==0.12.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+  "dryrun: tests that run the full pipeline with tiny/scripted models (no real GPU required)",
+  "openai: tests that call the OpenAI API",
+]
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+line_length = 120

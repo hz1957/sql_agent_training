@@ -1,0 +1,20 @@
+model:
+  backend: hf
+  # LoRA checkpoints are passed with --checkpoint; this path remains the base model.
+  path: data/models/Qwen2.5-Coder-14B-Instruct
+  device: cuda
+  torch_dtype: bf16
+
+data:
+  data_dir: data/spider
+  train_file: train_spider.json
+  validation_file: dev.json
+
+rollout:
+  max_turns: 3
+  max_response_length: 2048
+  temperature: 0.0
+
+eval:
+  sample_size: 500
+  sample_seed: 0
