@@ -7,7 +7,7 @@ set -euo pipefail
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  bash sql_agent_training/scripts/run_full_mixed_sft_14b_h100.sh [prepare|train|eval|all|list]
+  bash sql_agent_training/scripts/run_full_mixed_sft_14b_实验进度记录h100.sh [prepare|train|eval|all|list]
 
 Default mode:
   train
@@ -22,7 +22,7 @@ Recommended sequence:
 
 Environment overrides:
   NUM_GPUS, CUDA_VISIBLE_DEVICES, DEEPSPEED_INCLUDE, CHECKPOINT_STEPS,
-  EVAL_SAMPLE_SIZE, EVAL_SAMPLE_SEED, EVAL_CUDA_VISIBLE_DEVICES,
+  SFT_RUN_DIR, EVAL_SAMPLE_SIZE, EVAL_SAMPLE_SEED, EVAL_CUDA_VISIBLE_DEVICES,
   LOG_ROOT, RUNTIME_CACHE_ROOT, UV_PROJECT_ENVIRONMENT
 EOF
 }
@@ -155,6 +155,20 @@ run_train() {
 }
 
 latest_run_dir() {
+  if [[ -n "${SFT_RUN_DIR:-}" ]]; then
+    local requested="${SFT_RUN_DIR}"
+    if [[ -d "${requested}" ]]; then
+      printf '%s\n' "${requested}"
+      return 0
+    fi
+    if [[ -d "${WORKSPACE_DIR}/${requested}" ]]; then
+      printf '%s\n' "${WORKSPACE_DIR}/${requested}"
+      return 0
+    fi
+    echo "ERROR: SFT_RUN_DIR does not exist: ${SFT_RUN_DIR}" >&2
+    exit 1
+  fi
+
   [[ -d "${CHECKPOINT_ROOT}" ]] || return 1
   find "${CHECKPOINT_ROOT}" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
     | sort -nr \

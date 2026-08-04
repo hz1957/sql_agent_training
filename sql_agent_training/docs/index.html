@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -473,20 +474,23 @@
     }
   </style>
 </head>
+
 <body>
   <nav class="tab-bar" aria-label="报告分类">
     <div class="tabs">
       <div class="tab-list" role="tablist">
-        <button class="tab-button" role="tab" id="tab-sft" aria-controls="panel-sft" aria-selected="true">SFT 实验</button>
-        <button class="tab-button" role="tab" id="tab-grpo" aria-controls="panel-grpo" aria-selected="false">GRPO 实验</button>
+        <button class="tab-button" role="tab" id="tab-sft" aria-controls="panel-sft" aria-selected="true">SFT
+          实验</button>
+        <button class="tab-button" role="tab" id="tab-grpo" aria-controls="panel-grpo" aria-selected="false">GRPO
+          实验</button>
         <div class="perf-tab-menu" id="perf-tab-menu" role="presentation">
           <button class="tab-button" role="tab" id="tab-perf" aria-controls="panel-perf" aria-selected="false"
-                  aria-haspopup="menu" aria-expanded="false">
+            aria-haspopup="menu" aria-expanded="false">
             性能测试<span class="tab-caret" aria-hidden="true"></span>
           </button>
           <div class="perf-dropdown" id="perf-dropdown" role="menu" aria-label="性能实验">
             <button class="perf-option" type="button" role="menuitemradio" aria-checked="true"
-                    data-perf-value="bottleneck">定位 GRPO/verl 最大瓶颈</button>
+              data-perf-value="bottleneck">定位 GRPO/verl 最大瓶颈</button>
           </div>
         </div>
       </div>
@@ -503,17 +507,28 @@
 
       <section class="abstract" aria-labelledby="sft-abstract">
         <h2 id="sft-abstract">摘要</h2>
-        <p>本研究比较从同一原始 <code>Qwen2.5-Coder-14B-Instruct</code> 出发的参数高效监督微调策略，并重点考察执行验证轨迹在 SQL agent 协议中的作用。第一步直接比较 Pure-SFT 与 Mixed-SFT：在同一组 500 条 Spider validation 样本上，Pure-SFT checkpoint-300 的 execution accuracy 为 77.60%，Mixed-SFT checkpoint-300 为 80.60%，绝对差异为 +3.00 个百分点。第二步固定 Mixed-SFT 数据，进行学习率与 LoRA rank 网格；<code>lr=5e-5, r=32</code> 仍为最高点估计，扩大到 <code>r=64</code> 未带来稳定收益。第三步固定 <code>lr=5e-5, r=32</code>、4,800 条训练记录与 300 optimizer steps，比较 gold SQL 与 trajectory supervision 的比例；3,200 gold + 1,600 trajectory 取得最高 execution accuracy 79.80%，相对 4,800 gold-only 的 76.40% 提高 +3.40 个百分点。整体结果支持在单轮 gold SQL 监督中混入约三分之一执行验证轨迹，但现有结论仍基于单一训练 seed 与 500-sample validation subset。</p>
+        <p>本研究比较从同一原始 <code>Qwen2.5-Coder-14B-Instruct</code> 出发的参数高效监督微调策略，并重点考察执行验证轨迹在 SQL agent 协议中的作用。第一步直接比较
+          Pure-SFT 与 Mixed-SFT：在同一组 500 条 Spider validation 样本上，Pure-SFT checkpoint-300 的 execution accuracy 为
+          77.60%，Mixed-SFT checkpoint-300 为 80.60%，绝对差异为 +3.00 个百分点。第二步固定 Mixed-SFT 数据，进行学习率与 LoRA rank
+          网格；<code>lr=5e-5, r=32</code> 仍为最高点估计，扩大到 <code>r=64</code> 未带来稳定收益。第三步固定 <code>lr=5e-5, r=32</code>、4,800
+          条训练记录与 300 optimizer steps，比较 gold SQL 与 trajectory supervision 的比例；3,200 gold + 1,600 trajectory 取得最高
+          execution accuracy 79.80%，相对 4,800 gold-only 的 76.40% 提高 +3.40 个百分点。整体结果支持在单轮 gold SQL
+          监督中混入约三分之一执行验证轨迹，但现有结论仍基于单一训练 seed 与 500-sample validation subset。</p>
       </section>
 
       <section aria-labelledby="sft-research-question">
         <h2 id="sft-research-question">研究问题</h2>
-        <p>本实验旨在回答三个问题。第一，在 SQL agent 的执行反馈评测协议下，相较于仅使用单轮 question/schema-to-SQL 样本的 Pure-SFT，引入经执行验证的 trajectory supervision 是否能够在控制模型起点、LoRA 容量、学习率、训练预算与解码协议后带来可观测的 execution accuracy 增益。第二，在 Mixed-SFT 已显示正向点估计后，学习率与 LoRA rank 的有限网格是否改变主候选配置。第三，在固定总训练记录数与优化预算的条件下，gold SQL 与 trajectory supervision 的混合比例如何影响最终执行正确率、rewrite 行为与耗尽交互轮数的比例。</p>
+        <p>本实验旨在回答三个问题。第一，在 SQL agent 的执行反馈评测协议下，相较于仅使用单轮 question/schema-to-SQL 样本的 Pure-SFT，引入经执行验证的 trajectory
+          supervision 是否能够在控制模型起点、LoRA 容量、学习率、训练预算与解码协议后带来可观测的 execution accuracy 增益。第二，在 Mixed-SFT 已显示正向点估计后，学习率与 LoRA
+          rank 的有限网格是否改变主候选配置。第三，在固定总训练记录数与优化预算的条件下，gold SQL 与 trajectory supervision 的混合比例如何影响最终执行正确率、rewrite
+          行为与耗尽交互轮数的比例。</p>
       </section>
 
       <section aria-labelledby="sft-step-1">
         <h2 id="sft-step-1">1. 第一步：Pure-SFT 与 Mixed-SFT 对照</h2>
-        <p>第一步检验的核心假设是：在相同原始 14B 起点、LoRA 容量、学习率、global batch size 与 300-step 训练预算下，以经执行验证的 agent trajectory 替换一部分单轮 gold SQL，能否提高模型在多轮执行反馈协议下的最终 SQL 正确率。原始 14B 无 LoRA 模型仅用于刻画微调前性能；第一步的主要效应量定义为 Mixed-SFT checkpoint-300 与 Pure-SFT checkpoint-300 的配对 execution-accuracy 差异。</p>
+        <p>第一步检验的核心假设是：在相同原始 14B 起点、LoRA 容量、学习率、global batch size 与 300-step 训练预算下，以经执行验证的 agent trajectory 替换一部分单轮 gold
+          SQL，能否提高模型在多轮执行反馈协议下的最终 SQL 正确率。原始 14B 无 LoRA 模型仅用于刻画微调前性能；第一步的主要效应量定义为 Mixed-SFT checkpoint-300 与 Pure-SFT
+          checkpoint-300 的配对 execution-accuracy 差异。</p>
 
         <h3>1.1 实验组、对照组与共同基线</h3>
         <div class="table-block">
@@ -529,13 +544,6 @@
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>原始 14B</td>
-                  <td><code>Qwen2.5-Coder-14B-Instruct</code></td>
-                  <td>无本项目 SFT 数据</td>
-                  <td>0 step；无 LoRA</td>
-                  <td>共同的预训练基线；同口径 500-sample agent eval 待补</td>
-                </tr>
                 <tr>
                   <td>Pure-SFT</td>
                   <td>原始 14B + 新 LoRA</td>
@@ -557,7 +565,9 @@
         </div>
 
         <h3>1.2 轨迹生成与执行验证</h3>
-        <p>轨迹由既有 <code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code> policy 生成。训练集随机抽取 1,000 个 Spider 问题，每题执行 4 次 rollout；采样温度为 0.9，最大交互轮数为 3，随机种子为 43。候选轨迹的最终 SQL 必须与 gold SQL 在对应 SQLite 数据库上产生相同执行结果，方可进入正确轨迹集合。该判据是执行等价，而非 SQL 字符串完全一致。</p>
+        <p>轨迹由既有 <code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code> policy 生成。训练集随机抽取 1,000 个 Spider 问题，每题执行 4 次
+          rollout；采样温度为 0.9，最大交互轮数为 3，随机种子为 43。候选轨迹的最终 SQL 必须与 gold SQL 在对应 SQLite 数据库上产生相同执行结果，方可进入正确轨迹集合。该判据是执行等价，而非
+          SQL 字符串完全一致。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -607,12 +617,14 @@
         </div>
 
         <h3>1.3 混合数据构造</h3>
-        <p>Mixed-SFT 数据集由 3,200 条 Spider gold records 与全部 1,600 条去重后的 trajectory records 构成。为扩大问题覆盖范围，gold sampling 排除轨迹池所涉及的 source question UID。每条 trajectory record 仅监督最终正确 SQL action：direct record 使用初始 agent prompt，rewrite record 的 prompt 则包含先前 SQL、数据库执行反馈及修正指令。由此，失败 SQL 被保留为上下文而不作为 completion 目标。</p>
+        <p>Mixed-SFT 数据集由 3,200 条 Spider gold records 与全部 1,600 条去重后的 trajectory records 构成。为扩大问题覆盖范围，gold sampling
+          排除轨迹池所涉及的 source question UID。每条 trajectory record 仅监督最终正确 SQL action：direct record 使用初始 agent prompt，rewrite
+          record 的 prompt 则包含先前 SQL、数据库执行反馈及修正指令。由此，失败 SQL 被保留为上下文而不作为 completion 目标。</p>
 
         <div class="equation" aria-label="Mixed SFT data composition">3,200 gold
-+ 1,137 direct trajectory
-+   463 rewrite trajectory
-= 4,800 distinct SFT records</div>
+          + 1,137 direct trajectory
+          + 463 rewrite trajectory
+          = 4,800 distinct SFT records</div>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -657,7 +669,10 @@
         </div>
 
         <h3>1.4 训练设置与控制变量</h3>
-        <p>Pure-SFT 与 Mixed-SFT 均从原始 <code>Qwen2.5-Coder-14B-Instruct</code> 初始化新的 PEFT LoRA。两组使用相同的 LoRA 结构、学习率、global batch size 与 checkpoint-300 预算。Mixed-SFT 在 4,800 条固定记录上完成一个 epoch；Pure-SFT 的 checkpoint-300 同样对应约 4,800 次样本呈现，但其样本来自 7,000 条 gold-only 训练池的随机顺序。两组的主要预期差异是监督数据组成；prompt 上限与 GPU/gradient-accumulation 分解存在实现差异，需作为方法学限制报告。</p>
+        <p>Pure-SFT 与 Mixed-SFT 均从原始 <code>Qwen2.5-Coder-14B-Instruct</code> 初始化新的 PEFT LoRA。两组使用相同的 LoRA 结构、学习率、global
+          batch size 与 checkpoint-300 预算。Mixed-SFT 在 4,800 条固定记录上完成一个 epoch；Pure-SFT 的 checkpoint-300 同样对应约 4,800
+          次样本呈现，但其样本来自 7,000 条 gold-only 训练池的随机顺序。两组的主要预期差异是监督数据组成；prompt 上限与 GPU/gradient-accumulation
+          分解存在实现差异，需作为方法学限制报告。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -675,7 +690,7 @@
                   <td>Base model</td>
                   <td><code>Qwen2.5-Coder-14B-Instruct</code></td>
                   <td><code>Qwen2.5-Coder-14B-Instruct</code></td>
-                  <td>相同；均非从 SFT-Merged 权重继续训练</td>
+                  <td>相同</td>
                 </tr>
                 <tr>
                   <td>LoRA</td>
@@ -732,7 +747,9 @@
         </div>
 
         <h3>1.5 Agent evaluation 结果</h3>
-        <p>主评测在同一组 500 条 Spider validation 样本上完成。execution accuracy 为主要终点；executable rate、平均交互轮数、rewrite rate、rewrite success rate 与 ran-out-of-turns rate 用于刻画行为变化。Pure-SFT checkpoint-300 答对 388 条，execution accuracy 为 77.60%。原始 14B 无 LoRA 基线尚未在该固定子集上完成同口径 agent evaluation，故不填入推测性数值。</p>
+        <p>主评测在同一组 500 条 Spider validation 样本上完成。execution accuracy 为主要终点；executable rate、平均交互轮数、rewrite rate、rewrite
+          success rate 与 ran-out-of-turns rate 用于刻画行为变化。Pure-SFT checkpoint-300 答对 388 条，execution accuracy 为 77.60%。原始
+          14B 无 LoRA 基线尚未在该固定子集上完成同口径 agent evaluation，故不填入推测性数值。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -809,19 +826,28 @@
               </tbody>
             </table>
           </div>
-          <p class="caption">表 5. 500 条固定 validation 样本上的 agent evaluation。第一步的主比较为 Pure-SFT step 300 与 Mixed-SFT step 300；原始 14B 是共同基线，当前数值待同口径补测。</p>
+          <p class="caption">表 5. 500 条固定 validation 样本上的 agent evaluation。第一步的主比较为 Pure-SFT step 300 与 Mixed-SFT step
+            300；原始 14B 是共同基线，当前数值待同口径补测。</p>
         </div>
 
-        <p>三个 Mixed-SFT checkpoint 的 parse error rate 与 no-parseable-SQL rate 均为 0。Mixed-SFT checkpoint-300 相对于 Pure-SFT checkpoint-300 增加 15 条正确样本，错误数由 112 降至 97，对应 13.39% 的相对错误减少；两者 executable rate 同为 97.60%。Mixed-SFT checkpoint-200 的点估计比 checkpoint-300 高 0.40 个百分点，即 2/500 个样本。由于各 policy 作用于相同 UID，边际比例差异不足以单独支持显著性结论；严格比较应基于逐样本预测运行 exact McNemar test 与 paired bootstrap confidence interval。</p>
+        <p>三个 Mixed-SFT checkpoint 的 parse error rate 与 no-parseable-SQL rate 均为 0。Mixed-SFT checkpoint-300 相对于 Pure-SFT
+          checkpoint-300 增加 15 条正确样本，错误数由 112 降至 97，对应 13.39% 的相对错误减少；两者 executable rate 同为 97.60%。Mixed-SFT
+          checkpoint-200 的点估计比 checkpoint-300 高 0.40 个百分点，即 2/500 个样本。由于各 policy 作用于相同
+          UID，边际比例差异不足以单独支持显著性结论；严格比较应基于逐样本预测运行 exact McNemar test 与 paired bootstrap confidence interval。</p>
 
         <h3>1.6 结论与 checkpoint 选择</h3>
-        <p>第一步的点估计支持 Mixed-SFT 相对于 Pure-SFT 具有潜在效益：Mixed-SFT checkpoint-100、200 和 300 分别高出 Pure-SFT checkpoint-300 1.60、3.40 和 3.00 个百分点。然而，严格的预设主比较仅为两个 checkpoint-300 policy；跨训练进度的其余差值属于探索性结果。由于实验尚未通过多训练 seed、完整 dev split 与数据成分消融评估方差，当前证据不能将总体增益唯一归因于 rewrite trajectory，也不能替代对原始 14B 无 LoRA 基线的独立评测。</p>
-        <p>本研究将 <code>checkpoint-300</code> 指定为当前工程候选。该选择遵循“完成预设 1 epoch / 300 optimizer steps”这一训练预算规则，并避免在同一 500 条评测子集上仅依据 2 条样本的点估计差异进行事后 checkpoint 选择。checkpoint-200 作为敏感性分析对象保留；当前结论是“两者尚不可区分”，而不是“checkpoint-300 已被证明更优”。</p>
+        <p>在相同训练预算下，Mixed-SFT 的 execution accuracy 为 80.60%，比 Pure-SFT 高 3.00 个百分点。训练过程中的最高中间评测结果为 81.00%，与最终结果仅相差 2/500
+          个样本，因此不作为更换最终模型的依据。</p>
+        <p>后续实验统一采用完成预设训练预算的 Mixed-SFT 模型。当前结果来自单一训练 seed 和 500 条 validation 样本，尚不足以区分 direct 与 rewrite trajectory
+          的独立贡献。</p>
       </section>
 
       <section aria-labelledby="sft-step-2">
         <h2 id="sft-step-2">2. 第二步：学习率与 LoRA 容量网格</h2>
-        <p>在第一步确定 Mixed-SFT 优于 Pure-SFT 的点估计后，本研究进一步考察监督微调阶段的学习率与 LoRA 容量是否构成主要性能瓶颈。该实验固定原始 <code>Qwen2.5-Coder-14B-Instruct</code> 起点、4,800 条 Mixed-SFT 训练记录、global batch size 16、300 optimizer steps、bf16、gradient checkpointing 与 DeepSpeed ZeRO-2，仅改变学习率与 LoRA rank。所有候选均在同一组 500 条 Spider validation 样本、相同 agent protocol 与 greedy decoding 下评测 checkpoint-300。</p>
+        <p>在第一步确定 Mixed-SFT 优于 Pure-SFT 的点估计后，本研究进一步考察监督微调阶段的学习率与 LoRA 容量是否构成主要性能瓶颈。该实验固定原始
+          <code>Qwen2.5-Coder-14B-Instruct</code> 起点、4,800 条 Mixed-SFT 训练记录、global batch size 16、300 optimizer
+          steps、bf16、gradient checkpointing 与 DeepSpeed ZeRO-2，仅改变学习率与 LoRA rank。所有候选均在同一组 500 条 Spider validation 样本、相同
+          agent protocol 与 greedy decoding 下评测 checkpoint-300。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -909,19 +935,26 @@
               </tbody>
             </table>
           </div>
-          <p class="caption">表 6. Mixed-SFT 学习率 × LoRA rank 网格的 checkpoint-300 agent evaluation。除学习率和 LoRA 容量外，其余训练数据、模型起点、训练预算与评测协议保持一致。</p>
+          <p class="caption">表 6. Mixed-SFT 学习率 × LoRA rank 网格的 checkpoint-300 agent evaluation。除学习率和 LoRA
+            容量外，其余训练数据、模型起点、训练预算与评测协议保持一致。</p>
         </div>
 
-        <p>结果表明，扩大 LoRA rank 并未在当前设置下产生稳定收益。新增网格中最佳配置为 <code>lr=3e-5, r=64</code>，execution accuracy 为 79.60%，较既有 <code>lr=5e-5, r=32</code> 主候选低 1.00 个百分点，即少 5 条正确样本。训练日志显示 <code>r=64</code> 与较高学习率能够进一步降低训练损失，但对应的 agent-level execution accuracy 未同步提高，说明 token-level 拟合程度不能直接作为 agent policy 选择准则。</p>
-        <p>因此，本研究不替换第一步选定的 Mixed-SFT checkpoint-300 主候选。该结论基于当前 500-sample validation subset 与单一训练 seed；在本轮实验条件下，LoRA 容量扩大未显示稳定的 agent-level 收益。</p>
+        <p>结果表明，扩大 LoRA rank 并未在当前设置下产生稳定收益。新增网格中最佳配置为 <code>lr=3e-5, r=64</code>，execution accuracy 为 79.60%，较既有
+          <code>lr=5e-5, r=32</code> 主候选低 1.00 个百分点，即少 5 条正确样本。训练日志显示 <code>r=64</code> 与较高学习率能够进一步降低训练损失，但对应的
+          agent-level execution accuracy 未同步提高，说明 token-level 拟合程度不能直接作为 agent policy 选择准则。</p>
+        <p>因此，本研究不替换第一步选定的 Mixed-SFT checkpoint-300 主候选。该结论基于当前 500-sample validation subset 与单一训练 seed；在本轮实验条件下，LoRA
+          容量扩大未显示稳定的 agent-level 收益。</p>
       </section>
 
       <section aria-labelledby="sft-step-3">
         <h2 id="sft-step-3">3. 第三步：训练数据比例实验</h2>
-        <p>第三步在第二步确定的 <code>lr=5e-5, r=32</code> 配置下，固定原始 14B 起点、LoRA 结构、global batch size、4,800 条训练记录、300 optimizer steps 与同一 500-sample agent evaluation，专门研究 gold SQL 与 trajectory supervision 的比例。该实验的目的不是再次比较 LoRA 容量，而是在总训练预算相同的条件下估计执行验证轨迹的合理占比。</p>
+        <p>第三步在第二步确定的 <code>lr=5e-5, r=32</code> 配置下，固定原始 14B 起点、LoRA 结构、global batch size、4,800 条训练记录、300 optimizer
+          steps 与同一 500-sample agent evaluation，专门研究 gold SQL 与 trajectory supervision 的比例。该实验的目的不是再次比较 LoRA
+          容量，而是在总训练预算相同的条件下估计执行验证轨迹的合理占比。</p>
 
         <h3>3.1 轨迹池扩展</h3>
-        <p>为避免第三步受第一批 1,600 条轨迹规模限制，实验重新生成并覆盖了轨迹池。新的 teacher 仍为 <code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code>，采样 1,500 个训练问题，每题 4 次 rollout；采样温度为 0.9，最大交互轮数为 3，随机种子为 44。最终从去重后的正确轨迹中选择 3,000 条 SFT records，用于构造不同比例的数据集。</p>
+        <p>为避免第三步受第一批 1,600 条轨迹规模限制，实验重新生成并覆盖了轨迹池。新的 teacher 仍为 <code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code>，采样
+          1,500 个训练问题，每题 4 次 rollout；采样温度为 0.9，最大交互轮数为 3，随机种子为 44。最终从去重后的正确轨迹中选择 3,000 条 SFT records，用于构造不同比例的数据集。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -966,7 +999,9 @@
         </div>
 
         <h3>3.2 比例设计与训练收敛</h3>
-        <p>四个比例配置均包含 4,800 条训练记录，并在相同训练预算下完成 checkpoint-300。trajectory 子集按扩展轨迹池中的 direct/rewrite 分布近似分层抽样；gold-only 组提供比例实验内部的严格对照。训练日志显示四组在 step 300 的 validation loss 与 token accuracy 接近，说明 token-level validation 指标不能充分解释 agent-level execution accuracy 的差异。</p>
+        <p>四个比例配置均包含 4,800 条训练记录，并在相同训练预算下完成 checkpoint-300。trajectory 子集按扩展轨迹池中的 direct/rewrite 分布近似分层抽样；gold-only
+          组提供比例实验内部的严格对照。训练日志显示四组在 step 300 的 validation loss 与 token accuracy 接近，说明 token-level validation 指标不能充分解释
+          agent-level execution accuracy 的差异。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -1022,11 +1057,14 @@
               </tbody>
             </table>
           </div>
-          <p class="caption">表 8. 第三步比例实验的训练数据组成与 step-300 token-level validation metrics。四组固定总记录数、学习率、LoRA 配置与 optimizer steps。</p>
+          <p class="caption">表 8. 第三步比例实验的训练数据组成与 step-300 token-level validation metrics。四组固定总记录数、学习率、LoRA 配置与
+            optimizer steps。</p>
         </div>
 
         <h3>3.3 Agent evaluation 结果</h3>
-        <p>Agent evaluation 结果显示，trajectory supervision 的收益呈现非线性比例关系。相对于 4,800 gold-only，混入 800 条 trajectory 将 execution accuracy 从 76.40% 提高到 77.80%；混入 1,600 条 trajectory 进一步提高到 79.80%，为本组最高点估计；当 trajectory 增加到 2,400 条时，execution accuracy 为 79.40%，略低于 1,600-trajectory 配置，但 rewrite success rate 最高。</p>
+        <p>Agent evaluation 结果显示，trajectory supervision 的收益呈现非线性比例关系。相对于 4,800 gold-only，混入 800 条 trajectory 将 execution
+          accuracy 从 76.40% 提高到 77.80%；混入 1,600 条 trajectory 进一步提高到 79.80%，为本组最高点估计；当 trajectory 增加到 2,400 条时，execution
+          accuracy 为 79.40%，略低于 1,600-trajectory 配置，但 rewrite success rate 最高。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -1092,13 +1130,20 @@
               </tbody>
             </table>
           </div>
-          <p class="caption">表 9. 第三步比例实验的 checkpoint-300 agent evaluation。所有结果使用相同的 500 条 validation 样本、相同 prompt template、greedy decoding 与 <code>max_turns=3</code>。</p>
+          <p class="caption">表 9. 第三步比例实验的 checkpoint-300 agent evaluation。所有结果使用相同的 500 条 validation 样本、相同 prompt
+            template、greedy decoding 与 <code>max_turns=3</code>。</p>
         </div>
 
-        <p>在固定 4,800 条记录的条件下，1,600 条 trajectory 对应的错误数为 101，较 gold-only 的 118 少 17 条，错误相对减少 14.41%。继续将 trajectory 增至 2,400 条没有进一步提升 execution accuracy，说明在当前 teacher-generated trajectory 池与单一训练 seed 下，过高的 trajectory 占比可能牺牲一部分单轮 gold SQL 覆盖。两个最高配置仅相差 2/500 个样本，因此不能解释为显著优劣；但 3,200 gold + 1,600 trajectory 同时取得最高 execution accuracy、最低平均轮数、最低 rewrite rate 与最低耗尽轮数率，是当前最均衡的比例。</p>
+        <p>在固定 4,800 条记录的条件下，1,600 条 trajectory 对应的错误数为 101，较 gold-only 的 118 少 17 条，错误相对减少 14.41%。继续将 trajectory 增至
+          2,400 条没有进一步提升 execution accuracy，说明在当前 teacher-generated trajectory 池与单一训练 seed 下，过高的 trajectory 占比可能牺牲一部分单轮
+          gold SQL 覆盖。两个最高配置仅相差 2/500 个样本，因此不能解释为显著优劣；但 3,200 gold + 1,600 trajectory 同时取得最高 execution
+          accuracy、最低平均轮数、最低 rewrite rate 与最低耗尽轮数率，是当前最均衡的比例。</p>
 
         <h3>3.4 SFT 结论</h3>
-        <p>SFT 实验整体结论如下。第一，Mixed-SFT 相对于 Pure-SFT 的点估计提升在两个独立设置中复现：第一步的 3,200 gold + 1,600 trajectory 为 80.60%，第三步同等比例在重新生成轨迹池后为 79.80%，均高于对应 gold-only 对照。第二，<code>lr=5e-5, r=32</code> 是当前最优且更简洁的 LoRA 配置，<code>r=64</code> 未显示必要性。第三，在固定总训练记录数时，约三分之一 trajectory supervision 是当前最佳比例；它比纯 gold-only 更好，同时比 50% trajectory 更稳定地降低平均交互轮数和耗尽轮数率。</p>
+        <p>SFT 实验整体结论如下。第一，Mixed-SFT 相对于 Pure-SFT 的点估计提升在两个独立设置中复现：第一步的 3,200 gold + 1,600 trajectory 为
+          80.60%，第三步同等比例在重新生成轨迹池后为 79.80%，均高于对应 gold-only 对照。第二，<code>lr=5e-5, r=32</code> 是当前最优且更简洁的 LoRA
+          配置，<code>r=64</code> 未显示必要性。第三，在固定总训练记录数时，约三分之一 trajectory supervision 是当前最佳比例；它比纯 gold-only 更好，同时比 50%
+          trajectory 更稳定地降低平均交互轮数和耗尽轮数率。</p>
       </section>
 
     </article>
@@ -1107,39 +1152,62 @@
       <header class="paper-header">
         <p class="paper-kicker">Qwen2.5-Coder-14B-Instruct-SFT-Merged</p>
         <h1>GRPO 奖励方案与搜索策略实验结果</h1>
-        <p class="paper-meta">实验进度记录</p>
+        <p class="paper-meta">实验记录</p>
       </header>
 
       <section class="abstract" aria-labelledby="grpo-abstract">
         <h2 id="grpo-abstract">摘要</h2>
-        <p>本实验研究的是两阶段参数高效训练：首先将 Qwen2.5-Coder-14B-Instruct 的 SFT LoRA 合并进 14B 基座，形成统一的 SFT-Merged policy；随后在该 policy 上为每个 GRPO 方案训练一套新的 LoRA，而不是更新 14B 全部参数。初始 S1–S4 reward 设计对照中，S3 的执行准确率点估计最高，为 80.67%，相对 SFT-Merged baseline 提升 3.33 个百分点；随后的超参数实验确定 <code>KL=0.01</code>、<code>PPO epoch=2</code>、<code>temperature=1.0</code> 与 <code>gamma=0.9</code>。在更新后的 SFT ratio base 上，rollout 对照得到 S3 <code>branch=4/beam=2/n=20</code> 83.67%、S1 <code>n=8</code> 83.33% 和 S3 <code>branch=8/beam=1/n=24</code> 82.00%；准确率没有拉开清晰差距，但 S1 n=8 的计算与交互效率最好。</p>
+        <p>本实验研究的是两阶段参数高效训练：首先将 Qwen2.5-Coder-14B-Instruct 的 SFT LoRA 合并进 14B 基座，形成统一的 SFT-Merged policy；随后在该 policy
+          上为每个 GRPO 方案训练一套新的 LoRA，而不是更新 14B 全部参数。初始 S1–S4 reward 设计对照中，S3 的执行准确率点估计最高，为 80.67%，相对 SFT-Merged baseline 提升
+          3.33 个百分点；随后的超参数实验确定 <code>KL=0.01</code>、<code>PPO epoch=2</code>、<code>temperature=1.0</code> 与
+          <code>gamma=0.9</code>。在更新后的 SFT ratio base 上，rollout 对照得到 S3 <code>branch=4/beam=2/n=20</code> 83.67%、S1
+          <code>n=8</code> 83.33% 和 S3 <code>branch=8/beam=1/n=24</code> 82.00%；准确率没有拉开清晰差距，但 S1 n=8 的计算与交互效率最好。</p>
       </section>
 
       <section aria-labelledby="grpo-research-question">
         <h2 id="grpo-research-question">研究问题</h2>
-        <p>本实验旨在回答：在相同 SFT-Merged base policy 与相同第二阶段 LoRA 训练框架下，不同 reward 设计与 rollout 搜索策略是否能够相对 SFT-Merged baseline 提供额外的 execution accuracy 增益；同时，S1–S4 之间的差异应如何在 reward 变量、chain/tree rollout 形式、batch size 与 PPO mini-batch size 等潜在混杂因素共同存在的条件下进行解释。</p>
+        <p>本实验旨在回答：在相同 SFT-Merged base policy 与相同第二阶段 LoRA 训练框架下，不同 reward 设计与 rollout 搜索策略是否能够相对 SFT-Merged baseline
+          提供额外的 execution accuracy 增益；同时，S1–S4 之间的差异应如何在 reward 变量、chain/tree rollout 形式、batch size 与 PPO mini-batch
+          size 等潜在混杂因素共同存在的条件下进行解释。</p>
       </section>
 
       <section aria-labelledby="grpo-method">
         <h2 id="grpo-method">1. 方法</h2>
-        <p>下述方法根据 SFT run config、SFT adapter metadata、一次性合并脚本、S1–S4 启动脚本、verl 训练日志和 agent evaluation 加载代码逐项核对。为避免混淆，报告将第一阶段的 SFT LoRA 与第二阶段的 GRPO LoRA 分开描述。</p>
+        <p>本节描述 GRPO 实验的比较对象、控制变量与评测协议。为避免把第一阶段监督微调和第二阶段强化学习混在一起，报告将 SFT policy 的构造、GRPO adapter 的训练以及最终 agent
+          evaluation 分开说明。</p>
+        <p>本文中的 S1–S4 是四个 GRPO 方案代码名，用来同时标记 rollout 结构和 reward 设计。S1 表示 chain rollout + final execution reward，对应
+          <code>chain_final</code>；S2 在 S1 基础上加入失败路径的 executable fallback，对应 <code>chain_executable</code>；S3 表示 tree
+          rollout + final execution reward 的树回传，对应 <code>tree_final</code>；S4 在 S3 基础上加入 executable fallback，对应
+          <code>tree_executable</code>。其中 chain 方案按同一 prompt 采样多条独立多轮轨迹并在组内估计 advantage；tree 方案在每个 SQL action
+          节点上分支、剪枝并把叶子或子树价值回传给父节点。Executable fallback 的 <code>beta=0.1</code> 只给最终失败但 SQL 可安全执行的路径提供下限奖励，不取代最终正确奖励。</p>
 
         <h3>1.1 模型谱系与两阶段 LoRA</h3>
-        <p>第一阶段从完整的 <code>Qwen2.5-Coder-14B-Instruct</code> 基座开始，在 <code>data/spider/train_spider.json</code> 上训练 PEFT LoRA。被选作后续起点的是 <code>checkpoint-300</code>，其 adapter metadata 记录 <code>r=32</code>、<code>alpha=64</code>、dropout=0.05、bias=none，目标模块为 <code>q_proj</code>、<code>k_proj</code>、<code>v_proj</code>、<code>o_proj</code>、<code>gate_proj</code>、<code>up_proj</code> 和 <code>down_proj</code>。SFT 学习率为 <code>5e-5</code>，per-device batch size 为 1，gradient accumulation 为 8，并使用 bf16、gradient checkpointing 和 DeepSpeed ZeRO-2。SFT 配置的训练上限为 3 epochs，但实际用于合并的是 global step 300 checkpoint；其 trainer state 记录为 0.686 epoch。该 checkpoint 是 LoRA adapter，而不是完整 14B 权重副本。</p>
-        <p>随后，<code>merge_lora_adapter.py</code> 以 14B 基座和 SFT checkpoint-300 为输入，通过 <code>PeftModel.merge_and_unload()</code> 将 SFT LoRA delta 写入基座权重，并保存为独立 Hugging Face 模型目录 <code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code>。tokenizer 直接从原始 14B 基座复制到该目录。因此，SFT-Merged 是“14B 基座权重 + 已合并的 SFT LoRA 效果”，加载时不再需要单独挂载 SFT adapter。</p>
+        <p>第一阶段从 <code>Qwen2.5-Coder-14B-Instruct</code> 初始化一个监督微调 policy。后续 GRPO 实验统一使用同一个 SFT checkpoint 作为起点；该
+          checkpoint 对应 LoRA rank 32、alpha 64、学习率 <code>5e-5</code>，训练进度为 global step 300。这里的关键控制点是：S1–S4 并不是从不同 SFT
+          起点出发，而是共享同一个已完成监督微调的 policy。</p>
+        <p>为了让第二阶段训练只比较 GRPO 本身的差异，选定的 SFT adapter 先被合并进 14B base，形成统一的
+          <code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code> policy。tokenizer 与原始 14B 模型保持一致。因此，SFT-Merged 可以视为“14B base
+          + SFT LoRA 效果”的固定初始 policy；进入 GRPO 后，不再重复加载第一阶段的 SFT adapter。</p>
         <div class="equation" aria-label="两阶段 LoRA 模型谱系">Qwen2.5-Coder-14B-Instruct
-  + SFT LoRA (r=32, alpha=64, checkpoint-300)
-  → merge_and_unload()
-  → Qwen2.5-Coder-14B-Instruct-SFT-Merged
-  + fresh GRPO LoRA (r=64, alpha=128, all-linear)
-  → S1 / S2 / S3 / S4 LoRA checkpoint</div>
-        <p>第二阶段的 S1–S4 都把 SFT-Merged 作为同一个 base policy。启动脚本中的 <code>LORA_ADAPTER_PATH=none</code> 只表示“不再重复加载旧的 SFT adapter”，因为它已经被合并进 base；verl 仍根据 <code>ACTOR_LORA_RANK=64</code>、<code>ACTOR_LORA_ALPHA=128</code> 和 <code>ACTOR_LORA_TARGET_MODULES=all-linear</code> 初始化一套新的、可训练的 GRPO actor LoRA。GRPO 的 <code>ACTOR_LR=5e-5</code> 作用于这套新 LoRA 参数，而不是对 14B SFT-Merged 权重进行全参数更新。</p>
-        <p>GRPO checkpoint 设置 <code>save_lora_only=True</code>，因此 global step 100 保存的是 GRPO LoRA state。评测脚本先把 verl/FSDP checkpoint 导出为 PEFT adapter，并检查输出中不得出现 <code>model.safetensors</code> 或其他完整模型权重；随后 agent evaluation 加载 SFT-Merged base，再通过 <code>PeftModel.from_pretrained()</code> 挂载该 GRPO adapter。报告中的 SFT-Merged baseline 则只加载同一个 SFT-Merged base，不挂载 GRPO adapter。</p>
+          + SFT LoRA (r=32, alpha=64, checkpoint-300)
+          → fixed SFT-Merged policy
+          + fresh GRPO LoRA (r=64, alpha=128, all-linear)
+          → S1 / S2 / S3 / S4 LoRA checkpoint</div>
+        <p>第二阶段为每个 GRPO 方案单独训练一套新的 actor LoRA，rank 为 64、alpha 为 128，目标模块为 <code>all-linear</code>，学习率仍为
+          <code>5e-5</code>。因此，S1–S4 的比较对象是“同一 SFT policy 上训练出的不同 GRPO adapter”，而不是四个不同的全参数模型。</p>
+        <p>评测时，SFT-Merged baseline 只加载固定的 SFT policy；S1–S4 则在同一 SFT policy 上挂载各自的第二阶段 GRPO adapter。这样可以把报告中的性能差异解释为 GRPO
+          阶段 policy update 的结果，同时避免把第一阶段 SFT 权重差异引入比较。</p>
 
         <h3>1.2 SFT/GRPO 数据隔离与正式训练规模</h3>
-        <p>最终的 S1 chain 正式训练按 <code>source_uid</code> 隔离 SFT 与 GRPO 数据。Spider train 原始池共有 7,000 个问题；选定的 Mixed-SFT 数据集包含 4,800 条训练记录，即 3,200 条 gold、1,137 条 direct trajectory 和 463 条 rewrite trajectory，对应 4,533 个唯一 source questions。训练记录数高于唯一问题数，是因为同一个 source question 可以贡献多条 trajectory record。</p>
-        <p>构建正式 GRPO 数据时，<code>prepare_verl_spider_minus_sft.py</code> 从 Spider train 中排除全部 4,533 个 SFT <code>source_uid</code>，得到 2,467 条 GRPO prompt，按 source question 计算的 SFT/GRPO overlap 为 0。正式运行完成 275 step，train batch size 为 8，因此累计进行了 2,200 次 prompt presentation；每个 prompt 配置 <code>rollout_n=8</code>，对应 17,600 个 rollout slots。这里需要区分数据池规模与训练预算：GRPO 可用池为 2,467 条，实际优化过程累计消费 2,200 个 prompt instances；SFT 的 4,800 则是训练记录数，对应 4,533 个唯一问题。</p>
-        <p>上述零重叠结论特指使用 <code>verl_spider_minus_sft_gold3200_d1137_r463_seed42</code> 的最终 275-step 正式 S1 训练。此前用于 reward、KL、temperature、gamma 和 rollout 方案选择的短程实验沿用完整 Spider train parquet，不应表述为同一套数据隔离实验。</p>
+        <p>最终的 S1 chain 正式训练按 <code>source_uid</code> 隔离 SFT 与 GRPO 数据。Spider train 原始池共有 7,000 个问题；选定的 Mixed-SFT 数据集包含
+          4,800 条训练记录，即 3,200 条 gold、1,137 条 direct trajectory 和 463 条 rewrite trajectory，对应 4,533 个唯一 source
+          questions。训练记录数高于唯一问题数，是因为同一个 source question 可以贡献多条 trajectory record。</p>
+        <p>构建正式 GRPO 数据时，训练池排除了全部 4,533 个 SFT <code>source_uid</code>，得到 2,467 条 GRPO prompt，按 source question 计算的
+          SFT/GRPO overlap 为 0<sup><a href="#ref-sft-grpo-overlap">[1]</a></sup>。正式运行完成 275 step，train batch size 为 8，因此累计进行了 2,200 次 prompt presentation；每个 prompt 配置
+          <code>rollout_n=8</code>，对应 17,600 个 rollout slots。这里需要区分数据池规模与训练预算：GRPO 可用池为 2,467 条，实际优化过程累计消费 2,200 个
+          prompt instances；SFT 的 4,800 则是训练记录数，对应 4,533 个唯一问题。</p>
+        <p>上述零重叠结论特指最终 275-step 正式 S1 训练。此前用于 reward、KL、temperature、gamma 和 rollout 方案选择的短程实验沿用完整 Spider train
+          训练池，不应表述为同一套数据隔离实验。</p>
 
         <h3>1.3 控制变量与对照关系</h3>
         <div class="table-block">
@@ -1160,17 +1228,18 @@
                 </tr>
                 <tr>
                   <td>Tokenizer</td>
-                  <td>原始 Qwen2.5-Coder-14B-Instruct tokenizer，由 merge 脚本复制到 SFT-Merged 目录</td>
+                  <td>与原始 Qwen2.5-Coder-14B-Instruct tokenizer 相同</td>
                   <td>S1–S4 没有方案特有的 tokenizer</td>
                 </tr>
                 <tr>
                   <td>训练数据与硬件</td>
-                  <td><code>data/verl_spider/train.parquet</code>；单节点 4×H100</td>
+                  <td>Spider train prompts；单节点 4×H100</td>
                   <td>固定训练样本来源与硬件规模</td>
                 </tr>
                 <tr>
                   <td>GRPO actor 优化</td>
-                  <td><code>ACTOR_LR=5e-5</code>；<code>PPO_EPOCHS=1</code>；micro-batch/GPU=1；FSDP；gradient checkpointing</td>
+                  <td>actor learning rate <code>5e-5</code>；PPO epoch 1；micro-batch/GPU=1；FSDP；gradient checkpointing
+                  </td>
                   <td>学习率只作用于新建的 GRPO LoRA 参数</td>
                 </tr>
                 <tr>
@@ -1180,22 +1249,24 @@
                 </tr>
                 <tr>
                   <td>GRPO checkpoint</td>
-                  <td><code>save_lora_only=True</code></td>
+                  <td>仅保存第二阶段 GRPO adapter</td>
                   <td>只保存第二阶段 adapter，不复制 14B 全参数模型</td>
                 </tr>
                 <tr>
                   <td>训练计划</td>
-                  <td>150 training steps；每 25 step 保存；统一评测 global step 100</td>
+                  <td>150 training steps；每 25 step 保存；统一评测 global step 150</td>
                   <td>固定训练长度与 checkpoint 位置</td>
                 </tr>
                 <tr>
                   <td>KL</td>
-                  <td><code>use_kl_in_reward=False</code>；<code>use_kl_loss=False</code></td>
+                  <td>未使用 reference KL reward 或 KL loss</td>
                   <td>S1–S4 均不使用 reference KL</td>
                 </tr>
                 <tr>
                   <td>Rollout 采样</td>
-                  <td><code>temperature=1.0</code>；<code>top_p=1.0</code>；<code>top_k=-1</code>；<code>do_sample=True</code></td>
+                  <td>
+                    <code>temperature=1.0</code>；<code>top_p=1.0</code>；<code>top_k=-1</code>；<code>do_sample=True</code>
+                  </td>
                   <td>固定生成分布参数</td>
                 </tr>
                 <tr>
@@ -1205,7 +1276,8 @@
                 </tr>
                 <tr>
                   <td>vLLM rollout</td>
-                  <td>TP=4；PP=1；GPU memory utilization=0.32；max batched tokens=4096；max sequences=4；layered summon=True</td>
+                  <td>TP=4；PP=1；GPU memory utilization=0.32；max batched tokens=4096；max sequences=4；layered summon=True
+                  </td>
                   <td>固定推理部署和并发上限</td>
                 </tr>
                 <tr>
@@ -1215,7 +1287,9 @@
                 </tr>
                 <tr>
                   <td>Agent evaluation</td>
-                  <td>validation 300 条；<code>sample_seed=0</code>；<code>temperature=0.0</code>；<code>max_turns=3</code>；response length=2048</td>
+                  <td>validation 300
+                    条；<code>sample_seed=0</code>；<code>temperature=0.0</code>；<code>max_turns=3</code>；response
+                    length=2048</td>
                   <td>S1–S4 的 300 个 UID 及顺序已核验完全一致</td>
                 </tr>
               </tbody>
@@ -1306,37 +1380,72 @@
           <p class="caption">表 2. S1–S4 之间实际发生变化的参数。</p>
         </div>
 
-        <p>S2 在 S1 的 chain final reward 上增加 <code>beta=0.1</code> executable fallback，其余显式训练参数相同；S4 同样是在 S3 的 tree final reward 上增加 executable fallback。因此，S1/S2 与 S3/S4 分别构成“是否增加 fallback”的单变量对照。相反，S1 与 S3 不仅改变了 rollout 结构和 advantage estimator，还改变了 train batch size、PPO mini-batch size、每个 prompt 的 rollout 数以及每个 batch 配置的 rollout slot 数；两者只能作为方案级筛选，不能把准确率差异因果归因于 tree rollout。</p>
-        <p>此外，四个启动脚本没有显式设置训练随机种子，且当前每个方案只有一次训练结果。即使在 S1/S2 或 S3/S4 的成对比较中，仍不能排除训练随机波动。若要报告置信区间或稳定的 effect size，需要为每个候选显式固定并重复多个训练 seed。</p>
+        <p>S2 在 S1 的 chain final reward 上增加 <code>beta=0.1</code> executable fallback，其余显式训练参数相同；S4 同样是在 S3 的 tree final
+          reward 上增加 executable fallback。因此，S1/S2 与 S3/S4 分别构成“是否增加 fallback”的单变量对照。相反，S1 与 S3 不仅改变了 rollout 结构和
+          advantage estimator，还改变了 train batch size、PPO mini-batch size、每个 prompt 的 rollout 数以及每个 batch 配置的 rollout slot
+          数。</p>
+        <p>此外，四个启动脚本没有显式设置训练随机种子，且当前每个方案只有一次训练结果。即使在 S1/S2 或 S3/S4 的成对比较中，仍不能排除训练随机波动。若要报告置信区间或稳定的 effect
+          size，需要为每个候选显式固定并重复多个训练 seed。</p>
 
         <h3>1.4 Reward 与 executable fallback</h3>
-        <p>需要区分算法语义和代码标识：配置名 <code>chain_executable</code> 表示“chain final + executable fallback”，<code>tree_executable</code> 表示“tree final + executable fallback”。S2 和 S4 都保留最终正确奖励及其折扣回传；executable reward 只在失败路径上提供 fallback，并不取代 final reward。</p>
-        <p>在 chain rollout 中，若轨迹最终在第 <em>T</em> 轮生成语义正确的 SQL，则第 <em>t</em> 轮动作获得由最终正确奖励反向折扣的回报。若整条轨迹最终失败，S1 的所有动作回报均为 0；S2 则只对能够在 SQLite 中安全、无错误执行的 SQL 动作赋予 fallback reward <code>beta=0.1</code>。这里的“可执行”仅表示 <code>execution.ok=True</code>，不表示 SQL 与 gold query 语义等价。</p>
-        <div class="equation" aria-label="Chain reward 公式">r(t) = R_final × gamma^(T − t),    若轨迹最终成功
-r(t) = beta,                       若轨迹最终失败且当前 SQL 可执行（仅 S2）
-r(t) = 0,                          其他情况</div>
-        <p>Executable fallback 是替代失败奖励的下限，而不是附加 bonus。因此，只要轨迹最终成功，S2 就与 S1 一样使用折扣后的正确奖励，不再额外加 <code>beta</code>。这避免“先生成错误但可执行 SQL、随后修正成功”的轨迹因为累加 fallback 而获得高于首轮直接正确的总回报。</p>
-        <p>在 tree rollout 中，正确节点的值固定为 1。S3 对非正确的内部节点使用子节点均值进行折扣回传，失败叶节点为 0。S4 在相同回传值与当前节点的 executable fallback 之间取最大值；因此，可执行性仍是回报下限，而不会与未来成功价值相加。</p>
-        <div class="equation" aria-label="Tree reward 公式">V(n) = 1,                                              若当前 SQL 正确
-V(n) = gamma × mean[V(c)],                             S3 的非正确内部节点
-V(n) = max(gamma × mean[V(c)], beta × I_executable),  S4 的非正确内部节点
-V(n) = beta × I_executable,                            S4 的非正确叶节点</div>
-        <p>同一 parent state 生成的兄弟节点构成一个 GRPO 比较组，节点值在组内进行中心化和标准化后得到 advantage。由此，tree 方案比较的是“同一数据库状态和反馈下，不同 SQL 动作的相对价值”。</p>
-        <p>从论文定位看，只用最终 verifier reward 训练 GRPO 是合理的 outcome-supervision 版本：DeepSeekMath 的 GRPO 会将同一 prompt 下多条输出的最终 reward 做组内归一化，并把得到的 advantage 分配到该输出的 token 上。在二元正确/错误奖励、组内正负样本明确，尤其是 <code>G=2</code> 时，这种目标非常接近在线 DPO/对比学习；但普通 GRPO 仍包含 on-policy sampling、group normalization、PPO clip/KL 等机制，不能简单视为严格等同 DPO。原始 DeepSeekMath 消融并不支持“稀疏奖励一定优于密集奖励”：它报告 process supervision 优于 outcome-only；DeepSeek-R1 支持的则是，在可验证推理任务上，简单规则 final reward 往往比额外训练神经 reward model 更稳、更少 reward hacking 风险。因此，本实验使用最终 SQL execution reward 是合理基线，但需要持续监控组内 reward 方差，避免同组全对或全错导致 advantage 退化为零。</p>
+        <p>需要区分算法语义和代码标识：配置名 <code>chain_executable</code> 表示“chain final + executable
+          fallback”，<code>tree_executable</code> 表示“tree final + executable fallback”。S2 和 S4 都保留最终正确奖励及其折扣回传；executable
+          reward 只在失败路径上提供 fallback，并不取代 final reward。</p>
+        <p>在 chain rollout 中，verifier 只在轨迹终止时给出 outcome reward <em>R</em><sub>T</sub>。若第 <em>T</em> 轮生成语义正确的 SQL，则
+          <em>R</em><sub>T</sub>=1；第 <em>t</em> 轮动作使用由该终局奖励反向折扣得到的经验动作回报，而不是把折扣值解释为环境在该轮给出的即时 reward。若整条轨迹最终失败，S1
+          的所有动作回报均为 0；S2 则只对能够在 SQLite 中安全、无错误执行的 SQL 动作赋予 fallback score <code>beta=0.1</code>。这里的“可执行”仅表示
+          <code>execution.ok=True</code>，不表示 SQL 与 gold query 语义等价。</p>
+        <div class="equation" aria-label="Chain return 公式">R_T = 1, 若最终 SQL 正确；否则为 0
+          Q_hat(t) = gamma^(T − t) × R_T, 若轨迹最终成功
+          Q_hat(t) = beta, 若轨迹最终失败且当前 SQL 可执行（仅 S2）
+          Q_hat(t) = 0, 其他情况</div>
+        <p>Executable fallback 是替代失败奖励的下限，而不是附加 bonus。因此，只要轨迹最终成功，S2 就与 S1 一样使用折扣后的正确奖励，不再额外加
+          <code>beta</code>。这避免“先生成错误但可执行 SQL、随后修正成功”的轨迹因为累加 fallback 而获得高于首轮直接正确的总回报。</p>
+        <p>在 tree rollout 中，正确节点是终止节点，其 outcome reward 为 1，因此该节点的经验动作回报也为 1。S3 对非正确的内部节点使用子节点经验回报的均值进行折扣回传，失败叶节点为
+          0。S4 在相同回传值与当前节点的 executable fallback 之间取最大值；因此，可执行性仍是回报下限，而不会与未来成功价值相加。</p>
+        <div class="equation" aria-label="Tree return 公式">Q_hat(n) = 1, 若当前 SQL 正确
+          Q_hat(n) = gamma × mean[Q_hat(c)], S3 的非正确内部节点
+          Q_hat(n) = 0, S3 的失败叶节点
+          Q_hat(n) = max(gamma × mean[Q_hat(c)], beta × I_executable(n)), S4 的非正确内部节点
+          Q_hat(n) = beta × I_executable(n), S4 的非正确叶节点</div>
+        <p>因此，chain 与 tree 使用的是同一类终局 reward 折扣传播；区别在于 chain 沿一条已采样轨迹传播，而 tree 在每个内部节点对多个已采样子分支的回报取均值。这里没有学习 critic，也不是 GAE；<code>gamma</code>
+          用于构造供 GRPO 组内比较的经验动作回报。同一 parent state 生成的兄弟节点构成一个 GRPO 比较组，节点回报在组内进行中心化和标准化后得到 advantage。由此，tree
+          方案比较的是“同一数据库状态和反馈下，不同 SQL 动作的相对回报”。
+        </p>
+        <p>从论文定位看，只用最终 verifier reward 训练 GRPO 是合理的 outcome-supervision 版本：DeepSeekMath 的 GRPO 会将同一 prompt 下多条输出的最终
+          reward 做组内归一化，并把得到的 advantage 分配到该输出的 token 上<sup><a href="#ref-deepseekmath">[2]</a></sup>。在二元正确/错误奖励、组内正负样本明确，尤其是
+          <code>G=2</code> 时，这种目标非常接近在线 DPO/对比学习；但普通 GRPO 仍包含 on-policy sampling、group normalization、PPO clip/KL 等机制，不能简单视为严格等同
+          DPO<sup><a href="#ref-grpo-dpo">[3]</a></sup>。</p>
+        <p>DeepSeekMath 同时给出了 outcome-supervised 与 process-supervised GRPO。前者说明最终 reward 足以定义有效的 GRPO 训练目标，但其消融结果显示，在对应数学任务中，process
+          supervision 优于 outcome supervision<sup><a href="#ref-deepseekmath">[2]</a></sup>。因此，该结果支持把最终 verifier reward 作为简单、可复现的基线，而不支持其优于过程奖励的结论。</p>
+        <p>DeepSeek-R1 讨论的是另一个维度：reward 的来源。在数学和代码等可验证任务中，程序化规则 verifier 可以避免额外训练神经奖励模型及其 reward hacking
+          风险<sup><a href="#ref-deepseek-r1">[4]</a></sup>。这里的神经奖励模型包括只对完整输出进行预测评分的 outcome reward model（ORM），以及对中间推理步骤进行预测评分的 process
+          reward model（PRM）；规则 verifier 与神经奖励模型的取舍，并不等价于 outcome supervision 与 process supervision 的取舍。</p>
+        <p>本实验使用程序化 SQL verifier 产生终局正确性奖励，再通过 chain 折扣或 tree backup 进行 credit assignment，但没有引入独立的过程奖励模型。因此，最终 SQL execution
+          reward 是低复杂度、可审计的基线，而不是已经证明的最优 reward design；过程级奖励能否进一步改善训练仍需单独消融。此外，二元 verifier reward
+          可能使同组样本全部正确或全部错误，需要监控组内 reward 方差，避免 GRPO advantage 退化为零。</p>
 
         <h3>1.5 Tree frontier 与 beam 选择</h3>
-        <p>树的根状态首先采样 <code>branch_n=4</code> 个 SQL。语义正确的节点在 <code>prune_on_gold_reward=True</code> 下立即终止；只有不正确、尚未达到最大轮数且能够构造 rewrite state 的节点进入下一层 frontier。当 frontier 超过 <code>beam_size=2</code> 时，beam 并非按模型 log probability 直接取 top-2，也不使用失败节点的最终 gold reward 排序，而是使用 rollout 过程中 agent 可见的执行信号计算 proxy score：</p>
+        <p>树的根状态首先采样 <code>branch_n=4</code> 个 SQL。语义正确的节点在 <code>prune_on_gold_reward=True</code>
+          下立即终止；只有不正确、尚未达到最大轮数且能够构造 rewrite state 的节点进入下一层 frontier。当 frontier 超过 <code>beam_size=2</code> 时，beam 并非按模型
+          log probability 直接取 top-2，也不使用失败节点的最终 gold reward 排序，而是使用 rollout 过程中 agent 可见的执行信号计算 proxy score：</p>
         <div class="equation" aria-label="Beam proxy score 公式">proxy(n) =
-  +0.2  若成功解析出 SQL；否则 −2.0
-  +1.0  若 SQL 可执行；否则 −0.5
-  +0.2  若 SQL 可执行且结果不是空集</div>
-        <p>本实验设置 <code>beam_tau=1.0</code> 和 <code>beam_epsilon_random=0.1</code>。每次选择时有 10% 概率从 frontier 中均匀、无放回地随机保留 2 个节点；其余 90% 情况按照 <code>exp(proxy(n) / tau)</code> 对节点进行加权、无放回抽样，而不是确定性地选择最高分的两个节点。若 frontier 不超过 2 个节点，则全部保留。随机数由任务的 <code>root_uid</code> 派生，因此在 frontier 内容及顺序相同的条件下，beam 抽样可以复现。</p>
-        <p>每一层被保留的 2 个 parent node 都继续生成 4 个分支。于是三轮树搜索的最大 rollout slot 数为 <code>4 + (3 − 1) × 2 × 4 = 20</code>：首轮 4 个节点，第二轮和第三轮各最多 8 个节点。</p>
+          +0.2 若成功解析出 SQL；否则 −2.0
+          +1.0 若 SQL 可执行；否则 −0.5
+          +0.2 若 SQL 可执行且结果不是空集</div>
+        <p>本实验设置 <code>beam_tau=1.0</code> 和 <code>beam_epsilon_random=0.1</code>。每次选择时有 10% 概率从 frontier 中均匀、无放回地随机保留 2
+          个节点；其余 90% 情况按照 <code>exp(proxy(n) / tau)</code> 对节点进行加权、无放回抽样，而不是确定性地选择最高分的两个节点。若 frontier 不超过 2
+          个节点，则全部保留。随机数由任务的 <code>root_uid</code> 派生，因此在 frontier 内容及顺序相同的条件下，beam 抽样可以复现。</p>
+        <p>每一层被保留的 2 个 parent node 都继续生成 4 个分支。于是三轮树搜索的最大 rollout slot 数为 <code>4 + (3 − 1) × 2 × 4 = 20</code>：首轮 4
+          个节点，第二轮和第三轮各最多 8 个节点。</p>
       </section>
 
       <section aria-labelledby="grpo-results">
         <h2 id="grpo-results">2. 结果</h2>
-        <p>S3 在 300 条 validation 样本上取得 80.67% 的执行准确率，是本轮筛选中数值最高的方案，比不挂载 GRPO adapter 的 SFT-Merged baseline（77.33%）高 3.33 个百分点。S1 的执行准确率为 80.33%，仅比 S3 低 0.33 个百分点；由于两组同时存在 batch size、rollout 数量和 advantage estimator 差异，且没有多 seed 重复，这 0.33 个百分点不能解释为 tree rollout 的独立收益。S2 达到 79.67%，比参数匹配的 S1 低 0.66 个百分点；S4 为 76.00%，比参数匹配的 S3 低 4.67 个百分点，并低于 SFT-Merged baseline 1.33 个百分点。按照当前点估计排序，结果为 S3、S1、S2、SFT-Merged baseline、S4。</p>
+        <p>S3 在 300 条 validation 样本上取得 80.67% 的执行准确率，是本轮筛选中数值最高的方案，比不挂载 GRPO adapter 的 SFT-Merged baseline（77.33%）高 3.33
+          个百分点。S1 的执行准确率为 80.33%，仅比 S3 低 0.33 个百分点；由于两组同时存在 batch size、rollout 数量和 advantage estimator 差异，且没有多 seed 重复，这
+          0.33 个百分点不能解释为 tree rollout 的独立收益。S2 达到 79.67%，比参数匹配的 S1 低 0.66 个百分点；S4 为 76.00%，比参数匹配的 S3 低 4.67 个百分点，并低于
+          SFT-Merged baseline 1.33 个百分点。按照当前点估计排序，结果为 S3、S1、S2、SFT-Merged baseline、S4。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -1407,16 +1516,23 @@ V(n) = beta × I_executable,                            S4 的非正确叶节点
               </tbody>
             </table>
           </div>
-          <p class="caption">表 3. 四个 GRPO LoRA step 100 checkpoint 与共同 SFT-Merged base policy 的评测结果。所有结果均来自相同的 300 条 validation 样本。</p>
+          <p class="caption">表 3. 四个 GRPO LoRA step 100 checkpoint 与共同 SFT-Merged base policy 的评测结果。所有结果均来自相同的 300 条
+            validation 样本。</p>
         </div>
 
-        <p>由于五组评测使用完全相同的 300 个 UID，可以进行成对检验。相对 SFT-Merged baseline，S1–S4 的“GRPO 独占正确数 : baseline 独占正确数”依次为 18:9、18:11、26:16 和 22:26，对应 exact McNemar <em>p</em> 分别为 0.122、0.265、0.164 和 0.665；因此，任何单个 GRPO checkpoint 相对 baseline 的差异都未达到 0.05 显著性水平。S3 与 S1 分别只在 19 和 18 条样本上单独答对，净差仅 1 条，<em>p</em>=1.000。S1 与 S2 的独占正确数为 17 对 15，<em>p</em>=0.860。S3 与 S4 的独占正确数为 24 对 10，<em>p</em>=0.024；该结果为未做多重比较校正的探索性比较，并且所有评测检验都不包含训练 seed 带来的方差。</p>
-        <p>可执行率与执行准确率不呈单调关系。S2 的可执行率为 98.67%，在五组结果中最高，但执行准确率仍低于 S1；S3 的可执行率为 96.67%，低于 S1 和 S2，却获得最高点估计。现有结果只能说明 executable fallback 在这些具体配置和 checkpoint 上没有转化为更高的语义执行准确率，不能据此推断可执行性信号在其他 beta、seed 或训练长度下普遍无效。</p>
+        <p>由于五组评测使用完全相同的 300 个 UID，可以进行成对检验。相对 SFT-Merged baseline，S1–S4 的“GRPO 独占正确数 : baseline 独占正确数”依次为
+          18:9、18:11、26:16 和 22:26，对应 exact McNemar <em>p</em> 分别为 0.122、0.265、0.164 和 0.665；因此，任何单个 GRPO checkpoint 相对
+          baseline 的差异都未达到 0.05 显著性水平。S3 与 S1 分别只在 19 和 18 条样本上单独答对，净差仅 1 条，<em>p</em>=1.000。S1 与 S2 的独占正确数为 17 对
+          15，<em>p</em>=0.860。S3 与 S4 的独占正确数为 24 对 10，<em>p</em>=0.024；该结果为未做多重比较校正的探索性比较，并且所有评测检验都不包含训练 seed 带来的方差。</p>
+        <p>可执行率与执行准确率不呈单调关系。S2 的可执行率为 98.67%，在五组结果中最高，但执行准确率仍低于 S1；S3 的可执行率为 96.67%，低于 S1 和 S2，却获得最高点估计。现有结果只能说明
+          executable fallback 在这些具体配置和 checkpoint 上没有转化为更高的语义执行准确率。</p>
       </section>
 
       <section aria-labelledby="grpo-tuning">
         <h2 id="grpo-tuning">3. S3 超参数调优</h2>
-        <p>S3 因 step 100 点估计最高且不使用 executable fallback，被选为超参数调优的工程候选；这一选择不代表 S3 已被证明显著优于 S1 或 SFT-Merged baseline。第一阶段固定 S3 的 SFT-Merged base、fresh GRPO LoRA 配置、tree rollout、batch size、<code>temperature=1.0</code> 与 <code>gamma=0.9</code>，仅研究 reference KL 和 PPO epoch。新增候选统一在 global step 75、相同的 300 条 validation 样本上评测。原始 S3 的历史参考结果来自 step 100，不能与新增候选直接视为同 checkpoint 口径对照。</p>
+        <p>S3 因 step 100 点估计最高且不使用 executable fallback，被选为超参数调优的工程候选；这一选择不代表 S3 已被证明显著优于 S1 或 SFT-Merged baseline。第一阶段固定
+          S3 的 SFT-Merged base、fresh GRPO LoRA 配置、tree rollout、batch size、<code>temperature=1.0</code> 与
+          <code>gamma=0.9</code>，仅研究 reference KL 和 PPO epoch。所有候选统一在 global step 100、相同的 300 条 validation 样本上评测。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -1446,13 +1562,13 @@ V(n) = beta × I_executable,                            S4 的非正确叶节点
                   <td>1.763</td>
                   <td>62.20%</td>
                   <td>33.33%</td>
-                  <td><span class="status">不同 step 参考</span></td>
+                  <td><span class="status">历史参考</span></td>
                 </tr>
                 <tr>
                   <td>S3 epoch sweep</td>
                   <td>关闭 reference KL</td>
                   <td>2</td>
-                  <td>75</td>
+                  <td>100</td>
                   <td>65.33%</td>
                   <td>92.67%</td>
                   <td>2.553</td>
@@ -1464,7 +1580,7 @@ V(n) = beta × I_executable,                            S4 的非正确叶节点
                   <td>S3 epoch sweep</td>
                   <td>关闭 reference KL</td>
                   <td>3</td>
-                  <td>75</td>
+                  <td>100</td>
                   <td>77.67%</td>
                   <td>96.33%</td>
                   <td>1.490</td>
@@ -1476,19 +1592,19 @@ V(n) = beta × I_executable,                            S4 的非正确叶节点
                   <td>S3 KL sweep</td>
                   <td>0.01</td>
                   <td>2</td>
-                  <td>75</td>
+                  <td>100</td>
                   <td><strong>79.67%</strong></td>
                   <td>98.33%</td>
                   <td>1.687</td>
                   <td><strong>66.09%</strong></td>
                   <td>28.67%</td>
-                  <td><span class="status best">step 75 当前最佳</span></td>
+                  <td><span class="status best">step 100 当前最佳</span></td>
                 </tr>
                 <tr>
                   <td>S3 KL sweep</td>
                   <td>0.02</td>
                   <td>2</td>
-                  <td>75</td>
+                  <td>100</td>
                   <td>79.00%</td>
                   <td>98.33%</td>
                   <td>1.750</td>
@@ -1499,15 +1615,24 @@ V(n) = beta × I_executable,                            S4 的非正确叶节点
               </tbody>
             </table>
           </div>
-          <p class="caption">表 4. S3 的 reference KL 与 PPO epoch 调优结果。所有候选固定 <code>temperature=1.0</code>、<code>gamma=0.9</code>；新增候选使用相同的 300 条 validation 样本并统一评测 global step 75，历史 baseline 为 step 100。</p>
+          <p class="caption">表 4. S3 的 reference KL 与 PPO epoch 调优结果。所有候选固定
+            <code>temperature=1.0</code>、<code>gamma=0.9</code>，使用相同的 300 条 validation 样本并统一评测 global step 100。</p>
         </div>
-        <p>四个 step 75 候选中，<code>KL=0.01, PPO epoch=2</code> 的执行准确率最高，为 79.67%。关闭 KL 的 epoch 2 明显退化至 65.33%，平均轮数达到 2.553，75.33% 的样本耗尽三轮。相对 SFT-Merged policy，该 checkpoint 的执行准确率下降 12.00 个百分点，rewrite rate 从 28.33% 上升至 79.00%，耗尽轮数率从 21.67% 上升至 75.33%；训练日志也显示后期平均轮数和响应长度持续上升。因此，这一结果首先应解释为无 reference KL 运行中的 cumulative behavioral drift，而不是 eval 随机波动。</p>
-        <p><code>KL=0.01, PPO epoch=2</code> 将执行准确率恢复至 79.67%，同时把平均轮数和耗尽轮数率分别降至 1.687 和 28.67%；KL 提高至 0.02 后没有进一步收益，执行准确率反而下降 0.67 个百分点。该结果为使用 KL=0.01 稳定 policy 提供了明确的工程依据，但旧实验日志同时显示 <code>data.seed=None</code> 且 <code>shuffle=True</code>，所以不同运行之间的差值不能全部因果归于 KL 或 PPO epoch。据此固定 <code>KL=0.01, PPO epoch=2</code>，并在后续两组已完成实验中显式设置 data 与 rollout seed。</p>
+        <p>四个 step 100 候选中，<code>KL=0.01, PPO epoch=2</code> 的执行准确率最高，为 79.67%。关闭 KL 的 epoch 2 明显退化至 65.33%，平均轮数达到
+          2.553，75.33% 的样本耗尽三轮。相对 SFT-Merged policy，该 checkpoint 的执行准确率下降 12.00 个百分点，rewrite rate 从 28.33% 上升至
+          79.00%，耗尽轮数率从 21.67% 上升至 75.33%；训练日志也显示后期平均轮数和响应长度持续上升。因此，这一结果首先应解释为无 reference KL 运行中的 cumulative behavioral
+          drift，而不是 eval 随机波动。</p>
+        <p><code>KL=0.01, PPO epoch=2</code> 将执行准确率恢复至 79.67%，同时把平均轮数和耗尽轮数率分别降至 1.687 和 28.67%；KL 提高至 0.02
+          后没有进一步收益，执行准确率反而下降 0.67 个百分点。该结果为使用 KL=0.01 稳定 policy 提供了明确的工程依据，但旧实验日志同时显示 <code>data.seed=None</code> 且
+          <code>shuffle=True</code>，所以不同运行之间的差值不能全部因果归于 KL 或 PPO epoch。</p>
       </section>
 
       <section aria-labelledby="grpo-temperature-gamma">
         <h2 id="grpo-temperature-gamma">4. Temperature 与 Gamma 调优</h2>
-        <p>第二阶段固定 S3 tree-final、<code>KL=0.01</code>、<code>PPO epoch=2</code>、actor learning rate 5e-5、batch size 2、branch 4、beam 2 与 max turns 3，只研究 rollout temperature 和 tree reward gamma。为消除上一阶段未固定数据顺序的混杂，三组运行均显式设置 <code>data.seed=42</code> 与 <code>rollout.seed=42</code>，训练 100 step，并统一评测 global step 100 的相同 300 条 validation 样本。</p>
+        <p>第二阶段固定 S3 tree-final、<code>KL=0.01</code>、<code>PPO epoch=2</code>、actor learning rate 5e-5、batch size
+          2、branch 4、beam 2 与 max turns 3，只研究 rollout temperature 和 tree reward gamma。为消除上一阶段未固定数据顺序的混杂，三组运行均显式设置
+          <code>data.seed=42</code> 与 <code>rollout.seed=42</code>，训练 100 step，并统一评测 global step 100 的相同 300 条
+          validation 样本。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -1578,17 +1703,34 @@ V(n) = beta × I_executable,                            S4 的非正确叶节点
               </tbody>
             </table>
           </div>
-          <p class="caption">表 5. Temperature 与 gamma 的固定 seed 单变量实验。三组均完整训练 100 step，并在相同 300 条 validation 样本上评测 global step 100。</p>
+          <p class="caption">表 5. Temperature 与 gamma 的固定 seed 单变量实验。三组均完整训练 100 step，并在相同 300 条 validation 样本上评测 global
+            step 100。</p>
         </div>
-        <p>固定 seed baseline 的执行准确率最高，为 81.33%。将 temperature 从 1.0 提高到 1.2 后，执行准确率下降 1.67 个百分点；配对结果为 baseline 独对 14 题、temperature 独对 9 题，exact McNemar <em>p</em>=0.405，尚不能证明两者存在统计差异，但 temperature=1.2 的平均轮数、rewrite rate 和耗尽轮数率均更高，因此没有工程收益。将 gamma 从 0.9 降至 0.8 后，执行准确率下降 5.00 个百分点，可执行率下降 4.00 个百分点，耗尽轮数率从 16.33% 上升至 49.00%；配对结果为 baseline 独对 30 题、gamma=0.8 独对 15 题，未校正 exact McNemar <em>p</em>=0.0357。对两项预设主比较进行 Holm 校正后该差异为 <em>p</em>=0.0714，因此统计结论仍保持审慎，但工程上应拒绝 gamma=0.8。</p>
-        <p>两项单变量改动都没有产生正向点估计，因此没有补跑 <code>temperature=1.2, gamma=0.8</code> 的交互组合。Rollout 规模与搜索结构对照据此固定 <code>temperature=1.0, gamma=0.9, KL=0.01, PPO epoch=2</code>。</p>
+        <p>固定 seed baseline 的执行准确率最高，为 81.33%。将 temperature 从 1.0 提高到 1.2 后，执行准确率下降 1.67 个百分点；配对结果为 baseline 独对 14
+          题、temperature 独对 9 题，exact McNemar <em>p</em>=0.405，尚不能证明两者存在统计差异，但 temperature=1.2 的平均轮数、rewrite rate
+          和耗尽轮数率均更高，因此没有工程收益。将 gamma 从 0.9 降至 0.8 后，执行准确率下降 5.00 个百分点，可执行率下降 4.00 个百分点，耗尽轮数率从 16.33% 上升至 49.00%；配对结果为
+          baseline 独对 30 题、gamma=0.8 独对 15 题，未校正 exact McNemar <em>p</em>=0.0357。对两项预设主比较进行 Holm 校正后该差异为
+          <em>p</em>=0.0714，因此统计结论仍保持审慎，但工程上应拒绝 gamma=0.8。</p>
+        <p>两项单变量改动都没有产生正向点估计，因此没有补跑 <code>temperature=1.2, gamma=0.8</code> 的交互组合。Rollout 规模与搜索结构对照据此固定
+          <code>temperature=1.0, gamma=0.9, KL=0.01, PPO epoch=2</code>。</p>
       </section>
 
       <section aria-labelledby="grpo-rollout-comparison">
         <h2 id="grpo-rollout-comparison">5. Rollout 规模与搜索结构对照</h2>
-        <p>三组正式训练均从 <code>Qwen2.5-Coder-14B-Instruct-SFT-Ratio-Gold3200-D1137-R463-LR5e5-R32-Merged</code> 起步，固定 train batch size=4、KL=0.01、PPO epoch=2、temperature=1.0、gamma=0.9、dynamic batching、remove padding、layered summon、训练步数和随机种子，并使用相同的 validation 子集与 greedy agent protocol 评测。S3 的两组实验同时改变 branch、beam 和 rollout slot 数；S1 还改变了 chain/tree rollout、reward scheme 与 advantage estimator，因此这里比较的是完整方案，不把差异单独归因于某一个参数。</p>
-        <p>需要先区分训练与推理：chain 并不是过时方案，而是当前 GRPO/RLVR 和 CoT 推理里的强基线。DeepSeekMath 与 DeepSeek-R1 的 GRPO 都采用“同一问题采样多条完整输出、用组内 reward 估计 advantage”的链式输出单位；CoT prompting、self-consistency 与 best-of-N 推理也都是围绕多条独立 reasoning chain 做采样、投票或重排。chain 的工程优势是简单、易并行、直接匹配最终答案 verifier 或 SQL execution reward，且不会引入 beam/proxy score 的额外偏置。因此，在本实验这种 <code>max_turns=3</code>、最终 SQL 可验证、评测使用 greedy agent protocol 的设置下，S1 chain <code>n=8</code> 成为默认候选是有文献和工程依据的。</p>
-        <p>tree-based GRPO/agent RL 文献支持的是另一个方向：当任务长程、多跳、工具调用昂贵或中间决策高不确定时，把共享前缀组织成树，可以在固定 token 或工具调用预算下复用公共前缀，并把叶子节点最终奖励回传为分支、步骤或 token 级 advantage。Tree-GRPO 还指出 intra-tree GRPO 与 step-level DPO 具有相同的偏好梯度结构。因此，tree 的主要理论收益不是“多采样必然更准”，而是更好的探索预算利用与 credit assignment；但这些收益依赖任务长度、branch 位置、advantage estimator 和 rollout 预算。本实验的 S3 tree-final 属于 SQL agent 的工程化 tree rollout 变体，不等同于 ICLR 2026 Tree-GRPO 的完整 intra-tree/inter-tree advantage estimator。</p>
+        <p>三组正式训练均从 <code>Qwen2.5-Coder-14B-Instruct-SFT-Ratio-Gold3200-D1137-R463-LR5e5-R32-Merged</code> 起步，固定 train
+          batch size=4、KL=0.01、PPO epoch=2、temperature=1.0、gamma=0.9、dynamic batching、remove padding、layered
+          summon、训练步数和随机种子，并使用相同的 validation 子集与 greedy agent protocol 评测。S3 的两组实验同时改变 branch、beam 和 rollout slot 数；S1
+          还改变了 chain/tree rollout、reward scheme 与 advantage estimator，因此这里比较的是完整方案，不把差异单独归因于某一个参数。</p>
+        <p>需要先区分训练与推理：chain 并不是过时方案，而是当前 GRPO/RLVR 和 CoT 推理里的强基线。DeepSeekMath 与 DeepSeek-R1 的 GRPO 都采用“同一问题采样多条完整输出、用组内
+          reward 估计 advantage”的链式输出单位；CoT prompting、self-consistency 与 best-of-N 推理也都是围绕多条独立 reasoning chain
+          做采样、投票或重排。chain 的工程优势是简单、易并行、直接匹配最终答案 verifier 或 SQL execution reward，且不会引入 beam/proxy score 的额外偏置。因此，在本实验这种
+          <code>max_turns=3</code>、最终 SQL 可验证、评测使用 greedy agent protocol 的设置下，S1 chain <code>n=8</code>
+          成为默认候选是有文献和工程依据的。</p>
+        <p>tree-based GRPO/agent RL 文献支持的是另一个方向：当任务长程、多跳、工具调用昂贵或中间决策高不确定时，把共享前缀组织成树，可以在固定 token
+          或工具调用预算下复用公共前缀，并把叶子节点最终奖励回传为分支、步骤或 token 级 advantage。Tree-GRPO 还指出 intra-tree GRPO 与 step-level DPO
+          具有相同的偏好梯度结构。因此，tree 的主要理论收益不是“多采样必然更准”，而是更好的探索预算利用与 credit assignment；但这些收益依赖任务长度、branch 位置、advantage
+          estimator 和 rollout 预算。本实验的 S3 tree-final 属于 SQL agent 的工程化 tree rollout 变体，不等同于 ICLR 2026 Tree-GRPO 的完整
+          intra-tree/inter-tree advantage estimator。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -1606,6 +1748,16 @@ V(n) = beta × I_executable,                            S4 的非正确叶节点
                 </tr>
               </thead>
               <tbody>
+                <tr>
+                  <td>Full Mixed-SFT（无 GRPO）</td>
+                  <td>—</td>
+                  <td>79.00%</td>
+                  <td>96.80%</td>
+                  <td>1.44</td>
+                  <td>18.80%</td>
+                  <td>25.20%</td>
+                  <td>57.14%</td>
+                </tr>
                 <tr>
                   <td>S3 <code>branch=4</code> / <code>beam=2</code> / <code>n=20</code></td>
                   <td>20</td>
@@ -1639,15 +1791,31 @@ V(n) = beta × I_executable,                            S4 的非正确叶节点
               </tbody>
             </table>
           </div>
-          <p class="caption">表 6. 三组 rollout 方案的 agent evaluation。三组采用相同 base policy、训练稳定性配置和评测协议；粗体标出每列最优点估计。</p>
+          <p class="caption">表 6. Full Mixed-SFT 基线与三组 rollout 方案的 agent evaluation。三组 GRPO 方案采用相同 base policy、训练稳定性配置和评测协议；粗体标出每列最优点估计。</p>
         </div>
 
-        <p>三组执行准确率的点估计仅分布在 82.00%–83.67% 之间，当前结果没有拉开清晰差距。S3 <code>branch=4/beam=2/n=20</code> 的准确率最高，但仅比 S1 <code>n=8</code> 高 0.33 个百分点；这一微小差值不足以支持 tree rollout 更准确的结论。S3 <code>branch=8/beam=1/n=24</code> 比前者低 1.67 个百分点，没有显示扩大 branch 和 rollout slots 的收益。</p>
-        <p>行为与资源指标提供了更明确的工程区分。S3 n=24 相比 S3 n=20 的平均轮数从 1.46 增至 1.65，耗尽轮数率从 17.67% 增至 28.00%，rewrite rate 从 27.33% 增至 35.67%，同时训练计算量和阶段边界显存压力更高，因此不再采用。S1 n=8 的准确率与 S3 n=20 基本持平，但平均轮数、耗尽轮数率和 rewrite rate 均最低，且 rollout slots 最少，因此是当前性价比最好的默认方案；需要保留 tree search 时，则使用 <code>branch=4/beam=2/n=20</code>。</p>
+        <p>三组执行准确率的点估计仅分布在 82.00%–83.67% 之间，当前结果没有拉开清晰差距。S3 <code>branch=4/beam=2/n=20</code> 的准确率最高，但仅比 S1
+          <code>n=8</code> 高 0.33 个百分点；这一微小差值不足以支持 tree rollout 更准确的结论。S3 <code>branch=8/beam=1/n=24</code> 比前者低 1.67
+          个百分点，没有显示扩大 branch 和 rollout slots 的收益。</p>
+        <p>行为与资源指标提供了更明确的工程区分。S3 n=24 相比 S3 n=20 的平均轮数从 1.46 增至 1.65，耗尽轮数率从 17.67% 增至 28.00%，rewrite rate 从 27.33% 增至
+          35.67%，同时训练计算量和阶段边界显存压力更高，因此不再采用。S1 n=8 的准确率与 S3 n=20 基本持平，但平均轮数、耗尽轮数率和 rewrite rate 均最低，且 rollout slots
+          最少，因此是当前性价比最好的默认方案；需要保留 tree search 时，则使用 <code>branch=4/beam=2/n=20</code>。</p>
       </section>
 
       <footer class="source">
-        参考文献：<a href="https://arxiv.org/abs/2201.11903">Chain-of-Thought Prompting Elicits Reasoning in Large Language Models</a>；<a href="https://arxiv.org/abs/2203.11171">Self-Consistency Improves Chain of Thought Reasoning in Language Models</a>；<a href="https://arxiv.org/abs/2408.03314">Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters</a>；<a href="https://arxiv.org/abs/2402.03300">DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models</a>；<a href="https://arxiv.org/abs/2501.12948">DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning</a>；<a href="https://arxiv.org/abs/2510.00977">It Takes Two: Your GRPO Is Secretly DPO</a>；<a href="https://arxiv.org/abs/2305.18290">Direct Preference Optimization: Your Language Model is Secretly a Reward Model</a>；<a href="https://arxiv.org/abs/2509.21240">Tree Search for LLM Agent Reinforcement Learning</a>；<a href="https://aclanthology.org/2025.acl-long.604/">TreeRL: LLM Reinforcement Learning with On-Policy Tree Search</a>；<a href="https://arxiv.org/abs/2506.05183">TreeRPO: Tree Relative Policy Optimization</a>；<a href="https://arxiv.org/abs/2601.03703">TreeAdv: Tree-Structured Advantage Redistribution for Group-Based RL</a>。
+        <div>参考文献：</div>
+        <div><a href="https://arxiv.org/abs/2201.11903">Chain-of-Thought Prompting Elicits Reasoning in Large Language Models</a></div>
+        <div><a href="https://arxiv.org/abs/2203.11171">Self-Consistency Improves Chain of Thought Reasoning in Language Models</a></div>
+        <div><a href="https://arxiv.org/abs/2408.03314">Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters</a></div>
+        <div><a id="ref-deepseekmath" href="https://arxiv.org/abs/2402.03300">[2] DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models</a></div>
+        <div><a id="ref-grpo-dpo" href="https://arxiv.org/abs/2510.00977">[3] It Takes Two: Your GRPO Is Secretly DPO</a></div>
+        <div><a id="ref-deepseek-r1" href="https://arxiv.org/abs/2501.12948">[4] DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning</a></div>
+        <div><a href="https://arxiv.org/abs/2305.18290">Direct Preference Optimization: Your Language Model is Secretly a Reward Model</a></div>
+        <div><a href="https://arxiv.org/abs/2509.21240">Tree Search for LLM Agent Reinforcement Learning</a></div>
+        <div><a href="https://aclanthology.org/2025.acl-long.604/">TreeRL: LLM Reinforcement Learning with On-Policy Tree Search</a></div>
+        <div><a href="https://arxiv.org/abs/2506.05183">TreeRPO: Tree Relative Policy Optimization</a></div>
+        <div><a href="https://arxiv.org/abs/2601.03703">TreeAdv: Tree-Structured Advantage Redistribution for Group-Based RL</a></div>
+        <div><a id="ref-sft-grpo-overlap" href="https://arxiv.org/abs/2604.13515">[1] SFT-GRPO Data Overlap as a Post-Training Hyperparameter for Autoformalization</a></div>
       </footer>
     </article>
 
@@ -1659,515 +1827,624 @@ V(n) = beta × I_executable,                            S4 的非正确叶节点
       </header>
 
       <div class="perf-subview" data-perf-view="bottleneck">
-      <h2 class="study-title">定位 GRPO/verl 最大瓶颈</h2>
+        <h2 class="study-title">定位 GRPO/verl 最大瓶颈</h2>
 
-      <section class="abstract" aria-labelledby="perf-abstract">
-        <h2 id="perf-abstract">摘要</h2>
-        <p>本页以时间瓶颈为主线，并在对应阶段报告显存与 CPU 内存证据。历史 S3、KL=0.01、PPO epoch=2 日志曾显示 Actor→vLLM 同步耗时 44.3 秒，但该结果来自 full-summon CPU-offload fallback，不代表当前 layered summon 成本；资源日志也显示该 fallback 伴随接近 470GB 的 CPU 内存压力。以 layered summon 成功的 5-step 运行作为当前同步路径 baseline 后，策略优化成为最主要的稳定开销；开启 <code>dynamic_bsz</code> 与 <code>remove_padding</code> 后，策略优化耗时下降约 88.1%，整卡显存峰值仍在约 59.9GB。继续提高 rollout 并发容量到 <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code> 后，rollout 耗时进一步下降约 26.7%，平均 step 耗时下降约 18.7%，且没有推高整卡显存峰值。</p>
-      </section>
+        <section class="abstract" aria-labelledby="perf-abstract">
+          <h2 id="perf-abstract">摘要</h2>
+          <p>本页以时间瓶颈为主线，并在对应阶段报告显存与 CPU 内存证据。历史 S3、KL=0.01、PPO epoch=2 日志曾显示 Actor→vLLM 同步耗时 44.3 秒，但该结果来自 full-summon
+            CPU-offload fallback，不代表当前 layered summon 成本；资源日志也显示该 fallback 伴随接近 470GB 的 CPU 内存压力。以 layered summon 成功的
+            5-step 运行作为当前同步路径 baseline 后，策略优化成为最主要的稳定开销；开启 <code>dynamic_bsz</code> 与 <code>remove_padding</code>
+            后，策略优化耗时下降约 88.1%，整卡显存峰值仍在约 59.9GB。继续提高 rollout 并发容量到
+            <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code> 后，rollout 耗时进一步下降约 26.7%，平均 step 耗时下降约
+            18.7%，且没有推高整卡显存峰值。</p>
+        </section>
 
-      <section aria-labelledby="perf-question">
-        <h2 id="perf-question">1. 研究问题</h2>
-        <p>性能测试首先要回答的是：在固定 S3 tree GRPO、KL=0.01、PPO epoch=2、4×H100 与 LoRA 训练栈下，单个 verl step 的主要时间开销究竟来自哪里，以及这些优化是否仍落在 H100 显存和主机内存预算内。具体而言，本页区分历史 full-summon CPU-offload fallback 与当前 layered summon 路径，分别评估 Actor→vLLM 同步、rollout、old/reference log-prob 和策略优化的贡献；随后只测试我们能直接控制的配置，包括 micro batch、dynamic batching、remove padding、token cap 与 vLLM rollout 容量上限。该实验的目的不是细分底层通信或内核实现，而是为正式 GRPO 训练选择更快、容量可行且可复现的默认配置。</p>
-      </section>
+        <section aria-labelledby="perf-question">
+          <h2 id="perf-question">1. 研究问题</h2>
+          <p>性能测试首先要回答的是：在固定 S3 tree GRPO、KL=0.01、PPO epoch=2、4×H100 与 LoRA 训练栈下，单个 verl step 的主要时间开销究竟来自哪里，以及这些优化是否仍落在
+            H100 显存和主机内存预算内。具体而言，本页区分历史 full-summon CPU-offload fallback 与当前 layered summon 路径，分别评估 Actor→vLLM
+            同步、rollout、old/reference log-prob 和策略优化的贡献；随后只测试我们能直接控制的配置，包括 micro batch、dynamic batching、remove
+            padding、token cap 与 vLLM rollout 容量上限。该实验的目的不是细分底层通信或内核实现，而是为正式 GRPO 训练选择更快、容量可行且可复现的默认配置。</p>
+        </section>
 
-      <section aria-labelledby="perf-method">
-        <h2 id="perf-method">2. 方法</h2>
-        <p>分析对象为 S3 tree rollout 的 KL=0.01、PPO epoch=2 训练日志。policy 仍由 SFT-Merged 14B base 和 fresh GRPO LoRA（rank=64、alpha=128、all-linear）组成，actor 学习率为 <code>5e-5</code>。该运行使用 4 张 H100，训练 batch size 为 2，rollout slot 数为 20，并设置 <code>branch_n=4</code>、<code>beam_size=2</code>、<code>max_turns=3</code>。KL 通过 <code>use_kl_loss=True</code> 引入，actor 参数与优化器不 offload。</p>
-        <p>项目锁定的 <code>verl@f663282</code> 在检测到 actor <code>lora_rank=64</code> 后设置 <code>ref_in_actor=True</code>，不会创建独立 reference worker。trainer 的 <code>_compute_ref_log_prob()</code> 转而调用 actor worker，并传入 <code>no_lora_adapter=True</code>；worker 在 <code>disable_adapter()</code> 上下文中执行真实的 no-grad forward，从而以 SFT-Merged base 作为 reference policy。虽然启动脚本仍传入 <code>REF_PARAM_OFFLOAD=True</code>，该配置没有一份独立 reference model 可供 offload，因此不能把本次运行描述为“CPU-offloaded reference”。</p>
-        <p>历史日志中共提取到 22 个完整 timing step。为降低初始化、图编译和缓存预热的影响，统计时去掉前 5 个 warmup step，对剩余 17 个 step 分别计算总耗时，以及 <code>gen</code>、<code>old_log_prob</code>、<code>ref</code>、<code>update_actor</code> 和 <code>update_weights</code> 的均值、最小值与最大值。报告将原始字段 <code>update_actor</code> 称为“策略优化”，将 <code>update_weights</code> 称为“Actor→vLLM 同步”。历史日志只用于解释 fallback 瓶颈，不作为后续参数实验的 baseline。</p>
-        <p>训练侧参数实验改用 layered summon 成功的短运行作为 baseline。该 baseline 固定 <code>ppo_micro_batch_size_per_gpu=1</code>、<code>LOG_PROB_USE_DYNAMIC_BSZ=False</code>、<code>MODEL_USE_REMOVE_PADDING=False</code>，完成 5 个 step 且无 fallback。三个候选实验保持 S3 tree、KL=0.01、PPO epoch=2、batch size=2、rollout slot=20、<code>branch_n=4</code>、<code>beam_size=2</code>、<code>max_turns=3</code> 和 layered summon 不变；候选 A 仅将 micro batch 提高到 2，候选 B 开启 dynamic batching 与 remove padding 并使用 <code>ppo_max_token_len_per_gpu=16384</code>，候选 C 在候选 B 的基础上只把 token cap 提高到 32768。候选日志各跑 10 step，并去掉前 2 step warmup 后统计剩余 8 step。</p>
-        <p>rollout 并发实验继续从训练侧最优解出发：固定 <code>dynamic_bsz=True</code>、<code>remove_padding=True</code>、KL=0.01、PPO epoch=2 与 layered summon，只改变 vLLM rollout 侧的容量上限。baseline 使用 <code>max_num_seqs=4</code>、<code>max_num_batched_tokens=4096</code>；候选同时提高到 <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。两组各跑 10 step，并去掉前 2 step warmup 后统计剩余 8 step。</p>
-        <p>资源统计来自训练日志中的 <code>GPU_MONITOR</code>、verl actor perf 指标，以及历史 OOM/debug 记录。<code>GPU_MONITOR</code> 用于报告整卡显存峰值和逐卡利用率；<code>actor/perf/cpu_memory_used_gb</code> 与 actor allocated/reserved 指标用于观察 actor 侧容量；历史 cgroup/RSS 记录只用于解释 CPU-offload fallback 的主机内存压力。不同来源口径不同，因此只并列报告，不直接计算严格下降比例。</p>
-        <p class="source">分析日志：<code>artifacts/logs/verl/verl_grpo_s3_kl01_ep2_tree_final_14b_h100_4gpu_150step_bs2_n20_t10_turn3_g09_branch4_beam2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_summon_layered_14b_h100_4gpu_5step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_update_actor_micro2_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_update_actor_dynamic_bsz_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_update_actor_dynamic_bsz_tok32768_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_rollout_concurrency_baseline_14b_h100_4gpu_10step_bs2_n20_ep2_seqs4_tok4096.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_rollout_concurrency_seq8_tok8192_14b_h100_4gpu_10step_bs2_n20_ep2_seqs8_tok8192.log</code></p>
-      </section>
+        <section aria-labelledby="perf-method">
+          <h2 id="perf-method">2. 方法</h2>
+          <p>分析对象为 S3 tree rollout 的 KL=0.01、PPO epoch=2 训练日志。policy 仍由 SFT-Merged 14B base 和 fresh GRPO
+            LoRA（rank=64、alpha=128、all-linear）组成，actor 学习率为 <code>5e-5</code>。该运行使用 4 张 H100，训练 batch size 为 2，rollout
+            slot 数为 20，并设置 <code>branch_n=4</code>、<code>beam_size=2</code>、<code>max_turns=3</code>。KL 通过
+            <code>use_kl_loss=True</code> 引入，actor 参数与优化器不 offload。</p>
+          <p>项目锁定的 <code>verl@f663282</code> 在检测到 actor <code>lora_rank=64</code> 后设置
+            <code>ref_in_actor=True</code>，不会创建独立 reference worker。trainer 的 <code>_compute_ref_log_prob()</code> 转而调用
+            actor worker，并传入 <code>no_lora_adapter=True</code>；worker 在 <code>disable_adapter()</code> 上下文中执行真实的 no-grad
+            forward，从而以 SFT-Merged base 作为 reference policy。虽然启动脚本仍传入 <code>REF_PARAM_OFFLOAD=True</code>，该配置没有一份独立
+            reference model 可供 offload，因此不能把本次运行描述为“CPU-offloaded reference”。</p>
+          <p>历史日志中共提取到 22 个完整 timing step。为降低初始化、图编译和缓存预热的影响，统计时去掉前 5 个 warmup step，对剩余 17 个 step 分别计算总耗时，以及
+            <code>gen</code>、<code>old_log_prob</code>、<code>ref</code>、<code>update_actor</code> 和
+            <code>update_weights</code> 的均值、最小值与最大值。报告将原始字段 <code>update_actor</code> 称为“策略优化”，将
+            <code>update_weights</code> 称为“Actor→vLLM 同步”。历史日志只用于解释 fallback 瓶颈，不作为后续参数实验的 baseline。</p>
+          <p>训练侧参数实验改用 layered summon 成功的短运行作为 baseline。该 baseline 固定
+            <code>ppo_micro_batch_size_per_gpu=1</code>、<code>LOG_PROB_USE_DYNAMIC_BSZ=False</code>、<code>MODEL_USE_REMOVE_PADDING=False</code>，完成
+            5 个 step 且无 fallback。三个候选实验保持 S3 tree、KL=0.01、PPO epoch=2、batch size=2、rollout
+            slot=20、<code>branch_n=4</code>、<code>beam_size=2</code>、<code>max_turns=3</code> 和 layered summon 不变；候选 A
+            仅将 micro batch 提高到 2，候选 B 开启 dynamic batching 与 remove padding 并使用
+            <code>ppo_max_token_len_per_gpu=16384</code>，候选 C 在候选 B 的基础上只把 token cap 提高到 32768。候选日志各跑 10 step，并去掉前 2
+            step warmup 后统计剩余 8 step。</p>
+          <p>rollout 并发实验继续从训练侧最优解出发：固定 <code>dynamic_bsz=True</code>、<code>remove_padding=True</code>、KL=0.01、PPO
+            epoch=2 与 layered summon，只改变 vLLM rollout 侧的容量上限。baseline 使用
+            <code>max_num_seqs=4</code>、<code>max_num_batched_tokens=4096</code>；候选同时提高到
+            <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。两组各跑 10 step，并去掉前 2 step warmup 后统计剩余 8
+            step。</p>
+          <p>资源统计来自训练日志中的 <code>GPU_MONITOR</code>、verl actor perf 指标，以及历史 OOM/debug 记录。<code>GPU_MONITOR</code>
+            用于报告整卡显存峰值和逐卡利用率；<code>actor/perf/cpu_memory_used_gb</code> 与 actor allocated/reserved 指标用于观察 actor 侧容量；历史
+            cgroup/RSS 记录只用于解释 CPU-offload fallback 的主机内存压力。不同来源口径不同，因此只并列报告，不直接计算严格下降比例。</p>
+          <p class="source">
+            分析日志：<code>artifacts/logs/verl/verl_grpo_s3_kl01_ep2_tree_final_14b_h100_4gpu_150step_bs2_n20_t10_turn3_g09_branch4_beam2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_summon_layered_14b_h100_4gpu_5step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_update_actor_micro2_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_update_actor_dynamic_bsz_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_update_actor_dynamic_bsz_tok32768_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_rollout_concurrency_baseline_14b_h100_4gpu_10step_bs2_n20_ep2_seqs4_tok4096.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_rollout_concurrency_seq8_tok8192_14b_h100_4gpu_10step_bs2_n20_ep2_seqs8_tok8192.log</code>
+          </p>
+        </section>
 
-      <section aria-labelledby="perf-results">
-        <h2 id="perf-results">3. 流水线结果</h2>
-        <h3>3.1 Actor→vLLM 同步 fallback</h3>
-        <p>去掉 warmup 后，历史运行的平均 step 耗时为 101.601 秒。Actor→vLLM 同步平均耗时 44.328 秒，占 43.6%。后续源码与日志核对确认，该运行的 layered collector 返回空后进入 full-summon CPU-offload fallback：为了提取 LoRA state，FSDP 先一次性 materialize 并 offload 完整 14B 参数，随后 PEFT 才筛选 LoRA tensor；最终发给 vLLM 的 payload 仍是 adapter，并未把 LoRA merge 后的完整模型发送给 vLLM。因此这 44.328 秒不是纯 adapter 传输时间。策略优化平均耗时为 29.047 秒，占 28.6%。表 1 保留为历史 fallback 的瓶颈诊断，而不是修复后流水线的阶段排序。</p>
-        <p><code>gen</code> 平均耗时 22.788 秒，占 22.4%，但在不同 step 之间从 4.100 秒变化到 68.199 秒，是波动最大的阶段。这种变化与样本的生成长度和多轮交互路径有关。<code>old_log_prob</code> 平均耗时为 4.473 秒；共享 actor base、禁用 LoRA adapter 后计算的 <code>ref</code> 阶段平均耗时为 0.959 秒，占稳定阶段平均 step 时间的 0.9%。</p>
-        <p>源码中的 <code>ref</code> timer 包住完整的 <code>_compute_ref_log_prob(batch)</code> 调用及结果回收，worker 内部也确实执行模型 forward，因此该字段不是仅记录异步任务提交的空计时。<code>old_log_prob</code> 同时设置 <code>calculate_entropy=True</code>，而 reference 明确设置 <code>calculate_entropy=False</code>，这是前者约 4.47 秒而后者约 0.96 秒的主要实现差异。本次日志的 22 个训练 step 均记录了非零 <code>actor/kl_loss</code>，也说明 reference log-prob 已实际进入 KL loss。</p>
-        <p>表 1 同时给出基于当前平均 step 的 Amdahl 式投影：只改变目标阶段、保持其他阶段耗时不变。前三个主要阶段和 <code>old_log_prob</code> 按耗时减半计算；由于 <code>ref</code> 已经很短，使用“完全消除 reference 计算”作为其理论上限。投影吞吐收益按 <code>101.601 / projected_step_time − 1</code> 计算，不代表已经实测得到相同加速。</p>
+        <section aria-labelledby="perf-results">
+          <h2 id="perf-results">3. 流水线结果</h2>
+          <h3>3.1 Actor→vLLM 同步 fallback</h3>
+          <p>去掉 warmup 后，历史运行的平均 step 耗时为 101.601 秒。Actor→vLLM 同步平均耗时 44.328 秒，占 43.6%。后续源码与日志核对确认，该运行的 layered
+            collector 返回空后进入 full-summon CPU-offload fallback：为了提取 LoRA state，FSDP 先一次性 materialize 并 offload 完整 14B
+            参数，随后 PEFT 才筛选 LoRA tensor；最终发给 vLLM 的 payload 仍是 adapter，并未把 LoRA merge 后的完整模型发送给 vLLM。因此这 44.328 秒不是纯
+            adapter 传输时间。策略优化平均耗时为 29.047 秒，占 28.6%。表 1 保留为历史 fallback 的瓶颈诊断，而不是修复后流水线的阶段排序。</p>
+          <p><code>gen</code> 平均耗时 22.788 秒，占 22.4%，但在不同 step 之间从 4.100 秒变化到 68.199
+            秒，是波动最大的阶段。这种变化与样本的生成长度和多轮交互路径有关。<code>old_log_prob</code> 平均耗时为 4.473 秒；共享 actor base、禁用 LoRA adapter 后计算的
+            <code>ref</code> 阶段平均耗时为 0.959 秒，占稳定阶段平均 step 时间的 0.9%。</p>
+          <p>源码中的 <code>ref</code> timer 包住完整的 <code>_compute_ref_log_prob(batch)</code> 调用及结果回收，worker 内部也确实执行模型
+            forward，因此该字段不是仅记录异步任务提交的空计时。<code>old_log_prob</code> 同时设置 <code>calculate_entropy=True</code>，而 reference
+            明确设置 <code>calculate_entropy=False</code>，这是前者约 4.47 秒而后者约 0.96 秒的主要实现差异。本次日志的 22 个训练 step 均记录了非零
+            <code>actor/kl_loss</code>，也说明 reference log-prob 已实际进入 KL loss。</p>
+          <p>表 1 同时给出基于当前平均 step 的 Amdahl 式投影：只改变目标阶段、保持其他阶段耗时不变。前三个主要阶段和 <code>old_log_prob</code> 按耗时减半计算；由于
+            <code>ref</code> 已经很短，使用“完全消除 reference 计算”作为其理论上限。投影吞吐收益按 <code>101.601 / projected_step_time − 1</code>
+            计算，不代表已经实测得到相同加速。</p>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>阶段</th>
-                  <th>平均耗时</th>
-                  <th>最小值</th>
-                  <th>最大值</th>
-                  <th>step 占比</th>
-                  <th>优化情景</th>
-                  <th>端到端收益</th>
-                  <th>判断</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr class="best-row">
-                  <td>Actor→vLLM 同步</td>
-                  <td>44.328s</td>
-                  <td>43.970s</td>
-                  <td>44.783s</td>
-                  <td>43.6%</td>
-                  <td>耗时减半 → 79.4s/step</td>
-                  <td>吞吐约 +27.9%</td>
-                  <td><strong>历史 fallback 瓶颈</strong></td>
-                </tr>
-                <tr>
-                  <td>策略优化</td>
-                  <td>29.047s</td>
-                  <td>28.734s</td>
-                  <td>29.576s</td>
-                  <td>28.6%</td>
-                  <td>耗时减半 → 87.1s/step</td>
-                  <td>吞吐约 +16.7%</td>
-                  <td>第二大稳定开销</td>
-                </tr>
-                <tr>
-                  <td><code>rollout</code></td>
-                  <td>22.788s</td>
-                  <td>4.100s</td>
-                  <td>68.199s</td>
-                  <td>22.4%</td>
-                  <td>耗时减半 → 90.2s/step</td>
-                  <td>吞吐约 +12.6%</td>
-                  <td>波动最大</td>
-                </tr>
-                <tr>
-                  <td><code>old_log_prob</code></td>
-                  <td>4.473s</td>
-                  <td>4.343s</td>
-                  <td>4.887s</td>
-                  <td>4.4%</td>
-                  <td>耗时减半 → 99.4s/step</td>
-                  <td>吞吐约 +2.3%</td>
-                  <td>非主要瓶颈</td>
-                </tr>
-                <tr>
-                  <td><code>reference</code></td>
-                  <td>0.959s</td>
-                  <td>0.941s</td>
-                  <td>1.068s</td>
-                  <td>0.9%</td>
-                  <td>完全消除 → 100.6s/step</td>
-                  <td>吞吐约 +1.0%</td>
-                  <td>共享基座，非主要瓶颈</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>阶段</th>
+                    <th>平均耗时</th>
+                    <th>最小值</th>
+                    <th>最大值</th>
+                    <th>step 占比</th>
+                    <th>优化情景</th>
+                    <th>端到端收益</th>
+                    <th>判断</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="best-row">
+                    <td>Actor→vLLM 同步</td>
+                    <td>44.328s</td>
+                    <td>43.970s</td>
+                    <td>44.783s</td>
+                    <td>43.6%</td>
+                    <td>耗时减半 → 79.4s/step</td>
+                    <td>吞吐约 +27.9%</td>
+                    <td><strong>历史 fallback 瓶颈</strong></td>
+                  </tr>
+                  <tr>
+                    <td>策略优化</td>
+                    <td>29.047s</td>
+                    <td>28.734s</td>
+                    <td>29.576s</td>
+                    <td>28.6%</td>
+                    <td>耗时减半 → 87.1s/step</td>
+                    <td>吞吐约 +16.7%</td>
+                    <td>第二大稳定开销</td>
+                  </tr>
+                  <tr>
+                    <td><code>rollout</code></td>
+                    <td>22.788s</td>
+                    <td>4.100s</td>
+                    <td>68.199s</td>
+                    <td>22.4%</td>
+                    <td>耗时减半 → 90.2s/step</td>
+                    <td>吞吐约 +12.6%</td>
+                    <td>波动最大</td>
+                  </tr>
+                  <tr>
+                    <td><code>old_log_prob</code></td>
+                    <td>4.473s</td>
+                    <td>4.343s</td>
+                    <td>4.887s</td>
+                    <td>4.4%</td>
+                    <td>耗时减半 → 99.4s/step</td>
+                    <td>吞吐约 +2.3%</td>
+                    <td>非主要瓶颈</td>
+                  </tr>
+                  <tr>
+                    <td><code>reference</code></td>
+                    <td>0.959s</td>
+                    <td>0.941s</td>
+                    <td>1.068s</td>
+                    <td>0.9%</td>
+                    <td>完全消除 → 100.6s/step</td>
+                    <td>吞吐约 +1.0%</td>
+                    <td>共享基座，非主要瓶颈</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 1. 历史 CPU-offload fallback 运行去掉前 5 个 warmup step 后的分阶段耗时。</p>
           </div>
-          <p class="caption">表 1. 历史 CPU-offload fallback 运行去掉前 5 个 warmup step 后的分阶段耗时。</p>
-        </div>
 
-        <p>资源日志进一步说明这条 44 秒路径为什么不能作为当前同步开销：full-summon CPU-offload fallback 可以让 GPU 继续运行，但 CPU 内存曾接近 470GB；显式 full summon 在单卡 80,717 MiB 后仍需继续分配 1.03 GiB，超过 80GB H100 容量并 OOM。相比之下，layered summon 成功短运行在单卡约 59.9GB 峰值下完成，Actor→vLLM 同步平均降到 7.222 秒。</p>
+          <p>资源日志进一步说明这条 44 秒路径为什么不能作为当前同步开销：full-summon CPU-offload fallback 可以让 GPU 继续运行，但 CPU 内存曾接近 470GB；显式 full
+            summon 在单卡 80,717 MiB 后仍需继续分配 1.03 GiB，超过 80GB H100 容量并 OOM。相比之下，layered summon 成功短运行在单卡约 59.9GB
+            峰值下完成，Actor→vLLM 同步平均降到 7.222 秒。</p>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>同步路径</th>
-                  <th>单卡峰值</th>
-                  <th>结果</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>full summon - CPU offload</td>
-                  <td>60.5GB</td>
-                  <td>GPU 可运行；CPU 内存接近 470GB</td>
-                </tr>
-                <tr>
-                  <td>显式 full summon</td>
-                  <td>80,717 MiB 后仍需 1.03 GiB</td>
-                  <td>超过 80GB 单卡容量；CUDA OOM</td>
-                </tr>
-                <tr class="best-row">
-                  <td>layered summon</td>
-                  <td>59,893 MiB（58.5 GiB）</td>
-                  <td><strong>GPU 可运行；Actor CPU 内存峰值 141.5GB</strong></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>同步路径</th>
+                    <th>单卡峰值</th>
+                    <th>结果</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>full summon - CPU offload</td>
+                    <td>60.5GB</td>
+                    <td>GPU 可运行；CPU 内存接近 470GB</td>
+                  </tr>
+                  <tr>
+                    <td>显式 full summon</td>
+                    <td>80,717 MiB 后仍需 1.03 GiB</td>
+                    <td>超过 80GB 单卡容量；CUDA OOM</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>layered summon</td>
+                    <td>59,893 MiB（58.5 GiB）</td>
+                    <td><strong>GPU 可运行；Actor CPU 内存峰值 141.5GB</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 2. 不同 summon 路径的显存容量结果；full summon - CPU offload 与 layered summon 不应混同。</p>
           </div>
-          <p class="caption">表 2. 不同 summon 路径的显存容量结果；full summon - CPU offload 与 layered summon 不应混同。</p>
-        </div>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>GPU</th>
-                  <th>平均显存</th>
-                  <th>峰值显存</th>
-                  <th>平均利用率</th>
-                  <th>峰值利用率</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>0</td>
-                  <td>35.1GB</td>
-                  <td>54.2GB</td>
-                  <td>26.8%</td>
-                  <td>100%</td>
-                </tr>
-                <tr>
-                  <td>1</td>
-                  <td>44.6GB</td>
-                  <td>60.0GB</td>
-                  <td>34.9%</td>
-                  <td>100%</td>
-                </tr>
-                <tr>
-                  <td>2</td>
-                  <td>44.8GB</td>
-                  <td>60.5GB</td>
-                  <td>44.5%</td>
-                  <td>100%</td>
-                </tr>
-                <tr>
-                  <td>3</td>
-                  <td>44.0GB</td>
-                  <td>59.8GB</td>
-                  <td>39.4%</td>
-                  <td>100%</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>GPU</th>
+                    <th>平均显存</th>
+                    <th>峰值显存</th>
+                    <th>平均利用率</th>
+                    <th>峰值利用率</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>0</td>
+                    <td>35.1GB</td>
+                    <td>54.2GB</td>
+                    <td>26.8%</td>
+                    <td>100%</td>
+                  </tr>
+                  <tr>
+                    <td>1</td>
+                    <td>44.6GB</td>
+                    <td>60.0GB</td>
+                    <td>34.9%</td>
+                    <td>100%</td>
+                  </tr>
+                  <tr>
+                    <td>2</td>
+                    <td>44.8GB</td>
+                    <td>60.5GB</td>
+                    <td>44.5%</td>
+                    <td>100%</td>
+                  </tr>
+                  <tr>
+                    <td>3</td>
+                    <td>44.0GB</td>
+                    <td>59.8GB</td>
+                    <td>39.4%</td>
+                    <td>100%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 3. CPU-offload fallback 运行中的 GPU_MONITOR 统计，共 1,152 条记录。</p>
           </div>
-          <p class="caption">表 3. CPU-offload fallback 运行中的 GPU_MONITOR 统计，共 1,152 条记录。</p>
-        </div>
 
-        <h3>3.2 Actor update 与 token packing</h3>
-        <p>修复后的 layered baseline 中，Actor→vLLM 同步平均为 7.222 秒，已经不再是 44 秒级别的瓶颈。此时策略优化平均耗时 30.864 秒，占平均 step 的 49.5%，因此参数实验集中在 actor update 的 micro-batch 和 token packing。表 4 使用 layered 成功短运行作为 baseline；候选运行的 rollout 耗时更高，说明样本生成长度和多轮路径仍会带来短日志波动，但 actor 侧的收益足够大，使端到端 step 仍显著下降。</p>
+          <h3>3.2 Actor update 与 token packing</h3>
+          <p>修复后的 layered baseline 中，Actor→vLLM 同步平均为 7.222 秒，已经不再是 44 秒级别的瓶颈。此时策略优化平均耗时 30.864 秒，占平均 step 的
+            49.5%，因此参数实验集中在 actor update 的 micro-batch 和 token packing。表 4 使用 layered 成功短运行作为 baseline；候选运行的 rollout
+            耗时更高，说明样本生成长度和多轮路径仍会带来短日志波动，但 actor 侧的收益足够大，使端到端 step 仍显著下降。</p>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Config</th>
-                  <th>Step</th>
-                  <th><code>rollout</code></th>
-                  <th><code>old_log_prob</code></th>
-                  <th><code>reference</code></th>
-                  <th>Policy update</th>
-                  <th>Actor→vLLM sync</th>
-                  <th>Policy update / 1k tokens</th>
-                  <th>Throughput</th>
-                  <th>vs. baseline</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Layered baseline：micro=1，dynamic=False，remove_padding=False</td>
-                  <td>62.368s</td>
-                  <td>18.560s</td>
-                  <td>4.773s</td>
-                  <td>0.941s</td>
-                  <td>30.864s</td>
-                  <td>7.222s</td>
-                  <td>3.144s</td>
-                  <td>43.247</td>
-                  <td>baseline</td>
-                </tr>
-                <tr>
-                  <td>micro=2，dynamic=False，remove_padding=False</td>
-                  <td>48.820s</td>
-                  <td>25.455s</td>
-                  <td>2.319s</td>
-                  <td>0.645s</td>
-                  <td>14.541s</td>
-                  <td>5.853s</td>
-                  <td>1.318s</td>
-                  <td>65.779</td>
-                  <td>step -21.7%；策略优化 -52.9%</td>
-                </tr>
-                <tr class="best-row">
-                  <td>dynamic=True，remove_padding=True，token cap=16384</td>
-                  <td>37.114s</td>
-                  <td>26.429s</td>
-                  <td>0.742s</td>
-                  <td>0.449s</td>
-                  <td>3.670s</td>
-                  <td>5.818s</td>
-                  <td>0.335s</td>
-                  <td>82.282</td>
-                  <td><strong>step -40.5%；策略优化 -88.1%</strong></td>
-                </tr>
-                <tr>
-                  <td>dynamic=True，remove_padding=True，token cap=32768</td>
-                  <td>32.017s</td>
-                  <td>21.347s</td>
-                  <td>0.807s</td>
-                  <td>0.404s</td>
-                  <td>3.706s</td>
-                  <td>5.747s</td>
-                  <td>0.329s</td>
-                  <td>116.809</td>
-                  <td><strong>step -48.7%；策略优化 -88.0%</strong></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Config</th>
+                    <th>Step</th>
+                    <th><code>rollout</code></th>
+                    <th><code>old_log_prob</code></th>
+                    <th><code>reference</code></th>
+                    <th>Policy update</th>
+                    <th>Actor→vLLM sync</th>
+                    <th>Policy update / 1k tokens</th>
+                    <th>Throughput</th>
+                    <th>vs. baseline</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Layered baseline：micro=1，dynamic=False，remove_padding=False</td>
+                    <td>62.368s</td>
+                    <td>18.560s</td>
+                    <td>4.773s</td>
+                    <td>0.941s</td>
+                    <td>30.864s</td>
+                    <td>7.222s</td>
+                    <td>3.144s</td>
+                    <td>43.247</td>
+                    <td>baseline</td>
+                  </tr>
+                  <tr>
+                    <td>micro=2，dynamic=False，remove_padding=False</td>
+                    <td>48.820s</td>
+                    <td>25.455s</td>
+                    <td>2.319s</td>
+                    <td>0.645s</td>
+                    <td>14.541s</td>
+                    <td>5.853s</td>
+                    <td>1.318s</td>
+                    <td>65.779</td>
+                    <td>step -21.7%；策略优化 -52.9%</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>dynamic=True，remove_padding=True，token cap=16384</td>
+                    <td>37.114s</td>
+                    <td>26.429s</td>
+                    <td>0.742s</td>
+                    <td>0.449s</td>
+                    <td>3.670s</td>
+                    <td>5.818s</td>
+                    <td>0.335s</td>
+                    <td>82.282</td>
+                    <td><strong>step -40.5%；策略优化 -88.1%</strong></td>
+                  </tr>
+                  <tr>
+                    <td>dynamic=True，remove_padding=True，token cap=32768</td>
+                    <td>32.017s</td>
+                    <td>21.347s</td>
+                    <td>0.807s</td>
+                    <td>0.404s</td>
+                    <td>3.706s</td>
+                    <td>5.747s</td>
+                    <td>0.329s</td>
+                    <td>116.809</td>
+                    <td><strong>step -48.7%；策略优化 -88.0%</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 4. 修复后 layered summon 路径下的 actor update 参数实验。baseline 为
+              <code>verl_grpo_s3_summon_layered_14b_h100_4gpu_5step_bs2_n20_ep2.log</code>；三个候选去掉前 2 个 warmup step。</p>
           </div>
-          <p class="caption">表 4. 修复后 layered summon 路径下的 actor update 参数实验。baseline 为 <code>verl_grpo_s3_summon_layered_14b_h100_4gpu_5step_bs2_n20_ep2.log</code>；三个候选去掉前 2 个 warmup step。</p>
-        </div>
 
-        <p>对应的资源结果显示，micro=2 没有增加 actor 显存峰值；dynamic/remove-padding 带来少量 actor 侧临时 workspace，actor allocated 峰值增加约 0.86GB。token cap 提高到 32768 后 actor allocated 峰值为 26.699GB，较 16384 只增加约 0.22GB；整卡峰值仍为 59,891 MiB。CPU 内存从 layered baseline 的 141.5GB 降到 118–123GB，主要说明新日志没有进入 full-summon CPU-offload fallback；由于各组运行步数和预热窗口不同，该 CPU 指标只作为容量观察，不直接解释为参数设置本身带来的严格下降。</p>
+          <p>对应的资源结果显示，micro=2 没有增加 actor 显存峰值；dynamic/remove-padding 带来少量 actor 侧临时 workspace，actor allocated 峰值增加约
+            0.86GB。token cap 提高到 32768 后 actor allocated 峰值为 26.699GB，较 16384 只增加约 0.22GB；整卡峰值仍为 59,891 MiB。CPU 内存从
+            layered baseline 的 141.5GB 降到 118–123GB，主要说明新日志没有进入 full-summon CPU-offload fallback；由于各组运行步数和预热窗口不同，该 CPU
+            指标只作为容量观察，不直接解释为参数设置本身带来的严格下降。</p>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table class="compact-resource-table">
-              <thead>
-                <tr>
-                  <th>Config</th>
-                  <th>Key techniques</th>
-                  <th>Actor allocated peak</th>
-                  <th>Actor reserved peak</th>
-                  <th>Actor CPU peak</th>
-                  <th>GPU memory peak</th>
-                  <th>Mean GPU util range</th>
-                  <th>Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Layered baseline</td>
-                  <td>LoRA + FSDP + vLLM TP=4 + layered summon；micro=1；无 dynamic；无 remove padding</td>
-                  <td>25.614GB</td>
-                  <td>32.346GB</td>
-                  <td>141.533GB</td>
-                  <td>59,893 MiB</td>
-                  <td>22.2%–46.4%</td>
-                  <td>GPU 可运行；Actor CPU 内存峰值 141.5GB；未进入 full-summon CPU-offload 路径</td>
-                </tr>
-                <tr>
-                  <td>micro=2</td>
-                  <td>只提高 PPO/logprob micro batch；仍无 dynamic；无 remove padding</td>
-                  <td>25.614GB</td>
-                  <td>32.346GB</td>
-                  <td>118.253GB</td>
-                  <td>59,895 MiB</td>
-                  <td>24.9%–40.0%</td>
-                  <td>减少 microbatch split 次数，时间下降；显存峰值基本不变</td>
-                </tr>
-                <tr class="best-row">
-                  <td>dynamic=True + remove_padding=True</td>
-                  <td>Dynamic batching by token budget; remove padding; token cap=16384</td>
-                  <td>26.477GB</td>
-                  <td>32.346GB</td>
-                  <td>120.232GB</td>
-                  <td>59,891 MiB</td>
-                  <td>25.1%–57.8%</td>
-                  <td><strong>actor 时间大幅下降；只增加约 0.86GB actor allocated</strong></td>
-                </tr>
-                <tr>
-                  <td>dynamic=True + remove_padding=True</td>
-                  <td>Dynamic batching by token budget; remove padding; token cap=32768</td>
-                  <td>26.699GB</td>
-                  <td>32.346GB</td>
-                  <td>122.847GB</td>
-                  <td>59,891 MiB</td>
-                  <td>未统计逐卡范围</td>
-                  <td><strong>更大 token cap 可运行；整卡显存未上升</strong></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table class="compact-resource-table">
+                <thead>
+                  <tr>
+                    <th>Config</th>
+                    <th>Key techniques</th>
+                    <th>Actor allocated peak</th>
+                    <th>Actor reserved peak</th>
+                    <th>Actor CPU peak</th>
+                    <th>GPU memory peak</th>
+                    <th>Mean GPU util range</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Layered baseline</td>
+                    <td>LoRA + FSDP + vLLM TP=4 + layered summon；micro=1；无 dynamic；无 remove padding</td>
+                    <td>25.614GB</td>
+                    <td>32.346GB</td>
+                    <td>141.533GB</td>
+                    <td>59,893 MiB</td>
+                    <td>22.2%–46.4%</td>
+                    <td>GPU 可运行；Actor CPU 内存峰值 141.5GB；未进入 full-summon CPU-offload 路径</td>
+                  </tr>
+                  <tr>
+                    <td>micro=2</td>
+                    <td>只提高 PPO/logprob micro batch；仍无 dynamic；无 remove padding</td>
+                    <td>25.614GB</td>
+                    <td>32.346GB</td>
+                    <td>118.253GB</td>
+                    <td>59,895 MiB</td>
+                    <td>24.9%–40.0%</td>
+                    <td>减少 microbatch split 次数，时间下降；显存峰值基本不变</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>dynamic=True + remove_padding=True</td>
+                    <td>Dynamic batching by token budget; remove padding; token cap=16384</td>
+                    <td>26.477GB</td>
+                    <td>32.346GB</td>
+                    <td>120.232GB</td>
+                    <td>59,891 MiB</td>
+                    <td>25.1%–57.8%</td>
+                    <td><strong>actor 时间大幅下降；只增加约 0.86GB actor allocated</strong></td>
+                  </tr>
+                  <tr>
+                    <td>dynamic=True + remove_padding=True</td>
+                    <td>Dynamic batching by token budget; remove padding; token cap=32768</td>
+                    <td>26.699GB</td>
+                    <td>32.346GB</td>
+                    <td>122.847GB</td>
+                    <td>59,891 MiB</td>
+                    <td>未统计逐卡范围</td>
+                    <td><strong>更大 token cap 可运行；整卡显存未上升</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 5. Actor update 参数实验对应的资源峰值。整卡显存来自 <code>GPU_MONITOR</code>，actor 显存与 CPU 内存来自 verl
+              actor 指标。</p>
           </div>
-          <p class="caption">表 5. Actor update 参数实验对应的资源峰值。整卡显存来自 <code>GPU_MONITOR</code>，actor 显存与 CPU 内存来自 verl actor 指标。</p>
-        </div>
 
-        <p>将 token cap 从 16384 提高到 32768 后，策略优化耗时从 3.670 秒变为 3.706 秒，基本持平；<code>old_log_prob</code> 也没有继续下降。因此现有日志不支持“更大 token cap 进一步优化 actor update”的结论。该组平均 step 更低主要伴随 rollout 从 26.429 秒降到 21.347 秒，考虑到两组都只有 8 个测量 step，应先解释为短日志中的 rollout 长度与路径波动；但容量上看，32768 至少没有引入明显额外时间或显存惩罚。</p>
+          <p>将 token cap 从 16384 提高到 32768 后，策略优化耗时从 3.670 秒变为 3.706 秒，基本持平；<code>old_log_prob</code>
+            也没有继续下降。因此现有日志不支持“更大 token cap 进一步优化 actor update”的结论。该组平均 step 更低主要伴随 rollout 从 26.429 秒降到 21.347
+            秒，考虑到两组都只有 8 个测量 step，应先解释为短日志中的 rollout 长度与路径波动；但容量上看，32768 至少没有引入明显额外时间或显存惩罚。</p>
 
-        <h3>3.3 Rollout 并发容量</h3>
-        <p>训练侧优化后，rollout 成为新的主要耗时来源。因此 rollout 容量实验只调整 vLLM rollout 并发容量。表 6 显示，将 <code>max_num_seqs</code> 与 <code>max_num_batched_tokens</code> 同时提高后，rollout 平均耗时从 24.558 秒降至 18.000 秒，端到端 step 从 35.225 秒降至 28.629 秒。actor update、old log-prob、reference 和 Actor→vLLM 同步均基本不变，说明该改动主要作用在 rollout 侧。</p>
+          <h3>3.3 Rollout 并发容量</h3>
+          <p>训练侧优化后，rollout 成为新的主要耗时来源。因此 rollout 容量实验只调整 vLLM rollout 并发容量。表 6 显示，将 <code>max_num_seqs</code> 与
+            <code>max_num_batched_tokens</code> 同时提高后，rollout 平均耗时从 24.558 秒降至 18.000 秒，端到端 step 从 35.225 秒降至 28.629
+            秒。actor update、old log-prob、reference 和 Actor→vLLM 同步均基本不变，说明该改动主要作用在 rollout 侧。</p>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>配置</th>
-                  <th>vLLM rollout capacity</th>
-                  <th>step</th>
-                  <th><code>rollout</code></th>
-                  <th><code>old_log_prob</code></th>
-                  <th><code>reference</code></th>
-                  <th>策略优化</th>
-                  <th>Actor→vLLM 同步</th>
-                  <th>吞吐</th>
-                  <th>相对 baseline</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Current best training config</td>
-                  <td><code>seqs=4</code>；<code>tokens=4096</code></td>
-                  <td>35.225s</td>
-                  <td>24.558s</td>
-                  <td>0.708s</td>
-                  <td>0.446s</td>
-                  <td>3.683s</td>
-                  <td>5.824s</td>
-                  <td>111.817</td>
-                  <td>baseline</td>
-                </tr>
-                <tr class="best-row">
-                  <td>Higher rollout concurrency</td>
-                  <td><code>seqs=8</code>；<code>tokens=8192</code></td>
-                  <td>28.629s</td>
-                  <td>18.000s</td>
-                  <td>0.705s</td>
-                  <td>0.437s</td>
-                  <td>3.646s</td>
-                  <td>5.835s</td>
-                  <td>114.776</td>
-                  <td><strong>step -18.7%；rollout -26.7%</strong></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>配置</th>
+                    <th>vLLM rollout capacity</th>
+                    <th>step</th>
+                    <th><code>rollout</code></th>
+                    <th><code>old_log_prob</code></th>
+                    <th><code>reference</code></th>
+                    <th>策略优化</th>
+                    <th>Actor→vLLM 同步</th>
+                    <th>吞吐</th>
+                    <th>相对 baseline</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Current best training config</td>
+                    <td><code>seqs=4</code>；<code>tokens=4096</code></td>
+                    <td>35.225s</td>
+                    <td>24.558s</td>
+                    <td>0.708s</td>
+                    <td>0.446s</td>
+                    <td>3.683s</td>
+                    <td>5.824s</td>
+                    <td>111.817</td>
+                    <td>baseline</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>Higher rollout concurrency</td>
+                    <td><code>seqs=8</code>；<code>tokens=8192</code></td>
+                    <td>28.629s</td>
+                    <td>18.000s</td>
+                    <td>0.705s</td>
+                    <td>0.437s</td>
+                    <td>3.646s</td>
+                    <td>5.835s</td>
+                    <td>114.776</td>
+                    <td><strong>step -18.7%；rollout -26.7%</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 6. 在当前最优训练侧配置上继续提高 vLLM rollout 并发容量。两组均去掉前 2 个 warmup step；该实验同时改变
+              <code>max_num_seqs</code> 与 <code>max_num_batched_tokens</code>，因此结论是更大的 rollout 容量有效，而不是区分两个参数的独立贡献。</p>
           </div>
-          <p class="caption">表 6. 在当前最优训练侧配置上继续提高 vLLM rollout 并发容量。两组均去掉前 2 个 warmup step；该实验同时改变 <code>max_num_seqs</code> 与 <code>max_num_batched_tokens</code>，因此结论是更大的 rollout 容量有效，而不是区分两个参数的独立贡献。</p>
-        </div>
 
-        <p>资源上，提高 rollout 容量没有把整卡显存峰值推高：<code>seqs=4/tokens=4096</code> 的峰值为 59,891 MiB，<code>seqs=8/tokens=8192</code> 的峰值为 59,643 MiB。两组 actor allocated/reserved 峰值也基本一致，说明该优化主要改变 vLLM 调度上限，而不是改变常驻 14B 模型副本数量。</p>
+          <p>资源上，提高 rollout 容量没有把整卡显存峰值推高：<code>seqs=4/tokens=4096</code> 的峰值为 59,891
+            MiB，<code>seqs=8/tokens=8192</code> 的峰值为 59,643 MiB。两组 actor allocated/reserved 峰值也基本一致，说明该优化主要改变 vLLM
+            调度上限，而不是改变常驻 14B 模型副本数量。</p>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table class="compact-resource-table">
-              <thead>
-                <tr>
-                  <th>Config</th>
-                  <th>vLLM rollout capacity</th>
-                  <th>Actor allocated peak</th>
-                  <th>Actor reserved peak</th>
-                  <th>Actor CPU peak</th>
-                  <th>GPU memory peak</th>
-                  <th>Mean GPU util range</th>
-                  <th>Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Current best training config</td>
-                  <td><code>seqs=4</code>；<code>tokens=4096</code></td>
-                  <td>26.607GB</td>
-                  <td>32.346GB</td>
-                  <td>184.676GB</td>
-                  <td>59,891 MiB</td>
-                  <td>未统计逐卡范围</td>
-                  <td>rollout 并发 baseline</td>
-                </tr>
-                <tr class="best-row">
-                  <td>Higher rollout concurrency</td>
-                  <td><code>seqs=8</code>；<code>tokens=8192</code></td>
-                  <td>26.477GB</td>
-                  <td>32.346GB</td>
-                  <td>175.320GB</td>
-                  <td>59,643 MiB</td>
-                  <td>未统计逐卡范围</td>
-                  <td><strong>rollout 时间下降；整卡显存未上升</strong></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table class="compact-resource-table">
+                <thead>
+                  <tr>
+                    <th>Config</th>
+                    <th>vLLM rollout capacity</th>
+                    <th>Actor allocated peak</th>
+                    <th>Actor reserved peak</th>
+                    <th>Actor CPU peak</th>
+                    <th>GPU memory peak</th>
+                    <th>Mean GPU util range</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Current best training config</td>
+                    <td><code>seqs=4</code>；<code>tokens=4096</code></td>
+                    <td>26.607GB</td>
+                    <td>32.346GB</td>
+                    <td>184.676GB</td>
+                    <td>59,891 MiB</td>
+                    <td>未统计逐卡范围</td>
+                    <td>rollout 并发 baseline</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>Higher rollout concurrency</td>
+                    <td><code>seqs=8</code>；<code>tokens=8192</code></td>
+                    <td>26.477GB</td>
+                    <td>32.346GB</td>
+                    <td>175.320GB</td>
+                    <td>59,643 MiB</td>
+                    <td>未统计逐卡范围</td>
+                    <td><strong>rollout 时间下降；整卡显存未上升</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 7. Rollout 并发容量实验对应的资源峰值。CPU 内存只作为容量观察，不用于解释参数本身带来的严格下降。</p>
           </div>
-          <p class="caption">表 7. Rollout 并发容量实验对应的资源峰值。CPU 内存只作为容量观察，不用于解释参数本身带来的严格下降。</p>
-        </div>
-      </section>
+        </section>
 
-      <section aria-labelledby="perf-rollout-oom">
-        <h2 id="perf-rollout-oom">4. Rollout n=24 显存 OOM 诊断</h2>
+        <section aria-labelledby="perf-rollout-oom">
+          <h2 id="perf-rollout-oom">4. Rollout n=24 显存 OOM 诊断</h2>
 
-        <h3>4.1 问题</h3>
-        <p>在固定 4×H100、train batch size=4、KL=0.01、PPO epoch=2、dynamic batching、remove padding 与 layered summon 的 rollout 对照实验中，S3 <code>branch=4/beam=2/rollout_n=20</code> 和 S1 <code>rollout_n=8</code> 均完成 100 step；S3 <code>branch=8/beam=1/rollout_n=24</code> 的初始运行则在完成第 32 step 后失败。异常栈停在 <code>checkpoint_manager.update_weights → rollout.resume(tags=["weights"]) → vLLM wake_up → CuMem create_and_map</code>，因此这不是 vLLM 动态生成阶段的 KV-cache OOM，也不是 actor forward/backward 内核直接 OOM，而是 actor 更新结束后、vLLM 重新映射 sleeping weight buffers 时发生的阶段边界 OOM。加入唤醒前 actor cache 清理后，同一 n=24 配置已完成 100 step，因而该故障现在同时具备失败日志和修复复跑证据。</p>
+          <h3>4.1 问题</h3>
+          <p>在固定 4×H100、train batch size=4、KL=0.01、PPO epoch=2、dynamic batching、remove padding 与 layered summon 的
+            rollout 对照实验中，S3 <code>branch=4/beam=2/rollout_n=20</code> 和 S1 <code>rollout_n=8</code> 均完成 100 step；S3
+            <code>branch=8/beam=1/rollout_n=24</code> 的初始运行则在完成第 32 step 后失败。异常栈停在
+            <code>checkpoint_manager.update_weights → rollout.resume(tags=["weights"]) → vLLM wake_up → CuMem create_and_map</code>，因此这不是
+            vLLM 动态生成阶段的 KV-cache OOM，也不是 actor forward/backward 内核直接 OOM，而是 actor 更新结束后、vLLM 重新映射 sleeping weight
+            buffers 时发生的阶段边界 OOM。加入唤醒前 actor cache 清理后，同一 n=24 配置已完成 100 step，因而该故障现在同时具备失败日志和修复复跑证据。</p>
 
-        <h3>4.2 分析方法</h3>
-        <p>分析首先对齐三份日志的共同配置和前 32 个完整 step，比较 <code>perf/total_num_tokens</code>、<code>global_seqlen/balanced_max</code>、<code>response/aborted_ratio</code>、<code>timing_s/update_actor</code> 与 actor allocated/reserved 高水位；随后用 <code>GPU_MONITOR</code> 区分 rollout/generation、actor update 和 Actor→vLLM 同步阶段。最后核对项目锁定的 <code>verl@f663282</code> 源码：每个训练 batch 在 backward 前清梯度，FSDP train-mode 在整个 PPO update 退出时再次调用 <code>optimizer_zero_grad()</code>。因此 attention 中间量、activation、计算图和最后一次梯度在权重同步前都已失效；仍需长期保留的是模型参数、LoRA 参数、优化器状态以及 FSDP/NCCL 固定 buffer。</p>
+          <h3>4.2 分析方法</h3>
+          <p>分析首先对齐三份日志的共同配置和前 32 个完整 step，比较
+            <code>perf/total_num_tokens</code>、<code>global_seqlen/balanced_max</code>、<code>response/aborted_ratio</code>、<code>timing_s/update_actor</code>
+            与 actor allocated/reserved 高水位；随后用 <code>GPU_MONITOR</code> 区分 rollout/generation、actor update 和 Actor→vLLM
+            同步阶段。最后核对项目锁定的 <code>verl@f663282</code> 源码：每个训练 batch 在 backward 前清梯度，FSDP train-mode 在整个 PPO update
+            退出时再次调用 <code>optimizer_zero_grad()</code>。因此 attention
+            中间量、activation、计算图和最后一次梯度在权重同步前都已失效；仍需长期保留的是模型参数、LoRA 参数、优化器状态以及 FSDP/NCCL 固定 buffer。</p>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>配置</th>
-                  <th>Global batch</th>
-                  <th>前 32 step 平均 tokens</th>
-                  <th>平均 aborted ratio</th>
-                  <th>平均 actor update</th>
-                  <th>结果</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>S3 <code>branch=4</code> / <code>beam=2</code> / <code>n=20</code></td>
-                  <td>80</td>
-                  <td>21,826</td>
-                  <td>63.1%</td>
-                  <td>6.02s</td>
-                  <td>完成 100 step</td>
-                </tr>
-                <tr>
-                  <td>S3 <code>branch=8</code> / <code>beam=1</code> / <code>n=24</code>，修复前</td>
-                  <td>96</td>
-                  <td>26,976</td>
-                  <td>45.1%</td>
-                  <td>7.68s</td>
-                  <td><strong>第 33 step 边界 OOM</strong></td>
-                </tr>
-                <tr class="best-row">
-                  <td>S3 <code>branch=8</code> / <code>beam=1</code> / <code>n=24</code>，cache fix</td>
-                  <td>96</td>
-                  <td>26,351</td>
-                  <td>49.5%</td>
-                  <td>7.45s</td>
-                  <td><strong>完成 100 step</strong></td>
-                </tr>
-                <tr>
-                  <td>S1 chain <code>n=8</code></td>
-                  <td>32</td>
-                  <td>28,013</td>
-                  <td>0%</td>
-                  <td>8.36s</td>
-                  <td>完成 100 step</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>配置</th>
+                    <th>Global batch</th>
+                    <th>前 32 step 平均 tokens</th>
+                    <th>平均 aborted ratio</th>
+                    <th>平均 actor update</th>
+                    <th>结果</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>S3 <code>branch=4</code> / <code>beam=2</code> / <code>n=20</code></td>
+                    <td>80</td>
+                    <td>21,826</td>
+                    <td>63.1%</td>
+                    <td>6.02s</td>
+                    <td>完成 100 step</td>
+                  </tr>
+                  <tr>
+                    <td>S3 <code>branch=8</code> / <code>beam=1</code> / <code>n=24</code>，修复前</td>
+                    <td>96</td>
+                    <td>26,976</td>
+                    <td>45.1%</td>
+                    <td>7.68s</td>
+                    <td><strong>第 33 step 边界 OOM</strong></td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>S3 <code>branch=8</code> / <code>beam=1</code> / <code>n=24</code>，cache fix</td>
+                    <td>96</td>
+                    <td>26,351</td>
+                    <td>49.5%</td>
+                    <td>7.45s</td>
+                    <td><strong>完成 100 step</strong></td>
+                  </tr>
+                  <tr>
+                    <td>S1 chain <code>n=8</code></td>
+                    <td>32</td>
+                    <td>28,013</td>
+                    <td>0%</td>
+                    <td>8.36s</td>
+                    <td>完成 100 step</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 8. 三组 rollout 对照及 n=24 修复复跑的前 32 个完整 step。S1 的平均 token 数高于失败组，且 n=24 修复前后平均负载接近，说明平均
+              token 负载本身不足以解释 OOM；必须结合极端 batch、allocator cache 和阶段边界显存共同判断。</p>
           </div>
-          <p class="caption">表 8. 三组 rollout 对照及 n=24 修复复跑的前 32 个完整 step。S1 的平均 token 数高于失败组，且 n=24 修复前后平均负载接近，说明平均 token 负载本身不足以解释 OOM；必须结合极端 batch、allocator cache 和阶段边界显存共同判断。</p>
-        </div>
 
-        <h3>4.3 根因</h3>
-        <p><code>rollout_n=24</code> 首先提高了 actor 训练压力。与 S3 n=20 相比，初始 n=24 组的平均 token 数增加 23.6%，actor update 时间增加约 27.5%；其未 aborted 的 response 槽比例由约 36.9% 提高到 54.9%，因此变化不只是名义槽位数增加 20%。更关键的是第 33 个数据 batch：S3 n=20 在该 step 达到 49,190 tokens、每卡平衡后 12,298 tokens，actor reserved 高水位从 42.14GiB 跳到 50.52GiB，但仍勉强完成；S1 同一位置达到 47,716 tokens 和 49.84GiB reserved，也完成同步。初始 n=24 运行在写出第 33 step 指标之前失败，因此日志中的 44.21GiB reserved 只是第 32 step 的旧高水位，不能代表故障瞬间的 actor 状态。</p>
-        <p>修复复跑补全了缺失的第 33 step 数据：该 step 实际达到 61,558 tokens，未平衡最长 rank 为 31,884 tokens，每卡平衡后为 15,394 tokens；actor allocated/reserved 高水位分别达到 52.37/57.54GiB，<code>update_actor</code> 为 26.77 秒。尽管这一步比原先从失败日志推断的压力更高，<code>update_weights</code> 仍在 6.16 秒内完成，训练随后继续到 step 100。这说明 n=24 的训练峰值确实很高，但只要在权重唤醒前归还无用 allocator cache，固定 actor 状态和 vLLM 权重仍可在 80GB H100 上共存。</p>
-        <p>第一组在 rollout/generation 阶段约使用 59.6/81.6GB，确实还剩约 20GB；但第 33 step 的训练同步峰值实际接近 76.0GB，只剩约 5.5GB。失败组 OOM 前约使用 74.5GB，剩余约 7GB，无法再容纳 vLLM TP4 的固定权重 shard 及映射开销。<code>max_num_seqs=8</code> 和 <code>max_num_batched_tokens=8192</code> 只约束生成阶段的调度并发与 KV cache，不改变 <code>wake_up(weights)</code> 所需的固定权重映射容量。</p>
-        <p>综合三组结果，根因是：n=24 的较高训练峰值扩大了 PyTorch CUDA allocator 的 reserved cache；activation、attention 中间量和梯度虽然在语义上已经作废，但对应空闲 block 没有立即归还给 CUDA。随后 layered summon 进入固定大小的 vLLM 权重唤醒，跨进程可用物理显存不足，最终在 CuMem <code>create_and_map</code> 处 OOM。换言之，rollout_n=24 是训练侧高水位的触发因素，vLLM wake-up 是显存冲突实际暴露的位置。</p>
+          <h3>4.3 根因</h3>
+          <p><code>rollout_n=24</code> 首先提高了 actor 训练压力。与 S3 n=20 相比，初始 n=24 组的平均 token 数增加 23.6%，actor update 时间增加约
+            27.5%；其未 aborted 的 response 槽比例由约 36.9% 提高到 54.9%，因此变化不只是名义槽位数增加 20%。更关键的是第 33 个数据 batch：S3 n=20 在该 step 达到
+            49,190 tokens、每卡平衡后 12,298 tokens，actor reserved 高水位从 42.14GiB 跳到 50.52GiB，但仍勉强完成；S1 同一位置达到 47,716 tokens 和
+            49.84GiB reserved，也完成同步。初始 n=24 运行在写出第 33 step 指标之前失败，因此日志中的 44.21GiB reserved 只是第 32 step 的旧高水位，不能代表故障瞬间的
+            actor 状态。</p>
+          <p>修复复跑补全了缺失的第 33 step 数据：该 step 实际达到 61,558 tokens，未平衡最长 rank 为 31,884 tokens，每卡平衡后为 15,394 tokens；actor
+            allocated/reserved 高水位分别达到 52.37/57.54GiB，<code>update_actor</code> 为 26.77
+            秒。尽管这一步比原先从失败日志推断的压力更高，<code>update_weights</code> 仍在 6.16 秒内完成，训练随后继续到 step 100。这说明 n=24
+            的训练峰值确实很高，但只要在权重唤醒前归还无用 allocator cache，固定 actor 状态和 vLLM 权重仍可在 80GB H100 上共存。</p>
+          <p>第一组在 rollout/generation 阶段约使用 59.6/81.6GB，确实还剩约 20GB；但第 33 step 的训练同步峰值实际接近 76.0GB，只剩约 5.5GB。失败组 OOM 前约使用
+            74.5GB，剩余约 7GB，无法再容纳 vLLM TP4 的固定权重 shard 及映射开销。<code>max_num_seqs=8</code> 和
+            <code>max_num_batched_tokens=8192</code> 只约束生成阶段的调度并发与 KV cache，不改变 <code>wake_up(weights)</code>
+            所需的固定权重映射容量。</p>
+          <p>综合三组结果，根因是：n=24 的较高训练峰值扩大了 PyTorch CUDA allocator 的 reserved cache；activation、attention
+            中间量和梯度虽然在语义上已经作废，但对应空闲 block 没有立即归还给 CUDA。随后 layered summon 进入固定大小的 vLLM 权重唤醒，跨进程可用物理显存不足，最终在 CuMem
+            <code>create_and_map</code> 处 OOM。换言之，rollout_n=24 是训练侧高水位的触发因素，vLLM wake-up 是显存冲突实际暴露的位置。</p>
 
-        <h3>4.4 修复与验证</h3>
-        <p>提交 <code>1ba45c38</code> 在调用原始 <code>update_weights()</code>、即 vLLM 权重唤醒之前执行当前 actor rank 的 <code>empty_cache()</code>，将未被活跃 tensor 占用的 allocator cache 归还给 CUDA。单独把 <code>gpu_memory_utilization</code> 从 0.32 降到 0.20 的运行仍在第 33 step 边界 OOM；保持 0.20 和其他关键训练配置不变、加入 cache fix 后，运行以 <code>EXIT_CODE 0</code> 完成 100 step，总 wall time 为 4,964 秒。这个前后对照验证了缓存清理是解决本次 OOM 的关键改动，不需要降低 rollout 数或训练 token cap。后续容量实验仍应记录清理前后的逐 rank <code>memory_allocated</code>、<code>memory_reserved</code> 与 <code>mem_get_info</code>，用于量化实际归还的显存，而不是仅依赖 10 秒粒度的 <code>GPU_MONITOR</code> 峰值。</p>
-        <p class="source">分析日志：<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b4_beam2_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n20_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>；<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b8_beam1_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n24_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>；无 cache fix：<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b8_beam1_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n24_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_vllmmem020_seed42.log</code>；cache fix：<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b8_beam1_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n24_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_vllmmem020_seed42.log</code>；<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s1_chain_n8_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code></p>
-      </section>
+          <h3>4.4 修复与验证</h3>
+          <p>提交 <code>1ba45c38</code> 在调用原始 <code>update_weights()</code>、即 vLLM 权重唤醒之前执行当前 actor rank 的
+            <code>empty_cache()</code>，将未被活跃 tensor 占用的 allocator cache 归还给 CUDA。单独把 <code>gpu_memory_utilization</code>
+            从 0.32 降到 0.20 的运行仍在第 33 step 边界 OOM；保持 0.20 和其他关键训练配置不变、加入 cache fix 后，运行以 <code>EXIT_CODE 0</code> 完成 100
+            step，总 wall time 为 4,964 秒。这个前后对照验证了缓存清理是解决本次 OOM 的关键改动，不需要降低 rollout 数或训练 token cap。后续容量实验仍应记录清理前后的逐 rank
+            <code>memory_allocated</code>、<code>memory_reserved</code> 与 <code>mem_get_info</code>，用于量化实际归还的显存，而不是仅依赖 10
+            秒粒度的 <code>GPU_MONITOR</code> 峰值。</p>
+          <p class="source">
+            分析日志：<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b4_beam2_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n20_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>；<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b8_beam1_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n24_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>；无
+            cache
+            fix：<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b8_beam1_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n24_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_vllmmem020_seed42.log</code>；cache
+            fix：<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b8_beam1_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n24_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_vllmmem020_seed42.log</code>；<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s1_chain_n8_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>
+          </p>
+        </section>
 
-      <section aria-labelledby="perf-discussion">
-        <h2 id="perf-discussion">5. 结论</h2>
-        <p>时间与资源证据合并后，当前瓶颈结论不再是“同步瓶颈”，而是“策略优化和 rollout 共同主导”。历史 44 秒 Actor→vLLM 同步来自 full-summon CPU-offload fallback；layered summon 成功后，同步耗时降到约 7 秒，并避免了接近 470GB CPU 内存的 fallback 路径。micro batch 提高到 2 后，PPO actor update 和 old log-prob 计算都受益，因为固定 micro-batch split 次数减少；dynamic batching 与 remove padding 的收益更大，因为它按 token budget 重新打包样本，并避免模型在 padding token 上做无效 forward/backward。</p>
-        <p>正式训练采用 <code>dynamic_bsz=True</code>、<code>remove_padding=True</code>、<code>max_num_seqs=8</code> 与 <code>max_num_batched_tokens=8192</code>。该组合先把策略优化从 30.864 秒降至 3.670 秒，再把 rollout 从 24.558 秒降至 18.000 秒；最终 10-step profiling 的平均 step 为 28.629 秒。资源上，actor/update 与 rollout 容量实验的整卡峰值保持在约 59.6–59.9GB，适合 80GB H100；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，并在一次短 profiling 中取得更低端到端 step time，但加速主要来自 rollout 波动而不是 actor update 下降，因此默认配置仍保守使用 16384，并将 32768 保留为可切换候选。</p>
-      </section>
+        <section aria-labelledby="perf-discussion">
+          <h2 id="perf-discussion">5. 结论</h2>
+          <p>时间与资源证据合并后，当前瓶颈结论不再是“同步瓶颈”，而是“策略优化和 rollout 共同主导”。历史 44 秒 Actor→vLLM 同步来自 full-summon CPU-offload
+            fallback；layered summon 成功后，同步耗时降到约 7 秒，并避免了接近 470GB CPU 内存的 fallback 路径。micro batch 提高到 2 后，PPO actor
+            update 和 old log-prob 计算都受益，因为固定 micro-batch split 次数减少；dynamic batching 与 remove padding 的收益更大，因为它按 token
+            budget 重新打包样本，并避免模型在 padding token 上做无效 forward/backward。</p>
+          <p>正式训练采用 <code>dynamic_bsz=True</code>、<code>remove_padding=True</code>、<code>max_num_seqs=8</code> 与
+            <code>max_num_batched_tokens=8192</code>。该组合先把策略优化从 30.864 秒降至 3.670 秒，再把 rollout 从 24.558 秒降至 18.000 秒；最终
+            10-step profiling 的平均 step 为 28.629 秒。资源上，actor/update 与 rollout 容量实验的整卡峰值保持在约 59.6–59.9GB，适合 80GB
+            H100；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，并在一次短 profiling 中取得更低端到端 step time，但加速主要来自 rollout
+            波动而不是 actor update 下降，因此默认配置仍保守使用 16384，并将 32768 保留为可切换候选。</p>
+        </section>
       </div>
 
       <section aria-labelledby="perf-optimal-config">
         <h2 id="perf-optimal-config">6. 当前性能最优配置</h2>
         <ul class="config-list">
-          <li><strong>固定 workload</strong>：该性能配置对应当前 S3 tree GRPO 负载，<code>train_batch_size=2</code>，<code>rollout_n=20</code>，<code>branch_n=4</code>，<code>beam_size=2</code>，<code>max_turns=3</code>，4×H100。</li>
-          <li><strong>Actor→vLLM 同步</strong>：使用 layered summon，同步 LoRA adapter tensor，避免 full-summon CPU-offload fallback；该路径将同步耗时从历史 fallback 的 44 秒级降到约 7 秒。</li>
-          <li><strong>Actor/log-prob 训练侧</strong>：开启 activation checkpointing、<code>dynamic_bsz=True</code> 与 <code>remove_padding=True</code>；保留 <code>ppo_mini_batch_size=2</code>、<code>ppo_micro_batch_size_per_gpu=1</code>、<code>ppo_max_token_len_per_gpu=16384</code>。</li>
-          <li><strong>vLLM rollout 侧</strong>：使用 <code>tensor_parallel_size=4</code>、<code>pipeline_parallel_size=1</code>、<code>gpu_memory_utilization=0.32</code>，并将容量上限设为 <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。</li>
-          <li><strong>可切换候选</strong>：固定 micro batch 提到 2 有收益，但弱于 dynamic token packing；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，短 profiling 中端到端更快，但该差异主要来自 rollout 波动，不能直接归因于 token cap，因此默认仍用 16384。</li>
-          <li><strong>容量守门</strong>：保留 <code>GPU_MONITOR</code> 与 actor perf 指标；当前组合的整卡显存峰值约 59.6–59.9GB，适合 80GB H100。</li>
+          <li><strong>固定 workload</strong>：该性能配置对应当前 S3 tree GRPO
+            负载，<code>train_batch_size=2</code>，<code>rollout_n=20</code>，<code>branch_n=4</code>，<code>beam_size=2</code>，<code>max_turns=3</code>，4×H100。
+          </li>
+          <li><strong>Actor→vLLM 同步</strong>：使用 layered summon，同步 LoRA adapter tensor，避免 full-summon CPU-offload
+            fallback；该路径将同步耗时从历史 fallback 的 44 秒级降到约 7 秒。</li>
+          <li><strong>Actor/log-prob 训练侧</strong>：开启 activation checkpointing、<code>dynamic_bsz=True</code> 与
+            <code>remove_padding=True</code>；保留
+            <code>ppo_mini_batch_size=2</code>、<code>ppo_micro_batch_size_per_gpu=1</code>、<code>ppo_max_token_len_per_gpu=16384</code>。
+          </li>
+          <li><strong>vLLM rollout 侧</strong>：使用
+            <code>tensor_parallel_size=4</code>、<code>pipeline_parallel_size=1</code>、<code>gpu_memory_utilization=0.32</code>，并将容量上限设为
+            <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。</li>
+          <li><strong>可切换候选</strong>：固定 micro batch 提到 2 有收益，但弱于 dynamic token
+            packing；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，短 profiling 中端到端更快，但该差异主要来自 rollout 波动，不能直接归因于
+            token cap，因此默认仍用 16384。</li>
+          <li><strong>容量守门</strong>：保留 <code>GPU_MONITOR</code> 与 actor perf 指标；当前组合的整卡显存峰值约 59.6–59.9GB，适合 80GB H100。
+          </li>
         </ul>
       </section>
 
@@ -2255,4 +2532,5 @@ V(n) = beta × I_executable,                            S4 的非正确叶节点
     activatePerfView("bottleneck");
   </script>
 </body>
+
 </html>
