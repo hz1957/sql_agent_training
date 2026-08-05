@@ -59,7 +59,11 @@ def _load_tokenizer(tokenizer_path: str | None) -> Any | None:
         return None
     from transformers import AutoTokenizer
 
-    return AutoTokenizer.from_pretrained(str(_resolve_path(tokenizer_path)), trust_remote_code=True)
+    return AutoTokenizer.from_pretrained(
+        str(_resolve_path(tokenizer_path)),
+        trust_remote_code=True,
+        fix_mistral_regex=True,
+    )
 
 
 def _messages_to_prompt(messages: list[dict[str, Any]], tokenizer: Any | None) -> str:

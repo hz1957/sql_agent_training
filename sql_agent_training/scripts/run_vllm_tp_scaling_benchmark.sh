@@ -13,6 +13,7 @@ set -euo pipefail
 #   fixed       4 replicas x TP=1, 2 replicas x TP=2, 1 replica x TP=4.
 #   tp1,tp2,tp4,rep4tp1,rep2tp2,rep1tp4 run one case only.
 
+LAUNCH_DIR="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_DIR}"
@@ -34,7 +35,12 @@ if [[ ! -f "${DEFAULT_DATASET_PARQUET}" && -f "sql_agent_training/data/verl_spid
   DEFAULT_DATASET_PARQUET="sql_agent_training/data/verl_spider/validation.parquet"
 fi
 DATASET_PARQUET="${DATASET_PARQUET:-${DEFAULT_DATASET_PARQUET}}"
-RESULT_ROOT="${RESULT_ROOT:-artifacts/logs/vllm_tp_scaling/$(date +%Y%m%d_%H%M%S)}"
+RESULT_ROOT_RAW="${RESULT_ROOT:-artifacts/logs/vllm_tp_scaling/$(date +%Y%m%d_%H%M%S)}"
+if [[ "${RESULT_ROOT_RAW}" = /* ]]; then
+  RESULT_ROOT="${RESULT_ROOT_RAW}"
+else
+  RESULT_ROOT="${LAUNCH_DIR}/${RESULT_ROOT_RAW}"
+fi
 
 LIMIT="${LIMIT:-128}"
 REPETITIONS="${REPETITIONS:-1}"
@@ -74,9 +80,25 @@ cleanup_case() {
     MONITOR_PID=""
   fi
   for pid in "${SERVER_PIDS[@]:-}"; do
-    kill "${pid}" 2>/dev/null || true
+    # Every server is started in its own session. Terminating the process group
+    # also stops uv, the API server, and vLLM engine worker descendants.
+    kill -TERM -- "-${pid}" 2>/dev/null || true
+  done
+  for _attempt in {1..15}; do
+    local any_alive=0
+    for pid in "${SERVER_PIDS[@]:-}"; do
+      if kill -0 -- "-${pid}" 2>/dev/null; then
+        any_alive=1
+      fi
+    done
+    (( any_alive == 0 )) && break
+    sleep 1
   done
   for pid in "${SERVER_PIDS[@]:-}"; do
+    if kill -0 -- "-${pid}" 2>/dev/null; then
+      echo "WARNING: force-stopping vLLM process group ${pid}"
+      kill -KILL -- "-${pid}" 2>/dev/null || true
+    fi
     wait "${pid}" 2>/dev/null || true
   done
   SERVER_PIDS=()
@@ -111,10 +133,13 @@ start_server() {
   local port="$4"
   local log_file="$5"
 
-  (
-    set -o pipefail
-    echo "START_SERVER name=${name} cuda=${cuda_devices} tp=${tp} port=${port} $(date)"
-    CUDA_VISIBLE_DEVICES="${cuda_devices}" \
+  if ! command -v setsid >/dev/null 2>&1; then
+    echo "ERROR: setsid is required for reliable vLLM process cleanup." >&2
+    return 1
+  fi
+
+  echo "START_SERVER name=${name} cuda=${cuda_devices} tp=${tp} port=${port} $(date)" > "${log_file}"
+  setsid env CUDA_VISIBLE_DEVICES="${cuda_devices}" \
     PYTHONUNBUFFERED=1 \
     uv run --no-sync python -m vllm.entrypoints.openai.api_server \
       --model "${MODEL_PATH}" \
@@ -127,8 +152,7 @@ start_server() {
       --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
       --max-num-seqs "${MAX_NUM_SEQS}" \
       --host 127.0.0.1 \
-      --port "${port}"
-  ) > "${log_file}" 2>&1 &
+      --port "${port}" >> "${log_file}" 2>&1 &
   local pid="$!"
   SERVER_PIDS+=("${pid}")
   echo "SERVER_PID ${pid} ${name} ${log_file}"
@@ -137,10 +161,13 @@ start_server() {
 wait_server() {
   local port="$1"
   local pid="$2"
+  local log_file="$3"
   local deadline=$((SECONDS + STARTUP_TIMEOUT_SEC))
   until uv run --no-sync python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${port}/v1/models', timeout=2).read()" >/dev/null 2>&1; do
     if ! kill -0 "${pid}" 2>/dev/null; then
       echo "ERROR: server on port ${port} exited before readiness."
+      echo "SERVER LOG (last 120 lines): ${log_file}"
+      tail -n 120 "${log_file}" 2>/dev/null || true
       return 1
     fi
     if (( SECONDS >= deadline )); then
@@ -181,7 +208,10 @@ run_case() {
     for spec in ${server_specs}; do
       if (( spec_index == index )); then
         IFS=: read -r _cuda_devices _tp port <<< "${spec}"
-        wait_server "${port}" "${SERVER_PIDS[$index]}"
+        wait_server \
+          "${port}" \
+          "${SERVER_PIDS[$index]}" \
+          "${server_dir}/server_tp${_tp}_port${port}.log"
       fi
       spec_index=$((spec_index + 1))
     done
