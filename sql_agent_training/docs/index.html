@@ -490,7 +490,9 @@
           </button>
           <div class="perf-dropdown" id="perf-dropdown" role="menu" aria-label="性能实验">
             <button class="perf-option" type="button" role="menuitemradio" aria-checked="true"
-              data-perf-value="bottleneck">定位 GRPO/verl 最大瓶颈</button>
+              data-perf-value="bottleneck">定位 GRPO/verl 瓶颈</button>
+            <button class="perf-option" type="button" role="menuitemradio" aria-checked="false"
+              data-perf-value="tp-scaling">vLLM TP 扩展实验</button>
           </div>
         </div>
       </div>
@@ -1821,13 +1823,13 @@
 
     <article id="panel-perf" class="tab-panel" role="tabpanel" aria-labelledby="tab-perf">
       <header class="paper-header">
-        <p class="paper-kicker">4× H100 · S3 Tree GRPO</p>
-        <h1>GRPO 训练流水线性能分析</h1>
+        <p class="paper-kicker">4× H100 · verl / Ray / vLLM</p>
+        <h1>GRPO 训练与 Rollout 性能分析</h1>
         <p class="paper-meta">Pipeline profiling</p>
       </header>
 
       <div class="perf-subview" data-perf-view="bottleneck">
-        <h2 class="study-title">定位 GRPO/verl 最大瓶颈</h2>
+        <h2 class="study-title">定位 GRPO/verl 瓶颈</h2>
 
         <section class="abstract" aria-labelledby="perf-abstract">
           <h2 id="perf-abstract">摘要</h2>
@@ -2423,30 +2425,146 @@
             H100；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，并在一次短 profiling 中取得更低端到端 step time，但加速主要来自 rollout
             波动而不是 actor update 下降，因此默认配置仍保守使用 16384，并将 32768 保留为可切换候选。</p>
         </section>
+        <section aria-labelledby="perf-optimal-config">
+          <h2 id="perf-optimal-config">6. 当前性能最优配置</h2>
+          <ul class="config-list">
+            <li><strong>固定 workload</strong>：该性能配置对应当前 S3 tree GRPO
+              负载，<code>train_batch_size=2</code>，<code>rollout_n=20</code>，<code>branch_n=4</code>，<code>beam_size=2</code>，<code>max_turns=3</code>，4×H100。
+            </li>
+            <li><strong>Actor→vLLM 同步</strong>：使用 layered summon，同步 LoRA adapter tensor，避免 full-summon CPU-offload
+              fallback；该路径将同步耗时从历史 fallback 的 44 秒级降到约 7 秒。</li>
+            <li><strong>Actor/log-prob 训练侧</strong>：开启 activation checkpointing、<code>dynamic_bsz=True</code> 与
+              <code>remove_padding=True</code>；保留
+              <code>ppo_mini_batch_size=2</code>、<code>ppo_micro_batch_size_per_gpu=1</code>、<code>ppo_max_token_len_per_gpu=16384</code>。
+            </li>
+            <li><strong>vLLM rollout 侧</strong>：使用
+              <code>tensor_parallel_size=4</code>、<code>pipeline_parallel_size=1</code>、<code>gpu_memory_utilization=0.32</code>，并将容量上限设为
+              <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。</li>
+            <li><strong>可切换候选</strong>：固定 micro batch 提到 2 有收益，但弱于 dynamic token
+              packing；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，短 profiling 中端到端更快，但该差异主要来自 rollout 波动，不能直接归因于
+              token cap，因此默认仍用 16384。</li>
+            <li><strong>容量守门</strong>：保留 <code>GPU_MONITOR</code> 与 actor perf 指标；当前组合的整卡显存峰值约 59.6–59.9GB，适合 80GB H100。
+            </li>
+          </ul>
+        </section>
       </div>
 
-      <section aria-labelledby="perf-optimal-config">
-        <h2 id="perf-optimal-config">6. 当前性能最优配置</h2>
-        <ul class="config-list">
-          <li><strong>固定 workload</strong>：该性能配置对应当前 S3 tree GRPO
-            负载，<code>train_batch_size=2</code>，<code>rollout_n=20</code>，<code>branch_n=4</code>，<code>beam_size=2</code>，<code>max_turns=3</code>，4×H100。
-          </li>
-          <li><strong>Actor→vLLM 同步</strong>：使用 layered summon，同步 LoRA adapter tensor，避免 full-summon CPU-offload
-            fallback；该路径将同步耗时从历史 fallback 的 44 秒级降到约 7 秒。</li>
-          <li><strong>Actor/log-prob 训练侧</strong>：开启 activation checkpointing、<code>dynamic_bsz=True</code> 与
-            <code>remove_padding=True</code>；保留
-            <code>ppo_mini_batch_size=2</code>、<code>ppo_micro_batch_size_per_gpu=1</code>、<code>ppo_max_token_len_per_gpu=16384</code>。
-          </li>
-          <li><strong>vLLM rollout 侧</strong>：使用
-            <code>tensor_parallel_size=4</code>、<code>pipeline_parallel_size=1</code>、<code>gpu_memory_utilization=0.32</code>，并将容量上限设为
-            <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。</li>
-          <li><strong>可切换候选</strong>：固定 micro batch 提到 2 有收益，但弱于 dynamic token
-            packing；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，短 profiling 中端到端更快，但该差异主要来自 rollout 波动，不能直接归因于
-            token cap，因此默认仍用 16384。</li>
-          <li><strong>容量守门</strong>：保留 <code>GPU_MONITOR</code> 与 actor perf 指标；当前组合的整卡显存峰值约 59.6–59.9GB，适合 80GB H100。
-          </li>
-        </ul>
-      </section>
+      <div class="perf-subview" data-perf-view="tp-scaling" hidden>
+        <h2 class="study-title">vLLM Tensor Parallel 扩展与固定 GPU 预算实验</h2>
+
+        <section aria-labelledby="tp-scaling-question">
+          <h2 id="tp-scaling-question">1. 研究问题</h2>
+          <p>本实验研究 Qwen2.5-Coder-14B rollout policy 在 vLLM 中采用不同 tensor parallel size 时的性能与容量权衡。第一组实验保持单个 vLLM
+            实例不变，比较 <code>TP=1</code>、<code>TP=2</code> 与 <code>TP=4</code>，回答增加模型并行度能否降低单请求和并发请求的生成延迟，以及跨卡通信开销、KV
+            cache 容量和每卡显存如何随 TP 变化。该组用于刻画单实例的模型并行扩展性，不将 TP=4 使用更多 GPU 后得到的总吞吐直接解释为资源效率提升。</p>
+          <p>第二组实验固定 4 张 H100 的总 GPU 预算，比较 <code>4 replicas × TP=1</code>、<code>2 replicas × TP=2</code> 与
+            <code>1 replica × TP=4</code>。该组回答在相同硬件成本下，应优先使用更高 TP 降低单实例延迟，还是使用更多低 TP 副本提高聚合吞吐；同时考察多轮 SQL agent rollout
+            中长短请求不均衡造成的尾延迟和批次完成时间。最终目标是为 verl/Ray rollout worker 选择吞吐、延迟、显存和调度复杂度之间更合适的部署方式。</p>
+        </section>
+
+        <section aria-labelledby="tp-scaling-method">
+          <h2 id="tp-scaling-method">2. 方法</h2>
+
+          <h3>2.1 Workload 与控制变量</h3>
+          <p>实验使用与 GRPO rollout 相同的 Qwen2.5-Coder-14B policy、tokenizer、精度和生成协议，并在同一台 4×H100 节点上完成。固定 vLLM
+            版本、CUDA/NCCL 环境、模型 checkpoint、<code>max_model_len</code>、采样参数、请求集合与随机种子；除 TP 和副本数外，不改变影响调度与显存容量的参数。请求从真实 SQL
+            agent rollout 中构造固定 trace，保留输入长度、输出长度和交互轮数分布，并覆盖并发度 <code>1/2/4/8</code>。每个配置先完成独立 warmup，再重复测量相同 trace；若某配置发生
+            OOM，则记录其容量边界，不通过缩短上下文或降低并发改变该配置的 workload。</p>
+
+          <h3>2.2 实验一：单实例 TP 扩展性</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>配置</th>
+                    <th>实例数</th>
+                    <th>单实例 GPU 数</th>
+                    <th>总 GPU 数</th>
+                    <th>比较目的</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>TP=1</code></td>
+                    <td>1</td>
+                    <td>1</td>
+                    <td>1</td>
+                    <td>单卡容量与无跨卡通信 baseline</td>
+                  </tr>
+                  <tr>
+                    <td><code>TP=2</code></td>
+                    <td>1</td>
+                    <td>2</td>
+                    <td>2</td>
+                    <td>观察两卡并行的延迟收益与通信代价</td>
+                  </tr>
+                  <tr>
+                    <td><code>TP=4</code></td>
+                    <td>1</td>
+                    <td>4</td>
+                    <td>4</td>
+                    <td>观察四卡并行的延迟、吞吐和扩展效率</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 1. 单实例 TP 扩展实验。该组使用的总 GPU 数不同，因此同时报告绝对性能与每 GPU 归一化效率。</p>
+          </div>
+          <p>每个 TP 配置使用相同请求 trace 和并发度阶梯，分别测量低并发下的单请求延迟与高并发下的持续批处理吞吐。除绝对吞吐外，计算
+            <code>speedup(TP) = throughput(TP) / throughput(TP=1)</code> 与
+            <code>parallel efficiency = speedup(TP) / TP</code>，用于区分模型并行带来的真实性能收益和单纯增加 GPU 数量的影响。</p>
+
+          <h3>2.3 实验二：固定 4-GPU 总预算</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>配置</th>
+                    <th>实例数</th>
+                    <th>单实例 TP</th>
+                    <th>总 GPU 数</th>
+                    <th>请求分发</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>4 × TP=1</code></td>
+                    <td>4</td>
+                    <td>1</td>
+                    <td>4</td>
+                    <td>按实例负载分发到四个独立副本</td>
+                  </tr>
+                  <tr>
+                    <td><code>2 × TP=2</code></td>
+                    <td>2</td>
+                    <td>2</td>
+                    <td>4</td>
+                    <td>按实例负载分发到两个独立副本</td>
+                  </tr>
+                  <tr>
+                    <td><code>1 × TP=4</code></td>
+                    <td>1</td>
+                    <td>4</td>
+                    <td>4</td>
+                    <td>单实例处理完整请求流</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 2. 固定 4×H100 总预算实验。三组消费相同请求 trace，并保持总 GPU 数和测量窗口一致。</p>
+          </div>
+          <p>多副本配置使用确定性的 least-loaded 分发策略，并记录单副本与聚合指标。主比较采用相同请求总量下的聚合 output tokens/s、requests/s 和完整 trace
+            完成时间；辅助比较使用 p95 延迟与最慢副本完成时间，判断副本间长度不均衡是否抵消数据并行带来的吞吐收益。</p>
+
+          <h3>2.4 指标与分析口径</h3>
+          <p>吞吐指标包括 output tokens/s、total tokens/s 与 requests/s；延迟指标包括 TTFT、TPOT、端到端请求延迟及完整 rollout trace 完成时间，并报告
+            p50、p95 和最大值。资源指标包括逐卡峰值显存、平均/峰值 GPU 利用率以及 OOM 或调度失败情况。单实例实验同时报告 TP speedup 和每 GPU
+            吞吐；固定预算实验以 4-GPU 聚合吞吐、尾延迟和 GPU-seconds/request 为主要决策指标。结果分析将区分低并发延迟、饱和吞吐和多轮 agent
+            批次完成时间，避免用单一 tokens/s 指标替代完整 rollout 的实际效率。</p>
+        </section>
+      </div>
 
     </article>
   </main>
