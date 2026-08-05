@@ -51,6 +51,8 @@ TOP_P="${TOP_P:-1.0}"
 TOP_K="${TOP_K:--1}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-600}"
 STARTUP_TIMEOUT_SEC="${STARTUP_TIMEOUT_SEC:-900}"
+GPU_RELEASE_TIMEOUT_SEC="${GPU_RELEASE_TIMEOUT_SEC:-60}"
+GPU_PREFLIGHT_MAX_USED_MB="${GPU_PREFLIGHT_MAX_USED_MB:-1024}"
 
 DTYPE="${DTYPE:-bfloat16}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.80}"
@@ -126,6 +128,67 @@ start_gpu_monitor() {
   MONITOR_PID="$!"
 }
 
+check_ports_available() {
+  local server_specs="$1"
+  local spec
+  local port
+  for spec in ${server_specs}; do
+    IFS=: read -r _cuda_devices _tp port <<< "${spec}"
+    if uv run --no-sync python -c \
+      "import socket, sys; sock = socket.socket(); sock.settimeout(1); sys.exit(0 if sock.connect_ex(('127.0.0.1', ${port})) == 0 else 1)"; then
+      echo "ERROR: port ${port} is already in use; refusing to reuse an existing server." >&2
+      return 1
+    fi
+  done
+}
+
+wait_for_gpus_free() {
+  local server_specs="$1"
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local -A selected_gpus=()
+  local spec
+  local cuda_devices
+  local gpu
+  for spec in ${server_specs}; do
+    IFS=: read -r cuda_devices _tp _port <<< "${spec}"
+    IFS=, read -ra gpu_list <<< "${cuda_devices}"
+    for gpu in "${gpu_list[@]}"; do
+      selected_gpus["${gpu}"]=1
+    done
+  done
+
+  local deadline=$((SECONDS + GPU_RELEASE_TIMEOUT_SEC))
+  while true; do
+    local blocked=()
+    local gpu_index
+    local memory_used_mb
+    while IFS=, read -r gpu_index memory_used_mb; do
+      gpu_index="${gpu_index//[[:space:]]/}"
+      memory_used_mb="${memory_used_mb//[[:space:]]/}"
+      if [[ -n "${selected_gpus[${gpu_index}]:-}" ]] && \
+         (( memory_used_mb > GPU_PREFLIGHT_MAX_USED_MB )); then
+        blocked+=("GPU ${gpu_index}: ${memory_used_mb} MiB")
+      fi
+    done < <(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits)
+
+    if (( ${#blocked[@]} == 0 )); then
+      return 0
+    fi
+    if (( SECONDS >= deadline )); then
+      echo "ERROR: selected GPUs are still occupied after ${GPU_RELEASE_TIMEOUT_SEC}s:" >&2
+      printf '  %s\n' "${blocked[@]}" >&2
+      nvidia-smi \
+        --query-compute-apps=pid,gpu_uuid,used_memory \
+        --format=csv,noheader >&2 || true
+      return 1
+    fi
+    sleep 2
+  done
+}
+
 start_server() {
   local name="$1"
   local cuda_devices="$2"
@@ -195,6 +258,8 @@ run_case() {
   echo "RESULT_DIR ${case_dir}"
   echo "CONFIG model=${MODEL_PATH} dataset=${DATASET_PARQUET} limit=${LIMIT} repetitions=${REPETITIONS} concurrency=${CONCURRENCY} max_tokens=${MAX_TOKENS} stream=${STREAM}"
 
+  check_ports_available "${server_specs}"
+  wait_for_gpus_free "${server_specs}"
   start_gpu_monitor "${gpu_csv}"
 
   for spec in ${server_specs}; do
