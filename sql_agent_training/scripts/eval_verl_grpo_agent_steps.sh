@@ -29,10 +29,16 @@ Environment overrides:
   TREE_BEAM_TAU           Default: 1.0
   TREE_BEAM_EPSILON_RANDOM Default: 0.0
   TREE_SEED               Default: 42
+  CHECKER_BACKEND          Optional separate checker backend: openai_chat or sglang
+  CHECKER_API_URL          Optional checker API base URL, e.g. https://api.deepseek.com
+  CHECKER_MODEL_NAME       Optional checker model name, e.g. deepseek-chat
+  CHECKER_API_KEY_ENV      Optional checker API key env var. Default in Python: LLM_API_KEY_AGENT
+  CHECKER_TEMPERATURE      Optional checker temperature. Default in Python: 0.0 when checker is set
   EVAL_SPLIT              Default: validation
   EVAL_MODEL_ROOT         Default: artifacts/eval_models/<run_name>
   EVAL_OUTPUT_ROOT        Default: artifacts/eval/<run_name> for chain,
-                           artifacts/eval/<run_name>_tree_b*_beam*_t*_seed* for tree
+                           artifacts/eval/<run_name>_tree_b*_beam*_t*_seed* for tree;
+                           appends checker_<model/backend> when CHECKER_* is set
 EOF
 }
 
@@ -102,14 +108,31 @@ TREE_BEAM_SIZE="${TREE_BEAM_SIZE:-2}"
 TREE_BEAM_TAU="${TREE_BEAM_TAU:-1.0}"
 TREE_BEAM_EPSILON_RANDOM="${TREE_BEAM_EPSILON_RANDOM:-0.0}"
 TREE_SEED="${TREE_SEED:-42}"
+CHECKER_BACKEND="${CHECKER_BACKEND:-}"
+CHECKER_API_URL="${CHECKER_API_URL:-}"
+CHECKER_MODEL_NAME="${CHECKER_MODEL_NAME:-}"
+CHECKER_API_KEY_ENV="${CHECKER_API_KEY_ENV:-}"
+CHECKER_REQUEST_TIMEOUT_SECONDS="${CHECKER_REQUEST_TIMEOUT_SECONDS:-}"
+CHECKER_TEMPERATURE="${CHECKER_TEMPERATURE:-}"
+CHECKER_OUTPUT_TAG="${CHECKER_OUTPUT_TAG:-}"
+if [[ -z "${CHECKER_OUTPUT_TAG}" && -n "${CHECKER_BACKEND}${CHECKER_API_URL}${CHECKER_MODEL_NAME}${CHECKER_API_KEY_ENV}" ]]; then
+  CHECKER_OUTPUT_TAG="checker_${CHECKER_MODEL_NAME:-${CHECKER_BACKEND:-remote}}"
+fi
+CHECKER_OUTPUT_TAG="${CHECKER_OUTPUT_TAG//\//_}"
+CHECKER_OUTPUT_TAG="${CHECKER_OUTPUT_TAG//:/_}"
+CHECKER_OUTPUT_TAG="${CHECKER_OUTPUT_TAG// /_}"
+CHECKER_OUTPUT_SUFFIX=""
+if [[ -n "${CHECKER_OUTPUT_TAG}" ]]; then
+  CHECKER_OUTPUT_SUFFIX="_${CHECKER_OUTPUT_TAG}"
+fi
 EVAL_SPLIT="${EVAL_SPLIT:-validation}"
 EVAL_MODEL_ROOT="${EVAL_MODEL_ROOT:-artifacts/eval_models/${RUN_NAME}}"
 if [[ -z "${EVAL_OUTPUT_ROOT+x}" ]]; then
   if [[ "${EVAL_INFERENCE_MODE}" == "tree" ]]; then
     TEMP_TAG="${EVAL_TEMPERATURE//./}"
-    EVAL_OUTPUT_ROOT="artifacts/eval/${RUN_NAME}_tree_b${TREE_BRANCH_N}_beam${TREE_BEAM_SIZE}_t${TEMP_TAG}_seed${TREE_SEED}"
+    EVAL_OUTPUT_ROOT="artifacts/eval/${RUN_NAME}_tree_b${TREE_BRANCH_N}_beam${TREE_BEAM_SIZE}_t${TEMP_TAG}_seed${TREE_SEED}${CHECKER_OUTPUT_SUFFIX}"
   else
-    EVAL_OUTPUT_ROOT="artifacts/eval/${RUN_NAME}"
+    EVAL_OUTPUT_ROOT="artifacts/eval/${RUN_NAME}${CHECKER_OUTPUT_SUFFIX}"
   fi
 fi
 if [[ -n "${EVAL_CONFIG:-}" ]]; then
@@ -159,7 +182,30 @@ echo "RUN_DIR=${RUN_DIR}"
 echo "RUN_NAME=${RUN_NAME}"
 echo "EVAL_CONFIG=${EVAL_CONFIG}"
 echo "EVAL_INFERENCE_MODE=${EVAL_INFERENCE_MODE}"
+if [[ -n "${CHECKER_OUTPUT_TAG}" ]]; then
+  echo "CHECKER_OUTPUT_TAG=${CHECKER_OUTPUT_TAG}"
+fi
 echo "STEPS=${STEP_VALUES[*]}"
+
+AGENT_EVAL_EXTRA_ARGS=()
+if [[ -n "${CHECKER_BACKEND}" ]]; then
+  AGENT_EVAL_EXTRA_ARGS+=(--checker-backend "${CHECKER_BACKEND}")
+fi
+if [[ -n "${CHECKER_API_URL}" ]]; then
+  AGENT_EVAL_EXTRA_ARGS+=(--checker-api-url "${CHECKER_API_URL}")
+fi
+if [[ -n "${CHECKER_MODEL_NAME}" ]]; then
+  AGENT_EVAL_EXTRA_ARGS+=(--checker-model-name "${CHECKER_MODEL_NAME}")
+fi
+if [[ -n "${CHECKER_API_KEY_ENV}" ]]; then
+  AGENT_EVAL_EXTRA_ARGS+=(--checker-api-key-env "${CHECKER_API_KEY_ENV}")
+fi
+if [[ -n "${CHECKER_REQUEST_TIMEOUT_SECONDS}" ]]; then
+  AGENT_EVAL_EXTRA_ARGS+=(--checker-request-timeout-seconds "${CHECKER_REQUEST_TIMEOUT_SECONDS}")
+fi
+if [[ -n "${CHECKER_TEMPERATURE}" ]]; then
+  AGENT_EVAL_EXTRA_ARGS+=(--checker-temperature "${CHECKER_TEMPERATURE}")
+fi
 
 for STEP in "${STEP_VALUES[@]}"; do
   ACTOR_DIR="${RUN_DIR}/global_step_${STEP}/actor"
@@ -203,5 +249,6 @@ for STEP in "${STEP_VALUES[@]}"; do
     --tree-beam-size "${TREE_BEAM_SIZE}" \
     --tree-beam-tau "${TREE_BEAM_TAU}" \
     --tree-beam-epsilon-random "${TREE_BEAM_EPSILON_RANDOM}" \
-    --tree-seed "${TREE_SEED}"
+    --tree-seed "${TREE_SEED}" \
+    "${AGENT_EVAL_EXTRA_ARGS[@]}"
 done

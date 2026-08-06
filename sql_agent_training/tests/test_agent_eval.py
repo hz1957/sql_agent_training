@@ -108,6 +108,36 @@ def test_evaluate_agent_concurrency_preserves_example_order(tmp_path: Path) -> N
     assert progress[-1] == (4, 4)
 
 
+def test_evaluate_agent_uses_separate_checker_model_client(tmp_path: Path) -> None:
+    data_dir = tmp_path / "spider"
+    _write_eval_spider_dir(data_dir)
+    tables = load_tables_json(data_dir / "tables.json")
+    examples = [
+        SpiderExample(uid="music:0", db_id="music", question="List names.", gold_sql="SELECT Name FROM Singer")
+    ]
+    writer_client = ScriptedModelClient(["SELECT COUNT(*) FROM Singer", "SELECT Name FROM Singer"])
+    checker_client = ScriptedModelClient(
+        [
+            "The query returns a count, not names.\nTHE QUERY IS INCORRECT.",
+            "The query returns names.\nTHE QUERY IS CORRECT.",
+        ]
+    )
+
+    rows = evaluate_agent(
+        examples,
+        tables,
+        data_dir,
+        model_client=writer_client,
+        checker_model_client=checker_client,
+        max_turns=3,
+    )
+
+    assert writer_client.calls == 2
+    assert checker_client.calls == 2
+    assert rows[0].final_sql == "SELECT Name FROM Singer"
+    assert rows[0].reward == 1.0
+
+
 def test_load_remote_chat_client_from_env_file(monkeypatch, tmp_path: Path) -> None:
     for key in ("LLM_API_KEY_AGENT", "LLM_API_URL_AGENT", "LLM_MODEL_NAME"):
         monkeypatch.delenv(key, raising=False)

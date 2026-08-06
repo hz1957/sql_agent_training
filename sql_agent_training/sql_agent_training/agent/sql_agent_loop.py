@@ -181,20 +181,25 @@ class SqlAgentLoop:
         model_client: ModelClient,
         sqlite_path: str | Path,
         *,
+        checker_model_client: ModelClient | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        checker_temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
     ) -> AgentTrajectory:
         """Run an interactive SQL agent rollout with a model client."""
 
         def next_response(turns: list[AgentTurn], agent_step: str) -> ModelResponse | None:
-            del agent_step
-            return model_client.generate(
+            client = checker_model_client if agent_step == "check_query" and checker_model_client else model_client
+            request_temperature = temperature
+            if agent_step == "check_query" and checker_model_client:
+                request_temperature = 0.0 if checker_temperature is None else checker_temperature
+            return client.generate(
                 ModelRequest(
                     turns=tuple(turns),
                     max_tokens=max_tokens,
-                    temperature=temperature,
+                    temperature=request_temperature,
                     top_p=top_p,
                     top_k=top_k,
                 )

@@ -70,6 +70,32 @@ def test_checker_approved_node_is_leaf_but_sibling_frontier_expands(tmp_path: Pa
     assert all("## Previous query\nSELECT Missing FROM Singer" in turn.content for turn in rewrite_turns)
 
 
+def test_tree_eval_can_use_separate_checker_model_client(tmp_path: Path) -> None:
+    db_path = tmp_path / "music.sqlite"
+    _make_db(db_path)
+    writer_client = ScriptedModelClient(["SELECT COUNT(*) FROM Singer", "SELECT Name FROM Singer"])
+    checker_client = ScriptedModelClient(
+        [
+            "The query returns a count, not names.\nTHE QUERY IS INCORRECT.",
+            "The query returns names.\nTHE QUERY IS CORRECT.",
+        ]
+    )
+
+    trajectory = TreeSqlAgentEvalLoop(max_turns=1, branch_n=2, beam_size=1, seed=0).run(
+        _sample(),
+        writer_client,
+        db_path,
+        checker_model_client=checker_client,
+        temperature=1.0,
+    )
+
+    assert writer_client.calls == 2
+    assert checker_client.calls == 2
+    assert trajectory.final_sql == "SELECT Name FROM Singer"
+    assert trajectory.final_sql_source == "tree_checker_approved"
+    assert trajectory.reward == 1.0
+
+
 def test_tree_eval_terminal_decision_does_not_use_gold_sql(tmp_path: Path) -> None:
     db_path = tmp_path / "music.sqlite"
     _make_db(db_path)

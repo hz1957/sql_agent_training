@@ -229,6 +229,31 @@ def test_interactive_rollout_rewrites_with_scripted_model_client(tmp_path: Path)
     ]
 
 
+def test_interactive_rollout_can_use_separate_checker_model_client(tmp_path: Path) -> None:
+    db_path = tmp_path / "music.sqlite"
+    _make_db(db_path)
+    writer_client = ScriptedModelClient(["SELECT COUNT(*) FROM Singer", "SELECT Name FROM Singer"])
+    checker_client = ScriptedModelClient(
+        [
+            "The query returns a count, not names.\nTHE QUERY IS INCORRECT.",
+            "The query returns names.\nTHE QUERY IS CORRECT.",
+        ]
+    )
+
+    trajectory = SqlAgentLoop(max_turns=3).run(
+        _sample(),
+        writer_client,
+        db_path,
+        checker_model_client=checker_client,
+    )
+
+    assert writer_client.calls == 2
+    assert checker_client.calls == 2
+    assert trajectory.final_sql == "SELECT Name FROM Singer"
+    assert trajectory.final_sql_source == "checker_approved"
+    assert trajectory.reward == 1.0
+
+
 class InspectingClient:
     def __init__(self) -> None:
         self.requests: list[ModelRequest] = []

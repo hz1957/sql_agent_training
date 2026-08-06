@@ -196,8 +196,10 @@ class TreeSqlAgentEvalLoop(SqlAgentLoop):
         model_client: ModelClient,
         sqlite_path: str | Path,
         *,
+        checker_model_client: ModelClient | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        checker_temperature: float | None = None,
         top_p: float | None = None,
         top_k: int | None = None,
     ) -> AgentTrajectory:
@@ -224,10 +226,12 @@ class TreeSqlAgentEvalLoop(SqlAgentLoop):
                         branch_index=branch_index,
                         sequence_index=len(all_nodes) + len(expanded_nodes) + len(parent_children),
                         model_client=model_client,
+                        checker_model_client=checker_model_client,
                         sqlite_path=sqlite_path,
                         turns=turns,
                         max_tokens=max_tokens,
                         temperature=temperature,
+                        checker_temperature=checker_temperature,
                         top_p=top_p,
                         top_k=top_k,
                     )
@@ -322,10 +326,12 @@ class TreeSqlAgentEvalLoop(SqlAgentLoop):
         branch_index: int,
         sequence_index: int,
         model_client: ModelClient,
+        checker_model_client: ModelClient | None,
         sqlite_path: str | Path,
         turns: list[AgentTurn],
         max_tokens: int | None,
         temperature: float | None,
+        checker_temperature: float | None,
         top_p: float | None,
         top_k: int | None,
     ) -> TreeEvalNode:
@@ -430,11 +436,15 @@ class TreeSqlAgentEvalLoop(SqlAgentLoop):
                         "tree_branch_index": branch_index,
                     }
                 )
-                raw_check = model_client.generate(
+                checker_client = checker_model_client or model_client
+                checker_request_temperature = temperature
+                if checker_model_client is not None:
+                    checker_request_temperature = 0.0 if checker_temperature is None else checker_temperature
+                raw_check = checker_client.generate(
                     ModelRequest(
                         turns=(check_turn,),
                         max_tokens=max_tokens,
-                        temperature=temperature,
+                        temperature=checker_request_temperature,
                         top_p=top_p,
                         top_k=top_k,
                     )

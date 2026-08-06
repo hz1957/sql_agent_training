@@ -81,10 +81,12 @@ def evaluate_agent(
     data_dir: str | Path,
     *,
     model_client: ModelClient | None = None,
+    checker_model_client: ModelClient | None = None,
     dry_run_gold: bool = False,
     max_turns: int = 2,
     max_tokens: int = 256,
     temperature: float = 0.0,
+    checker_temperature: float | None = None,
     inference_mode: str = "chain",
     concurrency: int = 1,
     progress_callback: Callable[[int, int], None] | None = None,
@@ -131,8 +133,10 @@ def evaluate_agent(
                     sample,
                     model_client,
                     sqlite_path,
+                    checker_model_client=checker_model_client,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    checker_temperature=checker_temperature,
                 )
             else:
                 chain_loop = SqlAgentLoop(max_turns=max_turns)
@@ -140,8 +144,10 @@ def evaluate_agent(
                     sample,
                     model_client,
                     sqlite_path,
+                    checker_model_client=checker_model_client,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    checker_temperature=checker_temperature,
                 )
         return _trajectory_to_result(example, trajectory)
 
@@ -392,6 +398,32 @@ def _load_model_client(
     )
 
 
+def _config_with_model_section(config: dict[str, Any], section_name: str) -> dict[str, Any]:
+    """Return a config copy that uses a model override section."""
+
+    model_override = config.get(section_name) or {}
+    if not isinstance(model_override, dict):
+        raise ValueError(f"{section_name} must be a mapping when provided")
+    merged = dict(config)
+    merged["model"] = {**config.get("model", {}), **model_override}
+    rollout_override = model_override.get("rollout")
+    if isinstance(rollout_override, dict):
+        merged["rollout"] = {**config.get("rollout", {}), **rollout_override}
+    return merged
+
+
+def _checker_requested(config: dict[str, Any], args: argparse.Namespace) -> bool:
+    checker_config = config.get("checker_model")
+    return bool(
+        checker_config
+        or args.checker_backend
+        or args.checker_api_url
+        or args.checker_model_name
+        or args.checker_api_key_env
+        or args.checker_request_timeout_seconds is not None
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate a SQL-agent model on a Spider split.")
     parser.add_argument("--config", default="configs/agent_eval.yaml")
@@ -411,6 +443,22 @@ def main() -> None:
     parser.add_argument("--model-name", default=None, help="Remote model name.")
     parser.add_argument("--api-key-env", default=None, help="Environment variable containing the API key.")
     parser.add_argument("--request-timeout-seconds", type=float, default=None)
+    parser.add_argument(
+        "--checker-backend",
+        choices=["hf", "openai_chat", "sglang"],
+        default=None,
+        help="Optional separate checker backend. If set, SQL generation still uses --backend/config model.",
+    )
+    parser.add_argument("--checker-api-url", default=None, help="OpenAI-compatible checker API base URL.")
+    parser.add_argument("--checker-model-name", default=None, help="Remote checker model name.")
+    parser.add_argument("--checker-api-key-env", default=None, help="Environment variable containing checker API key.")
+    parser.add_argument("--checker-request-timeout-seconds", type=float, default=None)
+    parser.add_argument(
+        "--checker-temperature",
+        type=float,
+        default=None,
+        help="Sampling temperature for the separate checker. Defaults to 0.0 when a checker model is configured.",
+    )
     parser.add_argument("--concurrency", type=int, default=None, help="Concurrent complete agent trajectories.")
     parser.add_argument("--log-every", type=int, default=None, help="Report progress after this many examples.")
     parser.add_argument("--split", default="validation", choices=["train", "validation"])
@@ -482,6 +530,22 @@ def main() -> None:
             request_timeout_seconds=args.request_timeout_seconds,
         )
     )
+    checker_model_client = None
+    if not args.dry_run_gold and _checker_requested(config, args):
+        checker_config = config.get("checker_model") or {}
+        if not isinstance(checker_config, dict):
+            parser.error("config checker_model must be a mapping when provided")
+        checker_backend = str(args.checker_backend or checker_config.get("backend", "openai_chat")).strip().lower()
+        checker_model_client = _load_model_client(
+            _config_with_model_section(config, "checker_model"),
+            checkpoint=None,
+            tokenizer_path=None,
+            backend=checker_backend,
+            api_url=args.checker_api_url,
+            model_name=args.checker_model_name,
+            api_key_env=args.checker_api_key_env,
+            request_timeout_seconds=args.checker_request_timeout_seconds,
+        )
     rollout_config = config.get("rollout", {})
     inference_mode = args.inference_mode or _rollout_str(config, "inference_mode", "chain")
 
@@ -494,10 +558,12 @@ def main() -> None:
         tables_index,
         data_dir,
         model_client=model_client,
+        checker_model_client=checker_model_client,
         dry_run_gold=args.dry_run_gold,
         max_turns=int(rollout_config.get("max_turns", 2)),
         max_tokens=int(rollout_config.get("max_response_length", 256)),
         temperature=float(rollout_config.get("temperature", 0.0)),
+        checker_temperature=args.checker_temperature,
         inference_mode=inference_mode,
         concurrency=concurrency,
         progress_callback=report_progress,
