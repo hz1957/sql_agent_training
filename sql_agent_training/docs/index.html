@@ -1905,16 +1905,26 @@
                     <td><strong>22.33%</strong></td>
                     <td>59.70%</td>
                   </tr>
+                  <tr>
+                    <td>S1 chain <code>n=8</code> + DAPO clip-higher</td>
+                    <td>8</td>
+                    <td>80.33%</td>
+                    <td><strong>98.33%</strong></td>
+                    <td><strong>1.26</strong></td>
+                    <td><strong>9.67%</strong></td>
+                    <td><strong>16.00%</strong></td>
+                    <td>60.42%</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
-            <p class="caption">表 6. Full Mixed-SFT 基线与三组 rollout 方案的 agent evaluation。三组 GRPO 方案采用相同 base
+            <p class="caption">表 6. Full Mixed-SFT 基线与四组 rollout 方案的 agent evaluation。四组 GRPO 方案采用相同 base
               policy、训练稳定性配置和评测协议；粗体标出每列最优点估计。</p>
           </div>
 
-          <p>三组执行准确率的点估计仅分布在 82.00%–83.67% 之间，当前结果没有拉开清晰差距。S3 <code>branch=4/beam=2/n=20</code> 的准确率最高，但仅比 S1
+          <p>原三组执行准确率的点估计仅分布在 82.00%–83.67% 之间，当前结果没有拉开清晰差距。S3 <code>branch=4/beam=2/n=20</code> 的准确率最高，但仅比 S1
             <code>n=8</code> 高 0.33 个百分点；这一微小差值不足以支持 tree rollout 更准确的结论。S3 <code>branch=8/beam=1/n=24</code> 比前者低 1.67
-            个百分点，没有显示扩大 branch 和 rollout slots 的收益。
+            个百分点，没有显示扩大 branch 和 rollout slots 的收益。DAPO clip-higher 的准确率为 80.33%，低于原 S1 n=8，但平均轮数、耗尽轮数率与 rewrite rate 更低。
           </p>
           <p>行为与资源指标提供了更明确的工程区分。S3 n=24 相比 S3 n=20 的平均轮数从 1.46 增至 1.65，耗尽轮数率从 17.67% 增至 28.00%，rewrite rate 从 27.33% 增至
             35.67%，同时训练计算量和阶段边界显存压力更高，因此不再采用。S1 n=8 的准确率与 S3 n=20 基本持平，但平均轮数、耗尽轮数率和 rewrite rate 均最低，且 rollout slots
