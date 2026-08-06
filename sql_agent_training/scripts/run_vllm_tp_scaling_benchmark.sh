@@ -8,15 +8,24 @@ set -euo pipefail
 #   bash sql_agent_training/scripts/run_vllm_tp_scaling_benchmark.sh fixed
 #   bash sql_agent_training/scripts/run_vllm_tp_scaling_benchmark.sh all
 #
+# Relative RESULT_ROOT values are resolved under this inner project directory,
+# e.g. /storage/.../sql_agent_training/sql_agent_training/artifacts/logs.
+#
 # Cases:
 #   single      TP=1 on 1 GPU, TP=2 on 2 GPUs, TP=4 on 4 GPUs.
 #   fixed       4 replicas x TP=1, 2 replicas x TP=2, 1 replica x TP=4.
 #   tp1,tp2,tp4,rep4tp1,rep2tp2,rep1tp4 run one case only.
 
-LAUNCH_DIR="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_DIR}"
+
+resolve_project_path() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s\n' "${PROJECT_DIR}/$1" ;;
+  esac
+}
 
 MODE="${1:-all}"
 case "${MODE}" in
@@ -46,11 +55,7 @@ fi
 DATASET_PARQUET="${DATASET_PARQUET:-${DEFAULT_DATASET_PARQUET}}"
 DATA_DIR="${DATA_DIR:-data/spider}"
 RESULT_ROOT_RAW="${RESULT_ROOT:-artifacts/logs/vllm_tp_scaling/$(date +%Y%m%d_%H%M%S)}"
-if [[ "${RESULT_ROOT_RAW}" = /* ]]; then
-  RESULT_ROOT="${RESULT_ROOT_RAW}"
-else
-  RESULT_ROOT="${LAUNCH_DIR}/${RESULT_ROOT_RAW}"
-fi
+RESULT_ROOT="$(resolve_project_path "${RESULT_ROOT_RAW}")"
 
 LIMIT="${LIMIT:-128}"
 REPETITIONS="${REPETITIONS:-1}"

@@ -3015,7 +3015,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
           <h2 id="tp-scaling-abstract">摘要</h2>
           <p>本实验在同一台 4×H100 节点上，以 300 条 SQL agent validation prompt 和全局并发度 8，对
             Qwen2.5-Coder-14B policy 的 vLLM tensor parallel 配置进行两组对照。单实例实验中，TP=2 与 TP=4 相对 TP=1
-            的请求吞吐分别提高 38.2% 与 76.8%，但并行效率下降到 69.1% 与 44.2%，表明跨卡扩展存在明显递减收益。固定 4-GPU
+            的请求吞吐分别提高 38.2% 与 76.8%，但并行效率下降到 69.1% 与 44.2%。固定 4-GPU
             预算下，1×TP=4 达到 31.15 requests/s 和 985.04 output tokens/s，较 4×TP=1 均提高约 61.7%，并将 p95
             延迟从 836.8ms 降至 506.6ms。该结论仅适用于当前低并发、短输出 SQL 生成负载；多副本配置在每副本约两个并发下没有进入饱和区间，不能据此判断最大服务容量。</p>
         </section>
@@ -3244,8 +3244,8 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
             <p class="caption">表 4. 单实例、global concurrency=8 的 TP 扩展结果。Speedup 以 requests/s 计算；并行效率为 speedup/TP。</p>
           </div>
           <p>TP=2 和 TP=4 相对 TP=1 的请求吞吐分别提高 38.2% 和 76.8%，p95 延迟分别降低 30.0% 和 43.4%。增加 TP
-            在当前 workload 下持续改善绝对性能，但 speedup 明显低于 GPU 数量增长：每 GPU 请求吞吐从 TP=1 的 17.65 requests/s 降至 TP=2 的 12.19 和 TP=4
-            的 7.80，说明更高 TP 的低延迟收益伴随显著的资源效率下降。</p>
+            在当前 workload 下持续改善绝对性能，但 speedup 低于 GPU 数量增长：每 GPU 请求吞吐从 TP=1 的 17.65 requests/s 降至 TP=2 的 12.19 和 TP=4
+            的 7.80。</p>
 
           <h3>3.2 固定 4-GPU 预算</h3>
           <div class="table-block">
@@ -3308,28 +3308,100 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
             <p class="caption">表 5. 固定 4×H100、global concurrency=8 的拓扑对照。所有配置均完成 300/300 个请求，无请求失败或 OOM。</p>
           </div>
           <p>在相同四卡预算下，1×TP=4 相比 4×TP=1 将 requests/s 和 output tokens/s 均提高约 61.7%，同时将 p50 与 p95
-            延迟分别降低 38.7% 和 39.5%；相比 2×TP=2，请求吞吐提高 14.5%，p95 延迟降低 15.1%。结果说明在全局并发度 8
-            时，单请求模型并行加速比增加低 TP 副本更有效。原因并非多副本拓扑本身缺乏容量，而是轮询后 4×TP=1 每个副本平均只有约两个并发请求，无法形成足够大的持续 batch。</p>
+            延迟分别降低 38.7% 和 39.5%；相比 2×TP=2，请求吞吐提高 14.5%，p95 延迟降低 15.1%。在全局并发度 8
+            时，该 workload 更受益于单实例 TP 带来的请求延迟下降。轮询后 4×TP=1 每个副本平均只有约两个并发请求，因此该结果不能说明多副本拓扑的饱和容量。</p>
 
           <h3>3.3 运行稳定性与显存</h3>
           <p>六组共完成 1,800/1,800 个请求，没有请求失败或 OOM。物理配置相同的 <code>single_tp4</code> 与
             <code>fixed_1rep_tp4</code> 分别达到 31.20 和 31.15 requests/s，差异约 0.17%；output tokens/s 差异约
-            0.15%，说明本次节点内短时测量具有较好的重复性。</p>
+            0.15%，可作为本次节点内短时测量的有限复核。</p>
           <p>各已使用 GPU 的峰值显存约为 63.9–65.7GiB。由于所有服务都设置 <code>gpu_memory_utilization=0.80</code>，vLLM 会利用剩余预算预留
             KV cache，因此该数字主要代表配置的显存预算高水位，不能解释为 TP=4 的模型参数或激活天然占用约 66GiB。单实例 TP=1/2/4 的聚合显存随 GPU 数增加，也不应直接用于比较模型本身的内存效率。</p>
         </section>
 
+        <section aria-labelledby="tp-agent-smoke">
+          <h2 id="tp-agent-smoke">4. 端到端轨迹冒烟验证</h2>
+          <p>为确认 benchmark 可以覆盖完整 SQL agent 路径，补充执行了一个小样本 agent trace smoke：固定 4×H100 预算、global
+            concurrency=2、8 条 validation prompt、每组 1 次运行。该测试包含 write SQL、SQLite 执行、checker 判断和 rewrite turn，统计口径从单次
+            vLLM completion 扩展为完整 trajectory 完成时间。由于样本数和并发度都很小，该结果仅用于验证测量链路与端到端计时，不作为正式性能排序依据。</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>拓扑</th>
+                    <th>Traj/s</th>
+                    <th>Model calls/s</th>
+                    <th>Latency p50</th>
+                    <th>Latency p95</th>
+                    <th>平均模型调用</th>
+                    <th>Rewrite rate</th>
+                    <th>Exec acc.</th>
+                    <th>每卡最高显存</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>4 × TP=1</code></td>
+                    <td>2.33</td>
+                    <td>5.24</td>
+                    <td>606.8ms</td>
+                    <td>1.487s</td>
+                    <td>2.25</td>
+                    <td>12.5%</td>
+                    <td>87.5%</td>
+                    <td>63.9GiB</td>
+                  </tr>
+                  <tr>
+                    <td><code>2 × TP=2</code></td>
+                    <td>3.39</td>
+                    <td>7.62</td>
+                    <td>407.3ms</td>
+                    <td>1.023s</td>
+                    <td>2.25</td>
+                    <td>12.5%</td>
+                    <td>87.5%</td>
+                    <td>65.7GiB</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td><code>1 × TP=4</code></td>
+                    <td><strong>4.14</strong></td>
+                    <td><strong>9.33</strong></td>
+                    <td><strong>344.3ms</strong></td>
+                    <td><strong>850.1ms</strong></td>
+                    <td>2.25</td>
+                    <td>12.5%</td>
+                    <td>87.5%</td>
+                    <td>65.7GiB</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 6. 完整 agent trace smoke。三组均完成 8/8 条 trajectory，无请求失败、无 parse error、无耗尽轮数。</p>
+          </div>
+
+          <p>在该低并发 smoke 中，1×TP=4 相比 4×TP=1 的 trajectory throughput 提高约 78.1%，p95 trajectory latency 从
+            1.487s 降至 850.1ms；相比 2×TP=2，trajectory throughput 提高约 22.4%，p95 latency 降低约 16.9%。三组的平均模型调用数、
+            rewrite rate 和执行准确率完全一致，说明这里的差异主要来自 serving 拓扑与调度路径，而不是样本行为差异。</p>
+          <p>该 smoke 与前面的单 completion 低并发结论方向一致，但因为只有 8 条样本、concurrency=2 且没有重复运行，只能说明完整 agent trace
+            计时链路已经可用。固定 300 条 prompt、global concurrency=32/64、每组至少 3 次独立运行仍是判断饱和吞吐和方差的必要实验。</p>
+          <p class="source">数据来源：<code>artifacts/logs/vllm_tp_followup/agent_smoke_20260805_200936</code> 下三组
+            <code>summary.json</code>、<code>trajectories.jsonl</code>、<code>gpu_monitor.csv</code> 与聚合文件
+            <code>aggregate_summary.csv</code>。</p>
+        </section>
+
         <section aria-labelledby="tp-scaling-conclusion">
-          <h2 id="tp-scaling-conclusion">4. 结论与边界</h2>
+          <h2 id="tp-scaling-conclusion">5. 结论与边界</h2>
           <ul class="config-list">
             <li><strong>低并发部署选择</strong>：对当前平均约 224 input tokens、32 output tokens 的 SQL workload，在 global concurrency=8
-              下，1×TP=4 同时取得最高吞吐和最低尾延迟，是固定四卡预算下的当前最优配置。</li>
+              下，1×TP=4 同时取得最高吞吐和最低尾延迟。</li>
             <li><strong>单实例扩展规律</strong>：TP 从 1 增至 2、4 时绝对性能持续提高，但并行效率从 100% 降至 69.1% 和 44.2%；TP=4
               的优势是响应速度，而不是每 GPU 吞吐。</li>
             <li><strong>不能外推最大吞吐</strong>：本轮只有 concurrency=8，且每个配置只有一次正式测量。4×TP=1 与 2×TP=2
               没有被充分压满，因此当前结果不能回答高并发下哪种拓扑拥有最高饱和容量。</li>
-            <li><strong>后续验证</strong>：固定相同 300 条 prompt，在 global concurrency=32/64 下重复固定预算对照，并为每个配置执行至少三次独立运行；随后再使用包含执行反馈与 rewrite turn
-              的完整 agent trace 验证端到端 rollout 完成时间。</li>
+            <li><strong>后续验证</strong>：已完成 8 条样本的完整 agent trace smoke；正式结论仍需要固定相同 300 条 prompt，在 global concurrency=32/64
+              下重复固定预算对照，并为每个配置执行至少三次独立运行。</li>
           </ul>
           <p class="source">数据来源：<code>artifacts/logs/vllm_tp_scaling/formal_20260805_191101</code> 下六组
             <code>summary.json</code>、逐请求 <code>requests.jsonl</code> 与 <code>gpu_monitor.csv</code>。服务启动时间不计入请求测量窗口。</p>

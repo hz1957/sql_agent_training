@@ -6,11 +6,20 @@ set -euo pipefail
 #   agent       complete SQL write/check/rewrite traces, three independent runs.
 #   all         run both phases and aggregate mean/sample standard deviation.
 #   summarize   rebuild aggregate_summary.json/csv from existing runs.
+#
+# Relative RESULT_ROOT values are resolved under this inner project directory,
+# e.g. /storage/.../sql_agent_training/sql_agent_training/artifacts/logs.
 
-LAUNCH_DIR="$(pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 MODE="${1:-all}"
+
+resolve_project_path() {
+  case "$1" in
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s\n' "${PROJECT_DIR}/$1" ;;
+  esac
+}
 
 case "${MODE}" in
   all|saturation|agent|summarize) ;;
@@ -21,11 +30,7 @@ case "${MODE}" in
 esac
 
 RESULT_ROOT_RAW="${RESULT_ROOT:-artifacts/logs/vllm_tp_followup/$(date +%Y%m%d_%H%M%S)}"
-if [[ "${RESULT_ROOT_RAW}" = /* ]]; then
-  FOLLOWUP_ROOT="${RESULT_ROOT_RAW}"
-else
-  FOLLOWUP_ROOT="${LAUNCH_DIR}/${RESULT_ROOT_RAW}"
-fi
+FOLLOWUP_ROOT="$(resolve_project_path "${RESULT_ROOT_RAW}")"
 
 SATURATION_CONCURRENCIES="${SATURATION_CONCURRENCIES:-32 64}"
 SATURATION_RUNS="${SATURATION_RUNS:-3}"
