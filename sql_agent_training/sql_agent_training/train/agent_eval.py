@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
+import os
+import sys
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from sql_agent_training.agent.model_client import HuggingFaceModelClient, ModelClient
+from sql_agent_training.agent.model_client import HuggingFaceModelClient, ModelClient, OpenAIChatModelClient
 from sql_agent_training.agent.sql_agent_loop import SqlAgentInput, SqlAgentLoop
 from sql_agent_training.agent.trace_format import AgentTrajectory
 from sql_agent_training.agent.tree_sql_agent_loop import TreeSqlAgentEvalLoop
@@ -82,6 +86,8 @@ def evaluate_agent(
     max_tokens: int = 256,
     temperature: float = 0.0,
     inference_mode: str = "chain",
+    concurrency: int = 1,
+    progress_callback: Callable[[int, int], None] | None = None,
     tree_branch_n: int = 4,
     tree_beam_size: int = 2,
     tree_beam_tau: float = 1.0,
@@ -94,18 +100,10 @@ def evaluate_agent(
         raise ValueError("model_client is required unless dry_run_gold is enabled")
     if inference_mode not in {"chain", "tree"}:
         raise ValueError(f"inference_mode must be 'chain' or 'tree', got {inference_mode!r}")
+    if concurrency <= 0:
+        raise ValueError("concurrency must be greater than zero")
 
-    chain_loop = SqlAgentLoop(max_turns=max_turns)
-    tree_loop = TreeSqlAgentEvalLoop(
-        max_turns=max_turns,
-        branch_n=tree_branch_n,
-        beam_size=tree_beam_size,
-        beam_tau=tree_beam_tau,
-        beam_epsilon_random=tree_beam_epsilon_random,
-        seed=tree_seed,
-    )
-    rows: list[AgentEvalResult] = []
-    for index, example in enumerate(examples):
+    def evaluate_one(index: int, example: SpiderExample) -> AgentEvalResult:
         sample = SqlAgentInput(
             uid=example.uid,
             rollout_id=f"{example.uid}:eval{index}",
@@ -116,10 +114,19 @@ def evaluate_agent(
         )
         sqlite_path = expected_sqlite_path(data_dir, example.db_id)
         if dry_run_gold:
+            chain_loop = SqlAgentLoop(max_turns=max_turns)
             trajectory = chain_loop.run_with_responses(sample, [example.gold_sql], sqlite_path)
         else:
             assert model_client is not None
             if inference_mode == "tree":
+                tree_loop = TreeSqlAgentEvalLoop(
+                    max_turns=max_turns,
+                    branch_n=tree_branch_n,
+                    beam_size=tree_beam_size,
+                    beam_tau=tree_beam_tau,
+                    beam_epsilon_random=tree_beam_epsilon_random,
+                    seed=tree_seed,
+                )
                 trajectory = tree_loop.run(
                     sample,
                     model_client,
@@ -128,6 +135,7 @@ def evaluate_agent(
                     temperature=temperature,
                 )
             else:
+                chain_loop = SqlAgentLoop(max_turns=max_turns)
                 trajectory = chain_loop.run(
                     sample,
                     model_client,
@@ -135,8 +143,33 @@ def evaluate_agent(
                     max_tokens=max_tokens,
                     temperature=temperature,
                 )
-        rows.append(_trajectory_to_result(example, trajectory))
-    return rows
+        return _trajectory_to_result(example, trajectory)
+
+    total = len(examples)
+    if concurrency == 1 or total <= 1:
+        rows: list[AgentEvalResult] = []
+        for index, example in enumerate(examples):
+            rows.append(evaluate_one(index, example))
+            if progress_callback is not None:
+                progress_callback(index + 1, total)
+        return rows
+
+    ordered_rows: list[AgentEvalResult | None] = [None] * total
+    completed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        future_to_index = {
+            executor.submit(evaluate_one, index, example): index for index, example in enumerate(examples)
+        }
+        for future in concurrent.futures.as_completed(future_to_index):
+            index = future_to_index[future]
+            ordered_rows[index] = future.result()
+            completed += 1
+            if progress_callback is not None:
+                progress_callback(completed, total)
+
+    if any(row is None for row in ordered_rows):
+        raise RuntimeError("Agent evaluation completed without a result for every example")
+    return [row for row in ordered_rows if row is not None]
 
 
 def summarize_agent_eval(rows: list[AgentEvalResult]) -> dict[str, float | int]:
@@ -269,14 +302,75 @@ def _has_tokenizer_files(path: str | Path) -> bool:
     return any((root / name).exists() for name in ("tokenizer.json", "tokenizer_config.json", "vocab.json"))
 
 
+def _load_env_file(path: str | Path) -> None:
+    env_path = Path(path)
+    if not env_path.exists():
+        return
+    for line_number, raw_line in enumerate(env_path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+        key, separator, value = line.partition("=")
+        key = key.strip()
+        if not separator or not key:
+            raise ValueError(f"Invalid .env entry at {env_path}:{line_number}")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
 def _load_model_client(
     config: dict[str, Any],
     checkpoint: str | None,
     tokenizer_path: str | None,
-) -> HuggingFaceModelClient:
+    *,
+    backend: str | None = None,
+    api_url: str | None = None,
+    model_name: str | None = None,
+    api_key_env: str | None = None,
+    request_timeout_seconds: float | None = None,
+) -> ModelClient:
     model_config = config.get("model", {})
-    tokenizer_config = config.get("tokenizer", {})
     rollout_config = config.get("rollout", {})
+    resolved_backend = str(backend or model_config.get("backend", "hf")).strip().lower()
+
+    if resolved_backend in {"openai_chat", "sglang"}:
+        api_url_env = str(model_config.get("api_url_env", "LLM_API_URL_AGENT"))
+        model_name_env = str(model_config.get("model_name_env", "LLM_MODEL_NAME"))
+        resolved_api_key_env = str(api_key_env or model_config.get("api_key_env", "LLM_API_KEY_AGENT"))
+        resolved_api_url = str(api_url or model_config.get("base_url") or os.environ.get(api_url_env, ""))
+        resolved_model_name = str(model_name or model_config.get("model_name") or os.environ.get(model_name_env, ""))
+        resolved_api_key = os.environ.get(resolved_api_key_env)
+        if not resolved_api_url:
+            raise ValueError(f"Remote chat backend requires model.base_url or ${api_url_env}")
+        if not resolved_model_name:
+            raise ValueError(f"Remote chat backend requires model.model_name or ${model_name_env}")
+        if not resolved_api_key:
+            raise ValueError(f"Remote chat backend requires ${resolved_api_key_env}")
+        timeout_seconds = (
+            request_timeout_seconds
+            if request_timeout_seconds is not None
+            else float(model_config.get("request_timeout_seconds", 300.0))
+        )
+        return OpenAIChatModelClient(
+            base_url=resolved_api_url,
+            model_name=resolved_model_name,
+            api_key=resolved_api_key,
+            timeout_seconds=timeout_seconds,
+            max_new_tokens=int(rollout_config.get("max_response_length", 256)),
+            temperature=float(rollout_config.get("temperature", 0.0)),
+            top_p=float(rollout_config["top_p"]) if rollout_config.get("top_p") is not None else None,
+            max_retries=int(model_config.get("request_retries", 2)),
+            retry_backoff_seconds=float(model_config.get("retry_backoff_seconds", 1.0)),
+        )
+
+    if resolved_backend != "hf":
+        raise ValueError(f"Unsupported model backend: {resolved_backend!r}")
+
+    tokenizer_config = config.get("tokenizer", {})
     training_config = config.get("training", {})
     model_path = checkpoint or str(model_config["path"])
     resolved_tokenizer = tokenizer_path or str(
@@ -311,6 +405,14 @@ def main() -> None:
         default=None,
         help="Tokenizer path. Defaults to checkpoint tokenizer or model.path.",
     )
+    parser.add_argument("--backend", choices=["hf", "openai_chat", "sglang"], default=None)
+    parser.add_argument("--env-file", default=None, help="Environment file. Defaults to the project .env file.")
+    parser.add_argument("--api-url", default=None, help="OpenAI-compatible API base URL.")
+    parser.add_argument("--model-name", default=None, help="Remote model name.")
+    parser.add_argument("--api-key-env", default=None, help="Environment variable containing the API key.")
+    parser.add_argument("--request-timeout-seconds", type=float, default=None)
+    parser.add_argument("--concurrency", type=int, default=None, help="Concurrent complete agent trajectories.")
+    parser.add_argument("--log-every", type=int, default=None, help="Report progress after this many examples.")
     parser.add_argument("--split", default="validation", choices=["train", "validation"])
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--sample-size", type=int, default=None, help="Randomly sample this many examples for eval.")
@@ -332,6 +434,12 @@ def main() -> None:
     parser.add_argument("--tree-seed", type=int, default=None)
     args = parser.parse_args()
 
+    default_env_file = Path(__file__).resolve().parents[2] / ".env"
+    env_file = Path(args.env_file) if args.env_file else default_env_file
+    if args.env_file and not env_file.exists():
+        parser.error(f"--env-file does not exist: {env_file}")
+    _load_env_file(env_file)
+
     config = _load_config(args.config)
     data_dir = Path(config["data"]["data_dir"])
     examples = load_spider_file(data_dir / _split_file(config, args.split))
@@ -349,9 +457,38 @@ def main() -> None:
     predictions_jsonl = Path(args.predictions_jsonl or output_dir / "eval_predictions.jsonl")
     metrics_json = Path(args.metrics_json or output_dir / "eval_metrics.json")
 
-    model_client = None if args.dry_run_gold else _load_model_client(config, args.checkpoint, args.tokenizer)
+    model_backend = str(args.backend or config.get("model", {}).get("backend", "hf")).strip().lower()
+    eval_config = config.get("eval", {})
+    concurrency = args.concurrency if args.concurrency is not None else int(eval_config.get("concurrency", 1))
+    log_every = args.log_every if args.log_every is not None else int(eval_config.get("log_every", 20))
+    if concurrency <= 0:
+        parser.error("--concurrency must be greater than zero")
+    if log_every <= 0:
+        parser.error("--log-every must be greater than zero")
+    if model_backend == "hf" and concurrency != 1 and not args.dry_run_gold:
+        parser.error("The HF backend supports only --concurrency 1.")
+
+    model_client = (
+        None
+        if args.dry_run_gold
+        else _load_model_client(
+            config,
+            args.checkpoint,
+            args.tokenizer,
+            backend=model_backend,
+            api_url=args.api_url,
+            model_name=args.model_name,
+            api_key_env=args.api_key_env,
+            request_timeout_seconds=args.request_timeout_seconds,
+        )
+    )
     rollout_config = config.get("rollout", {})
     inference_mode = args.inference_mode or _rollout_str(config, "inference_mode", "chain")
+
+    def report_progress(completed: int, total: int) -> None:
+        if completed % log_every == 0 or completed == total:
+            print(f"completed={completed}/{total}", file=sys.stderr, flush=True)
+
     rows = evaluate_agent(
         examples,
         tables_index,
@@ -362,6 +499,8 @@ def main() -> None:
         max_tokens=int(rollout_config.get("max_response_length", 256)),
         temperature=float(rollout_config.get("temperature", 0.0)),
         inference_mode=inference_mode,
+        concurrency=concurrency,
+        progress_callback=report_progress,
         tree_branch_n=(
             args.tree_branch_n if args.tree_branch_n is not None else _rollout_int(config, "tree_branch_n", 4)
         ),

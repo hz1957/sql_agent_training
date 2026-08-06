@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
@@ -60,10 +61,10 @@ class ScriptedModelClient:
         return ModelResponse(content=response)
 
 
-def format_hf_prompt(tokenizer: Any, turns: Sequence[AgentTurn]) -> str:
-    """Format agent turns with a Hugging Face chat template when available."""
+def format_openai_messages(turns: Sequence[AgentTurn]) -> list[dict[str, str]]:
+    """Convert agent turns to messages accepted by OpenAI-compatible chat APIs."""
 
-    messages = []
+    messages: list[dict[str, str]] = []
     for turn in turns:
         if turn.role == "tool":
             messages.append({"role": "user", "content": f"Tool observation:\n{turn.content}"})
@@ -71,6 +72,13 @@ def format_hf_prompt(tokenizer: Any, turns: Sequence[AgentTurn]) -> str:
             messages.append({"role": turn.role, "content": turn.content})
         else:
             messages.append({"role": "user", "content": f"{turn.role}: {turn.content}"})
+    return messages
+
+
+def format_hf_prompt(tokenizer: Any, turns: Sequence[AgentTurn]) -> str:
+    """Format agent turns with a Hugging Face chat template when available."""
+
+    messages = format_openai_messages(turns)
 
     chat_template = getattr(tokenizer, "chat_template", None)
     if chat_template:
@@ -399,4 +407,107 @@ class VllmOpenAIModelClient:
             payload,
             api_key=self.api_key,
             timeout_seconds=self.timeout_seconds,
+        )
+
+
+class OpenAIChatModelClient:
+    """Client for tokenizer-free, OpenAI-compatible chat-completions endpoints."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        model_name: str,
+        api_key: str | None = None,
+        timeout_seconds: float = 300.0,
+        max_new_tokens: int = 256,
+        temperature: float = 0.0,
+        top_p: float | None = None,
+        max_retries: int = 2,
+        retry_backoff_seconds: float = 1.0,
+    ) -> None:
+        if max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
+        if retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds must be non-negative")
+        self.base_url = base_url.rstrip("/")
+        self.model_name = model_name
+        self.api_key = api_key
+        self.timeout_seconds = timeout_seconds
+        self.default_max_new_tokens = max_new_tokens
+        self.default_temperature = temperature
+        self.default_top_p = top_p
+        self.max_retries = max_retries
+        self.retry_backoff_seconds = retry_backoff_seconds
+
+    @staticmethod
+    def _is_retryable(exc: BaseException) -> bool:
+        if isinstance(exc, (urllib.error.URLError, TimeoutError, ConnectionError)):
+            return True
+        message = str(exc).lower()
+        return any(
+            marker in message
+            for marker in (
+                "http 408",
+                "http 409",
+                "http 425",
+                "http 429",
+                "http 5",
+                "timed out",
+                "temporarily unavailable",
+                "connection reset",
+                "remote end closed connection",
+            )
+        )
+
+    def _post(self, payload: dict[str, Any]) -> dict[str, Any] | str:
+        for attempt in range(self.max_retries + 1):
+            try:
+                return _post_json(
+                    _join_url(self.base_url, "chat/completions"),
+                    payload,
+                    api_key=self.api_key,
+                    timeout_seconds=self.timeout_seconds,
+                )
+            except (RuntimeError, urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+                if attempt >= self.max_retries or not self._is_retryable(exc):
+                    raise
+                time.sleep(self.retry_backoff_seconds * (2**attempt))
+        raise RuntimeError("Chat request retry loop ended unexpectedly")
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        """Generate the next assistant message through a hosted chat API."""
+
+        messages = format_openai_messages(request.turns)
+        max_new_tokens = request.max_tokens or self.default_max_new_tokens
+        temperature = self.default_temperature if request.temperature is None else request.temperature
+        top_p = self.default_top_p if request.top_p is None else request.top_p
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": messages,
+            "max_tokens": max_new_tokens,
+            "temperature": temperature,
+            "stream": False,
+        }
+        if top_p is not None:
+            payload["top_p"] = top_p
+
+        response = self._post(payload)
+        if not isinstance(response, dict):
+            raise RuntimeError(f"Unexpected chat-completions response: {response!r}")
+        choices = response.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise RuntimeError(f"Chat-completions response did not contain choices: {response!r}")
+        choice = choices[0]
+        message = choice.get("message") if isinstance(choice, dict) else None
+        if not isinstance(message, dict):
+            raise RuntimeError(f"Chat-completions choice did not contain a message: {choice!r}")
+        content = message.get("content")
+        if content is None:
+            content = message.get("reasoning_content", "")
+        text = str(content).strip()
+        return ModelResponse(
+            content=text,
+            prompt_text=json.dumps(messages, ensure_ascii=False),
+            response_text=text,
         )

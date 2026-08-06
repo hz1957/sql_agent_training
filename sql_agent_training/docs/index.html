@@ -1070,8 +1070,7 @@
 
         <h3>3.2 比例设计与训练收敛</h3>
         <p>四个比例配置均包含 4,800 条训练记录，并在相同训练预算下完成 checkpoint-300。trajectory 子集按扩展轨迹池中的 direct/rewrite 分布近似分层抽样；gold-only
-          组提供比例实验内部的严格对照。训练日志显示四组在 step 300 的 validation loss 与 token accuracy 接近，说明 token-level validation 指标不能充分解释
-          agent-level execution accuracy 的差异。</p>
+          组提供比例实验内部的对照。</p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -2372,21 +2371,18 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
 
         <section class="abstract" aria-labelledby="perf-abstract">
           <h2 id="perf-abstract">摘要</h2>
-          <p>本页以时间瓶颈为主线，并在对应阶段报告显存与 CPU 内存证据。历史 S3、KL=0.01、PPO epoch=2 日志曾显示 Actor→vLLM 同步耗时 44.3 秒，但该结果来自 full-summon
-            CPU-offload fallback，不代表当前 layered summon 成本；资源日志也显示该 fallback 伴随接近 470GB 的 CPU 内存压力。以 layered summon 成功的
-            5-step 运行作为当前同步路径 baseline 后，策略优化成为最主要的稳定开销；开启 <code>dynamic_bsz</code> 与 <code>remove_padding</code>
-            后，策略优化耗时下降约 88.1%，整卡显存峰值仍在约 59.9GB。继续提高 rollout 并发容量到
-            <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code> 后，rollout 耗时进一步下降约 26.7%，平均 step 耗时下降约
-            18.7%，且没有推高整卡显存峰值。
-          </p>
+          <p>历史 full-summon CPU-offload 路径的 Actor→vLLM 同步耗时为 44.3 秒，CPU 内存接近 470GB。改用 layered summon 后，同步耗时为
+            7.2 秒，单卡显存峰值约 59.9GB。开启 <code>dynamic_bsz</code> 与 <code>remove_padding</code> 后，策略优化耗时从
+            30.864 秒降至 3.670 秒。将 rollout 容量从 <code>seqs=4/tokens=4096</code> 提高到
+            <code>seqs=8/tokens=8192</code> 后，rollout 耗时从 24.558 秒降至 18.000 秒，平均 step 从 35.225 秒降至
+            28.629 秒。</p>
         </section>
 
         <section aria-labelledby="perf-question">
           <h2 id="perf-question">1. 研究问题</h2>
-          <p>性能测试首先要回答的是：在固定 S3 tree GRPO、KL=0.01、PPO epoch=2、4×H100 与 LoRA 训练栈下，单个 verl step 的主要时间开销究竟来自哪里，以及这些优化是否仍落在
-            H100 显存和主机内存预算内。具体而言，本页区分历史 full-summon CPU-offload fallback 与当前 layered summon 路径，分别评估 Actor→vLLM
-            同步、rollout、old/reference log-prob 和策略优化的贡献；随后只测试我们能直接控制的配置，包括 micro batch、dynamic batching、remove
-            padding、token cap 与 vLLM rollout 容量上限。该实验的目的不是细分底层通信或内核实现，而是为正式 GRPO 训练选择更快、容量可行且可复现的默认配置。</p>
+          <p>在固定 S3 tree GRPO、KL=0.01、PPO epoch=2、4×H100 与 LoRA 训练栈下，测量 rollout、old/reference log-prob、策略优化和
+            Actor→vLLM 同步耗时。参数实验比较 micro batch、dynamic batching、remove padding、token cap 与 vLLM rollout 容量，并记录 GPU 与
+            CPU 内存峰值。</p>
         </section>
 
         <section aria-labelledby="perf-method">
@@ -2396,34 +2392,21 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
             slot 数为 20，并设置 <code>branch_n=4</code>、<code>beam_size=2</code>、<code>max_turns=3</code>。KL 通过
             <code>use_kl_loss=True</code> 引入，actor 参数与优化器不 offload。
           </p>
-          <p>项目锁定的 <code>verl@f663282</code> 在检测到 actor <code>lora_rank=64</code> 后设置
-            <code>ref_in_actor=True</code>，不会创建独立 reference worker。trainer 的 <code>_compute_ref_log_prob()</code> 转而调用
-            actor worker，并传入 <code>no_lora_adapter=True</code>；worker 在 <code>disable_adapter()</code> 上下文中执行真实的 no-grad
-            forward，从而以 SFT-Merged base 作为 reference policy。虽然启动脚本仍传入 <code>REF_PARAM_OFFLOAD=True</code>，该配置没有一份独立
-            reference model 可供 offload，因此不能把本次运行描述为“CPU-offloaded reference”。
-          </p>
-          <p>历史日志中共提取到 22 个完整 timing step。为降低初始化、图编译和缓存预热的影响，统计时去掉前 5 个 warmup step，对剩余 17 个 step 分别计算总耗时，以及
+          <p>本次运行没有独立 reference worker。reference log-prob 由 actor 临时禁用 LoRA adapter 后计算，reference policy 为
+            SFT-Merged base。</p>
+          <p>历史日志包含 22 个完整 timing step。去掉前 5 个 warmup step 后，对剩余 17 个 step 统计总耗时及
             <code>gen</code>、<code>old_log_prob</code>、<code>ref</code>、<code>update_actor</code> 和
-            <code>update_weights</code> 的均值、最小值与最大值。报告将原始字段 <code>update_actor</code> 称为“策略优化”，将
-            <code>update_weights</code> 称为“Actor→vLLM 同步”。历史日志只用于解释 fallback 瓶颈，不作为后续参数实验的 baseline。
-          </p>
-          <p>训练侧参数实验改用 layered summon 成功的短运行作为 baseline。该 baseline 固定
+            <code>update_weights</code>。下文将后两项分别写作“策略优化”和“Actor→vLLM 同步”。参数实验另用 layered summon 运行作为 baseline。</p>
+          <p>训练侧 baseline 使用 layered summon，并设置
             <code>ppo_micro_batch_size_per_gpu=1</code>、<code>LOG_PROB_USE_DYNAMIC_BSZ=False</code>、<code>MODEL_USE_REMOVE_PADDING=False</code>，完成
-            5 个 step 且无 fallback。三个候选实验保持 S3 tree、KL=0.01、PPO epoch=2、batch size=2、rollout
-            slot=20、<code>branch_n=4</code>、<code>beam_size=2</code>、<code>max_turns=3</code> 和 layered summon 不变；候选 A
-            仅将 micro batch 提高到 2，候选 B 开启 dynamic batching 与 remove padding 并使用
-            <code>ppo_max_token_len_per_gpu=16384</code>，候选 C 在候选 B 的基础上只把 token cap 提高到 32768。候选日志各跑 10 step，并去掉前 2
-            step warmup 后统计剩余 8 step。
-          </p>
-          <p>rollout 并发实验继续从训练侧最优解出发：固定 <code>dynamic_bsz=True</code>、<code>remove_padding=True</code>、KL=0.01、PPO
-            epoch=2 与 layered summon，只改变 vLLM rollout 侧的容量上限。baseline 使用
+            5 个 step。三个候选依次测试 micro batch=2、<code>dynamic_bsz=True/remove_padding=True/token cap=16384</code>，以及 token
+            cap=32768。候选日志各运行 10 step，去掉前 2 个 warmup step 后统计剩余 8 个。</p>
+          <p>rollout 容量实验固定 <code>dynamic_bsz=True</code>、<code>remove_padding=True</code>、KL=0.01、PPO epoch=2 与 layered
+            summon。baseline 使用
             <code>max_num_seqs=4</code>、<code>max_num_batched_tokens=4096</code>；候选同时提高到
-            <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。两组各跑 10 step，并去掉前 2 step warmup 后统计剩余 8
-            step。
-          </p>
-          <p>资源统计来自训练日志中的 <code>GPU_MONITOR</code>、verl actor perf 指标，以及历史 OOM/debug 记录。<code>GPU_MONITOR</code>
-            用于报告整卡显存峰值和逐卡利用率；<code>actor/perf/cpu_memory_used_gb</code> 与 actor allocated/reserved 指标用于观察 actor 侧容量；历史
-            cgroup/RSS 记录只用于解释 CPU-offload fallback 的主机内存压力。不同来源口径不同，因此只并列报告，不直接计算严格下降比例。</p>
+            <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。两组各运行 10 step，统计后 8 个 step。</p>
+          <p><code>GPU_MONITOR</code> 提供整卡显存与 GPU 利用率；verl actor perf 指标提供 actor allocated/reserved 和 CPU 内存；历史
+            cgroup/RSS 记录提供 full-summon fallback 的主机内存。不同来源的内存值分开报告。</p>
           <p class="source">
             分析日志：<code>artifacts/logs/verl/verl_grpo_s3_kl01_ep2_tree_final_14b_h100_4gpu_150step_bs2_n20_t10_turn3_g09_branch4_beam2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_summon_layered_14b_h100_4gpu_5step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_update_actor_micro2_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_update_actor_dynamic_bsz_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_update_actor_dynamic_bsz_tok32768_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_rollout_concurrency_baseline_14b_h100_4gpu_10step_bs2_n20_ep2_seqs4_tok4096.log</code>；<code>artifacts/logs/verl/verl_grpo_s3_rollout_concurrency_seq8_tok8192_14b_h100_4gpu_10step_bs2_n20_ep2_seqs8_tok8192.log</code>
           </p>
@@ -2432,23 +2415,14 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
         <section aria-labelledby="perf-results">
           <h2 id="perf-results">3. 流水线结果</h2>
           <h3>3.1 Actor→vLLM 同步 fallback</h3>
-          <p>去掉 warmup 后，历史运行的平均 step 耗时为 101.601 秒。Actor→vLLM 同步平均耗时 44.328 秒，占 43.6%。后续源码与日志核对确认，该运行的 layered
-            collector 返回空后进入 full-summon CPU-offload fallback：为了提取 LoRA state，FSDP 先一次性 materialize 并 offload 完整 14B
-            参数，随后 PEFT 才筛选 LoRA tensor；最终发给 vLLM 的 payload 仍是 adapter，并未把 LoRA merge 后的完整模型发送给 vLLM。因此这 44.328 秒不是纯
-            adapter 传输时间。策略优化平均耗时为 29.047 秒，占 28.6%。表 1 保留为历史 fallback 的瓶颈诊断，而不是修复后流水线的阶段排序。</p>
-          <p><code>gen</code> 平均耗时 22.788 秒，占 22.4%，但在不同 step 之间从 4.100 秒变化到 68.199
-            秒，是波动最大的阶段。这种变化与样本的生成长度和多轮交互路径有关。<code>old_log_prob</code> 平均耗时为 4.473 秒；共享 actor base、禁用 LoRA adapter 后计算的
-            <code>ref</code> 阶段平均耗时为 0.959 秒，占稳定阶段平均 step 时间的 0.9%。
-          </p>
-          <p>源码中的 <code>ref</code> timer 包住完整的 <code>_compute_ref_log_prob(batch)</code> 调用及结果回收，worker 内部也确实执行模型
-            forward，因此该字段不是仅记录异步任务提交的空计时。<code>old_log_prob</code> 同时设置 <code>calculate_entropy=True</code>，而 reference
-            明确设置 <code>calculate_entropy=False</code>，这是前者约 4.47 秒而后者约 0.96 秒的主要实现差异。本次日志的 22 个训练 step 均记录了非零
-            <code>actor/kl_loss</code>，也说明 reference log-prob 已实际进入 KL loss。
-          </p>
-          <p>表 1 同时给出基于当前平均 step 的 Amdahl 式投影：只改变目标阶段、保持其他阶段耗时不变。前三个主要阶段和 <code>old_log_prob</code> 按耗时减半计算；由于
-            <code>ref</code> 已经很短，使用“完全消除 reference 计算”作为其理论上限。投影吞吐收益按 <code>101.601 / projected_step_time − 1</code>
-            计算，不代表已经实测得到相同加速。
-          </p>
+          <p>历史运行的平均 step 为 101.601 秒，其中 Actor→vLLM 同步为 44.328 秒，策略优化为 29.047 秒。该同步进入了
+            full-summon CPU-offload fallback：FSDP materialize 并 offload 完整 14B state，PEFT 再提取 LoRA tensor；发送给 vLLM 的 payload
+            仍是 LoRA adapter。44.328 秒包含完整 state 的 materialize、offload 与 adapter 提取。</p>
+          <p><code>gen</code> 平均为 22.788 秒，范围为 4.100–68.199 秒。<code>old_log_prob</code> 平均为 4.473
+            秒；actor 禁用 LoRA 后执行的 <code>ref</code> forward 平均为 0.959 秒。old log-prob 计算 entropy，reference 不计算 entropy。22 个
+            step 均记录了非零 <code>actor/kl_loss</code>。</p>
+          <p>表 1 的投影只修改一个阶段，其他阶段保持实测均值。同步、策略优化、rollout 和 old log-prob 使用“耗时减半”；reference 使用“耗时归零”。吞吐变化按
+            <code>101.601 / projected_step_time − 1</code> 计算。</p>
 
           <div class="table-block">
             <div class="table-wrap">
@@ -2462,7 +2436,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                     <th>step 占比</th>
                     <th>优化情景</th>
                     <th>端到端收益</th>
-                    <th>判断</th>
+                    <th>备注</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2474,7 +2448,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                     <td>43.6%</td>
                     <td>耗时减半 → 79.4s/step</td>
                     <td>吞吐约 +27.9%</td>
-                    <td><strong>历史 fallback 瓶颈</strong></td>
+                    <td>full-summon CPU-offload</td>
                   </tr>
                   <tr>
                     <td>策略优化</td>
@@ -2484,7 +2458,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                     <td>28.6%</td>
                     <td>耗时减半 → 87.1s/step</td>
                     <td>吞吐约 +16.7%</td>
-                    <td>第二大稳定开销</td>
+                    <td>29.047s/step</td>
                   </tr>
                   <tr>
                     <td><code>rollout</code></td>
@@ -2494,7 +2468,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                     <td>22.4%</td>
                     <td>耗时减半 → 90.2s/step</td>
                     <td>吞吐约 +12.6%</td>
-                    <td>波动最大</td>
+                    <td>范围 4.100–68.199s</td>
                   </tr>
                   <tr>
                     <td><code>old_log_prob</code></td>
@@ -2504,7 +2478,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                     <td>4.4%</td>
                     <td>耗时减半 → 99.4s/step</td>
                     <td>吞吐约 +2.3%</td>
-                    <td>非主要瓶颈</td>
+                    <td>4.4% step time</td>
                   </tr>
                   <tr>
                     <td><code>reference</code></td>
@@ -2514,7 +2488,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                     <td>0.9%</td>
                     <td>完全消除 → 100.6s/step</td>
                     <td>吞吐约 +1.0%</td>
-                    <td>共享基座，非主要瓶颈</td>
+                    <td>actor base forward</td>
                   </tr>
                 </tbody>
               </table>
@@ -2522,9 +2496,8 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
             <p class="caption">表 1. 历史 CPU-offload fallback 运行去掉前 5 个 warmup step 后的分阶段耗时。</p>
           </div>
 
-          <p>资源日志进一步说明这条 44 秒路径为什么不能作为当前同步开销：full-summon CPU-offload fallback 可以让 GPU 继续运行，但 CPU 内存曾接近 470GB；显式 full
-            summon 在单卡 80,717 MiB 后仍需继续分配 1.03 GiB，超过 80GB H100 容量并 OOM。相比之下，layered summon 成功短运行在单卡约 59.9GB
-            峰值下完成，Actor→vLLM 同步平均降到 7.222 秒。</p>
+          <p>full-summon CPU-offload 路径的 CPU 内存接近 470GB。显式 full summon 在单卡已使用 80,717 MiB 时还需分配 1.03
+            GiB，并触发 CUDA OOM。layered summon 的单卡峰值为 59,893 MiB，Actor→vLLM 同步平均为 7.222 秒。</p>
 
           <div class="table-block">
             <div class="table-wrap">
@@ -2555,7 +2528,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                 </tbody>
               </table>
             </div>
-            <p class="caption">表 2. 不同 summon 路径的显存容量结果；full summon - CPU offload 与 layered summon 不应混同。</p>
+            <p class="caption">表 2. full-summon CPU-offload、显式 full summon 与 layered summon 的内存记录。</p>
           </div>
 
           <div class="table-block">
@@ -2606,9 +2579,8 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
           </div>
 
           <h3>3.2 Actor update 与 token packing</h3>
-          <p>修复后的 layered baseline 中，Actor→vLLM 同步平均为 7.222 秒，已经不再是 44 秒级别的瓶颈。此时策略优化平均耗时 30.864 秒，占平均 step 的
-            49.5%，因此参数实验集中在 actor update 的 micro-batch 和 token packing。表 4 使用 layered 成功短运行作为 baseline；候选运行的 rollout
-            耗时更高，说明样本生成长度和多轮路径仍会带来短日志波动，但 actor 侧的收益足够大，使端到端 step 仍显著下降。</p>
+          <p>layered baseline 的平均 step 为 62.368 秒：策略优化 30.864 秒，rollout 18.560 秒，Actor→vLLM 同步 7.222 秒。表 4
+            比较 micro batch 和 token packing 配置。</p>
 
           <div class="table-block">
             <div class="table-wrap">
@@ -2684,10 +2656,8 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
             </p>
           </div>
 
-          <p>对应的资源结果显示，micro=2 没有增加 actor 显存峰值；dynamic/remove-padding 带来少量 actor 侧临时 workspace，actor allocated 峰值增加约
-            0.86GB。token cap 提高到 32768 后 actor allocated 峰值为 26.699GB，较 16384 只增加约 0.22GB；整卡峰值仍为 59,891 MiB。CPU 内存从
-            layered baseline 的 141.5GB 降到 118–123GB，主要说明新日志没有进入 full-summon CPU-offload fallback；由于各组运行步数和预热窗口不同，该 CPU
-            指标只作为容量观察，不直接解释为参数设置本身带来的严格下降。</p>
+          <p>micro=2 与 baseline 的 actor allocated 峰值均为 25.614GB。dynamic/remove-padding 的峰值为 26.477GB；token cap=32768
+            时为 26.699GB。四组整卡峰值均约 59,891–59,895 MiB。CPU 内存峰值为 118–142GB；各组运行步数与统计窗口不同，不比较下降比例。</p>
 
           <div class="table-block">
             <div class="table-wrap">
@@ -2713,7 +2683,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                     <td>141.533GB</td>
                     <td>59,893 MiB</td>
                     <td>22.2%–46.4%</td>
-                    <td>GPU 可运行；Actor CPU 内存峰值 141.5GB；未进入 full-summon CPU-offload 路径</td>
+                    <td>Actor CPU peak 141.5GB</td>
                   </tr>
                   <tr>
                     <td>micro=2</td>
@@ -2723,7 +2693,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                     <td>118.253GB</td>
                     <td>59,895 MiB</td>
                     <td>24.9%–40.0%</td>
-                    <td>减少 microbatch split 次数，时间下降；显存峰值基本不变</td>
+                    <td>Policy update 14.541s</td>
                   </tr>
                   <tr class="best-row">
                     <td>dynamic=True + remove_padding=True</td>
@@ -2733,7 +2703,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                     <td>120.232GB</td>
                     <td>59,891 MiB</td>
                     <td>25.1%–57.8%</td>
-                    <td><strong>actor 时间大幅下降；只增加约 0.86GB actor allocated</strong></td>
+                    <td><strong>Policy update 3.670s</strong></td>
                   </tr>
                   <tr>
                     <td>dynamic=True + remove_padding=True</td>
@@ -2743,7 +2713,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                     <td>122.847GB</td>
                     <td>59,891 MiB</td>
                     <td>未统计逐卡范围</td>
-                    <td><strong>更大 token cap 可运行；整卡显存未上升</strong></td>
+                    <td>Policy update 3.706s</td>
                   </tr>
                 </tbody>
               </table>
@@ -2752,15 +2722,13 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
               actor 指标。</p>
           </div>
 
-          <p>将 token cap 从 16384 提高到 32768 后，策略优化耗时从 3.670 秒变为 3.706 秒，基本持平；<code>old_log_prob</code>
-            也没有继续下降。因此现有日志不支持“更大 token cap 进一步优化 actor update”的结论。该组平均 step 更低主要伴随 rollout 从 26.429 秒降到 21.347
-            秒，考虑到两组都只有 8 个测量 step，应先解释为短日志中的 rollout 长度与路径波动；但容量上看，32768 至少没有引入明显额外时间或显存惩罚。</p>
+          <p>token cap 从 16384 提高到 32768 后，策略优化为 3.670 秒和 3.706 秒，old log-prob 为 0.742 秒和 0.807
+            秒。平均 step 的差值来自 rollout 的 26.429 秒和 21.347 秒；两组各包含 8 个测量 step。actor allocated 峰值相差 0.222GB，整卡峰值相同。</p>
 
           <h3>3.3 Rollout 并发容量</h3>
-          <p>训练侧优化后，rollout 成为新的主要耗时来源。因此 rollout 容量实验只调整 vLLM rollout 并发容量。表 6 显示，将 <code>max_num_seqs</code> 与
-            <code>max_num_batched_tokens</code> 同时提高后，rollout 平均耗时从 24.558 秒降至 18.000 秒，端到端 step 从 35.225 秒降至 28.629
-            秒。actor update、old log-prob、reference 和 Actor→vLLM 同步均基本不变，说明该改动主要作用在 rollout 侧。
-          </p>
+          <p>将 <code>max_num_seqs/max_num_batched_tokens</code> 从 <code>4/4096</code> 提高到 <code>8/8192</code> 后，rollout
+            从 24.558 秒降至 18.000 秒，平均 step 从 35.225 秒降至 28.629 秒。策略优化分别为 3.683 秒和 3.646 秒，Actor→vLLM
+            同步分别为 5.824 秒和 5.835 秒。</p>
 
           <div class="table-block">
             <div class="table-wrap">
@@ -2781,7 +2749,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                 </thead>
                 <tbody>
                   <tr>
-                    <td>Current best training config</td>
+                    <td>Dynamic/remove-padding baseline</td>
                     <td><code>seqs=4</code>；<code>tokens=4096</code></td>
                     <td>35.225s</td>
                     <td>24.558s</td>
@@ -2807,14 +2775,12 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                 </tbody>
               </table>
             </div>
-            <p class="caption">表 6. 在当前最优训练侧配置上继续提高 vLLM rollout 并发容量。两组均去掉前 2 个 warmup step；该实验同时改变
-              <code>max_num_seqs</code> 与 <code>max_num_batched_tokens</code>，因此结论是更大的 rollout 容量有效，而不是区分两个参数的独立贡献。
-            </p>
+            <p class="caption">表 6. vLLM rollout 容量对照。两组均去掉前 2 个 warmup step；<code>max_num_seqs</code> 与
+              <code>max_num_batched_tokens</code> 同时变化。</p>
           </div>
 
-          <p>资源上，提高 rollout 容量没有把整卡显存峰值推高：<code>seqs=4/tokens=4096</code> 的峰值为 59,891
-            MiB，<code>seqs=8/tokens=8192</code> 的峰值为 59,643 MiB。两组 actor allocated/reserved 峰值也基本一致，说明该优化主要改变 vLLM
-            调度上限，而不是改变常驻 14B 模型副本数量。</p>
+          <p><code>seqs=4/tokens=4096</code> 与 <code>seqs=8/tokens=8192</code> 的整卡峰值分别为 59,891 MiB 和
+            59,643 MiB；actor reserved 峰值均为 32.346GB。</p>
 
           <div class="table-block">
             <div class="table-wrap">
@@ -2833,7 +2799,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                 </thead>
                 <tbody>
                   <tr>
-                    <td>Current best training config</td>
+                    <td>Dynamic/remove-padding baseline</td>
                     <td><code>seqs=4</code>；<code>tokens=4096</code></td>
                     <td>26.607GB</td>
                     <td>32.346GB</td>
@@ -2855,7 +2821,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                 </tbody>
               </table>
             </div>
-            <p class="caption">表 7. Rollout 并发容量实验对应的资源峰值。CPU 内存只作为容量观察，不用于解释参数本身带来的严格下降。</p>
+            <p class="caption">表 7. Rollout 并发容量实验对应的资源峰值。两组运行窗口不同，不比较 CPU 内存降幅。</p>
           </div>
         </section>
 
@@ -2865,19 +2831,16 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
           <h3>4.1 问题</h3>
           <p>在固定 4×H100、train batch size=4、KL=0.01、PPO epoch=2、dynamic batching、remove padding 与 layered summon 的
             rollout 对照实验中，S3 <code>branch=4/beam=2/rollout_n=20</code> 和 S1 <code>rollout_n=8</code> 均完成 100 step；S3
-            <code>branch=8/beam=1/rollout_n=24</code> 的初始运行则在完成第 32 step 后失败。异常栈停在
-            <code>checkpoint_manager.update_weights → rollout.resume(tags=["weights"]) → vLLM wake_up → CuMem create_and_map</code>，因此这不是
-            vLLM 动态生成阶段的 KV-cache OOM，也不是 actor forward/backward 内核直接 OOM，而是 actor 更新结束后、vLLM 重新映射 sleeping weight
-            buffers 时发生的阶段边界 OOM。加入唤醒前 actor cache 清理后，同一 n=24 配置已完成 100 step，因而该故障现在同时具备失败日志和修复复跑证据。
+            <code>branch=8/beam=1/rollout_n=24</code> 在第 33 step 的 Actor→vLLM 同步阶段失败，日志只写出前 32 个完整 timing step。异常发生在
+            <code>update_weights → vLLM wake_up → CuMem create_and_map</code>，即 actor update 结束后的 vLLM 权重重新映射阶段。加入 vLLM
+            wake-up 前的 actor allocator cache 清理后，同一 n=24 配置完成 100 step。
           </p>
 
           <h3>4.2 分析方法</h3>
-          <p>分析首先对齐三份日志的共同配置和前 32 个完整 step，比较
+          <p>分析对齐各运行的前 32 个完整 step，比较
             <code>perf/total_num_tokens</code>、<code>global_seqlen/balanced_max</code>、<code>response/aborted_ratio</code>、<code>timing_s/update_actor</code>
-            与 actor allocated/reserved 高水位；随后用 <code>GPU_MONITOR</code> 区分 rollout/generation、actor update 和 Actor→vLLM
-            同步阶段。最后核对项目锁定的 <code>verl@f663282</code> 源码：每个训练 batch 在 backward 前清梯度，FSDP train-mode 在整个 PPO update
-            退出时再次调用 <code>optimizer_zero_grad()</code>。因此 attention
-            中间量、activation、计算图和最后一次梯度在权重同步前都已失效；仍需长期保留的是模型参数、LoRA 参数、优化器状态以及 FSDP/NCCL 固定 buffer。
+            与 actor allocated/reserved 高水位。<code>GPU_MONITOR</code> 用于定位 rollout、actor update 和 Actor→vLLM 同步阶段。verl 在 PPO
+            update 结束时清梯度；进入权重同步时，模型参数、LoRA 参数、优化器状态和 FSDP/NCCL buffer 仍常驻，activation、计算图和梯度已释放。
           </p>
 
           <div class="table-block">
@@ -2929,38 +2892,31 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                 </tbody>
               </table>
             </div>
-            <p class="caption">表 8. 三组 rollout 对照及 n=24 修复复跑的前 32 个完整 step。S1 的平均 token 数高于失败组，且 n=24 修复前后平均负载接近，说明平均
-              token 负载本身不足以解释 OOM；必须结合极端 batch、allocator cache 和阶段边界显存共同判断。</p>
+            <p class="caption">表 8. rollout 对照及 n=24 修复复跑的前 32 个完整 step。S1 的平均 token 数为 28,013，n=24 修复前后分别为
+              26,976 和 26,351。</p>
           </div>
 
           <h3>4.3 根因</h3>
-          <p><code>rollout_n=24</code> 首先提高了 actor 训练压力。与 S3 n=20 相比，初始 n=24 组的平均 token 数增加 23.6%，actor update 时间增加约
-            27.5%；其未 aborted 的 response 槽比例由约 36.9% 提高到 54.9%，因此变化不只是名义槽位数增加 20%。更关键的是第 33 个数据 batch：S3 n=20 在该 step 达到
-            49,190 tokens、每卡平衡后 12,298 tokens，actor reserved 高水位从 42.14GiB 跳到 50.52GiB，但仍勉强完成；S1 同一位置达到 47,716 tokens 和
-            49.84GiB reserved，也完成同步。初始 n=24 运行在写出第 33 step 指标之前失败，因此日志中的 44.21GiB reserved 只是第 32 step 的旧高水位，不能代表故障瞬间的
-            actor 状态。</p>
+          <p>与 S3 n=20 相比，初始 n=24 运行的前 32 step 平均 token 数增加 23.6%，actor update 增加 27.5%，未 aborted 的 response
+            槽比例从 36.9% 增至 54.9%。第 33 个 batch 中，S3 n=20 达到 49,190 tokens 和 50.52GiB actor reserved；S1 达到
+            47,716 tokens 和 49.84GiB reserved。两组均完成该 step。初始 n=24 在写出第 33 step 指标前 OOM，日志中的 44.21GiB
+            reserved 来自第 32 step。</p>
           <p>修复复跑补全了缺失的第 33 step 数据：该 step 实际达到 61,558 tokens，未平衡最长 rank 为 31,884 tokens，每卡平衡后为 15,394 tokens；actor
-            allocated/reserved 高水位分别达到 52.37/57.54GiB，<code>update_actor</code> 为 26.77
-            秒。尽管这一步比原先从失败日志推断的压力更高，<code>update_weights</code> 仍在 6.16 秒内完成，训练随后继续到 step 100。这说明 n=24
-            的训练峰值确实很高，但只要在权重唤醒前归还无用 allocator cache，固定 actor 状态和 vLLM 权重仍可在 80GB H100 上共存。</p>
-          <p>第一组在 rollout/generation 阶段约使用 59.6/81.6GB，确实还剩约 20GB；但第 33 step 的训练同步峰值实际接近 76.0GB，只剩约 5.5GB。失败组 OOM 前约使用
-            74.5GB，剩余约 7GB，无法再容纳 vLLM TP4 的固定权重 shard 及映射开销。<code>max_num_seqs=8</code> 和
+            allocated/reserved 高水位分别为 52.37/57.54GiB，<code>update_actor</code> 为 26.77 秒。cache fix 后，
+            <code>update_weights</code> 用时 6.16 秒，训练继续到 step 100。</p>
+          <p>第 33 step 的训练同步峰值接近 76.0GB，剩余约 5.5GB。失败运行在 OOM 前使用约 74.5GB，剩余约 7GB。vLLM TP4 随后需要重新映射固定权重
+            shard。<code>max_num_seqs=8</code> 和
             <code>max_num_batched_tokens=8192</code> 只约束生成阶段的调度并发与 KV cache，不改变 <code>wake_up(weights)</code>
             所需的固定权重映射容量。
           </p>
-          <p>综合三组结果，根因是：n=24 的较高训练峰值扩大了 PyTorch CUDA allocator 的 reserved cache；activation、attention
-            中间量和梯度虽然在语义上已经作废，但对应空闲 block 没有立即归还给 CUDA。随后 layered summon 进入固定大小的 vLLM 权重唤醒，跨进程可用物理显存不足，最终在 CuMem
-            <code>create_and_map</code> 处 OOM。换言之，rollout_n=24 是训练侧高水位的触发因素，vLLM wake-up 是显存冲突实际暴露的位置。
-          </p>
+          <p>OOM 链路为：n=24 batch 提高 actor 显存峰值；PyTorch allocator 保留已空闲的 reserved block；vLLM wake-up 重新映射权重时物理显存不足；CuMem
+            <code>create_and_map</code> 失败。</p>
 
           <h3>4.4 修复与验证</h3>
-          <p>提交 <code>1ba45c38</code> 在调用原始 <code>update_weights()</code>、即 vLLM 权重唤醒之前执行当前 actor rank 的
-            <code>empty_cache()</code>，将未被活跃 tensor 占用的 allocator cache 归还给 CUDA。单独把 <code>gpu_memory_utilization</code>
-            从 0.32 降到 0.20 的运行仍在第 33 step 边界 OOM；保持 0.20 和其他关键训练配置不变、加入 cache fix 后，运行以 <code>EXIT_CODE 0</code> 完成 100
-            step，总 wall time 为 4,964 秒。这个前后对照验证了缓存清理是解决本次 OOM 的关键改动，不需要降低 rollout 数或训练 token cap。后续容量实验仍应记录清理前后的逐 rank
-            <code>memory_allocated</code>、<code>memory_reserved</code> 与 <code>mem_get_info</code>，用于量化实际归还的显存，而不是仅依赖 10
-            秒粒度的 <code>GPU_MONITOR</code> 峰值。
-          </p>
+          <p>提交 <code>1ba45c38</code> 在 vLLM 权重唤醒前对每个 actor rank 执行 <code>empty_cache()</code>。仅将
+            <code>gpu_memory_utilization</code> 从 0.32 降到 0.20 时，运行仍在第 33 step OOM；加入 cache fix 后，相同 n=24 训练完成 100
+            step，wall time 为 4,964 秒。rollout 数和训练 token cap 保持不变。后续记录逐 rank 的 <code>memory_allocated</code>、
+            <code>memory_reserved</code> 与 <code>mem_get_info</code>，补充 cache 清理前后的显存差值。</p>
           <p class="source">
             分析日志：<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b4_beam2_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n20_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>；<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b8_beam1_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n24_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>；无
             cache
@@ -2970,40 +2926,30 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
         </section>
 
         <section aria-labelledby="perf-discussion">
-          <h2 id="perf-discussion">5. 结论</h2>
-          <p>时间与资源证据合并后，当前瓶颈结论不再是“同步瓶颈”，而是“策略优化和 rollout 共同主导”。历史 44 秒 Actor→vLLM 同步来自 full-summon CPU-offload
-            fallback；layered summon 成功后，同步耗时降到约 7 秒，并避免了接近 470GB CPU 内存的 fallback 路径。micro batch 提高到 2 后，PPO actor
-            update 和 old log-prob 计算都受益，因为固定 micro-batch split 次数减少；dynamic batching 与 remove padding 的收益更大，因为它按 token
-            budget 重新打包样本，并避免模型在 padding token 上做无效 forward/backward。</p>
-          <p>正式训练采用 <code>dynamic_bsz=True</code>、<code>remove_padding=True</code>、<code>max_num_seqs=8</code> 与
-            <code>max_num_batched_tokens=8192</code>。该组合先把策略优化从 30.864 秒降至 3.670 秒，再把 rollout 从 24.558 秒降至 18.000 秒；最终
-            10-step profiling 的平均 step 为 28.629 秒。资源上，actor/update 与 rollout 容量实验的整卡峰值保持在约 59.6–59.9GB，适合 80GB
-            H100；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，并在一次短 profiling 中取得更低端到端 step time，但加速主要来自 rollout
-            波动而不是 actor update 下降，因此默认配置仍保守使用 16384，并将 32768 保留为可切换候选。
-          </p>
+          <h2 id="perf-discussion">5. 结果汇总</h2>
+          <p>Actor→vLLM 同步在历史 full-summon CPU-offload 路径中为 44.328 秒，在 layered summon baseline 中为 7.222 秒。
+            <code>dynamic_bsz=True</code> 与 <code>remove_padding=True</code> 将策略优化从 30.864 秒降至 3.670 秒。将 rollout
+            容量提高到 <code>seqs=8/tokens=8192</code> 后，rollout 从 24.558 秒降至 18.000 秒，平均 step 为 28.629 秒。</p>
+          <p>上述参数实验的整卡显存峰值为 59.6–59.9GB。token cap=16384 和 32768 的策略优化耗时分别为 3.670 秒和 3.706
+            秒；当前训练配置使用 16384。</p>
         </section>
         <section aria-labelledby="perf-optimal-config">
-          <h2 id="perf-optimal-config">6. 当前性能最优配置</h2>
+          <h2 id="perf-optimal-config">6. 当前训练配置</h2>
           <ul class="config-list">
-            <li><strong>固定 workload</strong>：该性能配置对应当前 S3 tree GRPO
+            <li><strong>Workload</strong>：S3 tree GRPO
               负载，<code>train_batch_size=2</code>，<code>rollout_n=20</code>，<code>branch_n=4</code>，<code>beam_size=2</code>，<code>max_turns=3</code>，4×H100。
             </li>
-            <li><strong>Actor→vLLM 同步</strong>：使用 layered summon，同步 LoRA adapter tensor，避免 full-summon CPU-offload
-              fallback；该路径将同步耗时从历史 fallback 的 44 秒级降到约 7 秒。</li>
-            <li><strong>Actor/log-prob 训练侧</strong>：开启 activation checkpointing、<code>dynamic_bsz=True</code> 与
+            <li><strong>Actor→vLLM 同步</strong>：使用 layered summon，同步 LoRA adapter tensor；实测同步耗时为 5.8–7.2 秒。</li>
+            <li><strong>Actor/log-prob</strong>：开启 activation checkpointing、<code>dynamic_bsz=True</code> 与
               <code>remove_padding=True</code>；保留
               <code>ppo_mini_batch_size=2</code>、<code>ppo_micro_batch_size_per_gpu=1</code>、<code>ppo_max_token_len_per_gpu=16384</code>。
             </li>
-            <li><strong>vLLM rollout 侧</strong>：使用
+            <li><strong>vLLM rollout</strong>：使用
               <code>tensor_parallel_size=4</code>、<code>pipeline_parallel_size=1</code>、<code>gpu_memory_utilization=0.32</code>，并将容量上限设为
               <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。
             </li>
-            <li><strong>可切换候选</strong>：固定 micro batch 提到 2 有收益，但弱于 dynamic token
-              packing；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，短 profiling 中端到端更快，但该差异主要来自 rollout
-              波动，不能直接归因于
-              token cap，因此默认仍用 16384。</li>
-            <li><strong>容量守门</strong>：保留 <code>GPU_MONITOR</code> 与 actor perf 指标；当前组合的整卡显存峰值约 59.6–59.9GB，适合 80GB H100。
-            </li>
+            <li><strong>Token cap</strong>：当前使用 16384；32768 已完成 10-step profiling，策略优化耗时为 3.706 秒。</li>
+            <li><strong>监控</strong>：保留 <code>GPU_MONITOR</code> 与 actor perf 指标；当前组合的整卡显存峰值为 59.6–59.9GB。</li>
           </ul>
         </section>
       </div>
@@ -3013,22 +2959,20 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
 
         <section class="abstract" aria-labelledby="tp-scaling-abstract">
           <h2 id="tp-scaling-abstract">摘要</h2>
-          <p>本实验在同一台 4×H100 节点上，以 300 条 SQL agent validation prompt 和全局并发度 8，对
-            Qwen2.5-Coder-14B policy 的 vLLM tensor parallel 配置进行两组对照。单实例实验中，TP=2 与 TP=4 相对 TP=1
-            的请求吞吐分别提高 38.2% 与 76.8%，但并行效率下降到 69.1% 与 44.2%。固定 4-GPU
-            预算下，1×TP=4 达到 31.15 requests/s 和 985.04 output tokens/s，较 4×TP=1 均提高约 61.7%，并将 p95
-            延迟从 836.8ms 降至 506.6ms。该结论仅适用于当前低并发、短输出 SQL 生成负载；多副本配置在每副本约两个并发下没有进入饱和区间，不能据此判断最大服务容量。</p>
+          <p>本实验在同一台 4×H100 节点上，使用相同的 300 条 SQL agent validation prompt，对 Qwen2.5-Coder-14B policy
+            的 vLLM tensor parallel 配置进行对照。全局并发度 8 的单次运行中，固定四卡预算下 <code>1×TP=4</code> 达到 31.15
+            requests/s。后续在全局并发度 32 与 64 下，对 <code>4×TP=1</code>、<code>2×TP=2</code> 和
+            <code>1×TP=4</code> 各重复 3 次：并发度 32 时三者分别为 63.76±0.50、71.22±0.25 和 59.91±0.22
+            requests/s；并发度 64 时分别为 96.62±0.65、95.08±2.14 和 81.50±3.15 requests/s。18 次高并发运行共完成
+            5,400/5,400 个请求，无请求失败或 OOM。以上数据来自不包含 SQL 执行反馈与 rewrite turn 的单轮生成 workload。</p>
         </section>
 
         <section aria-labelledby="tp-scaling-question">
           <h2 id="tp-scaling-question">1. 研究问题</h2>
-          <p>本实验研究 Qwen2.5-Coder-14B rollout policy 在 vLLM 中采用不同 tensor parallel size 时的性能与资源权衡。第一组保持单个 vLLM
-            实例不变，比较 <code>TP=1</code>、<code>TP=2</code> 与 <code>TP=4</code>，回答增加模型并行度能否提高当前 SQL workload
-            下的请求吞吐并降低生成延迟，以及获得这些收益需要付出多少额外 GPU。该组用于刻画单实例模型并行扩展性，不将 TP=4 使用四倍 GPU 后得到的绝对吞吐直接解释为资源效率提升。</p>
-          <p>第二组实验固定 4 张 H100 的总 GPU 预算，比较 <code>4 replicas × TP=1</code>、<code>2 replicas × TP=2</code> 与
-            <code>1 replica × TP=4</code>。该组回答在相同硬件成本和相同全局请求流下，应优先使用更高 TP 降低请求延迟，还是使用更多低 TP
-            副本提高聚合吞吐。最终目标是为 verl/Ray rollout worker 选择吞吐、延迟、资源效率和调度复杂度之间更合适的部署方式。
-          </p>
+          <p>第一组保持单个 vLLM 实例不变，比较 <code>TP=1</code>、<code>TP=2</code> 与 <code>TP=4</code> 的请求吞吐、生成延迟和每 GPU
+            吞吐。第二组固定 4 张 H100，比较 <code>4 replicas × TP=1</code>、<code>2 replicas × TP=2</code> 与
+            <code>1 replica × TP=4</code>，并将全局并发度从 8 提高到 32 和 64，记录拓扑排序是否随请求压力变化。服务启动、SQL
+            执行和 agent rewrite 不计入本轮测量窗口。</p>
         </section>
 
         <section aria-labelledby="tp-scaling-method">
@@ -3052,8 +2996,8 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                 <tbody>
                   <tr>
                     <td>请求与并发</td>
-                    <td>300 requests；global concurrency=8</td>
-                    <td>六组使用相同样本顺序与并发上限</td>
+                    <td>300 requests；global concurrency=8/32/64</td>
+                    <td>所有拓扑使用相同样本集合与顺序</td>
                   </tr>
                   <tr>
                     <td>生成配置</td>
@@ -3083,7 +3027,7 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
                 </tbody>
               </table>
             </div>
-            <p class="caption">表 1. 正式运行 <code>formal_20260805_191101</code> 的 workload、vLLM 配置和测量边界。</p>
+            <p class="caption">表 1. 两轮正式运行共享的 workload、vLLM 配置和测量边界。</p>
           </div>
 
           <h3>2.2 实验一：单实例 TP 扩展性</h3>
@@ -3171,13 +3115,14 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
             </div>
             <p class="caption">表 3. 固定 4×H100 总预算实验。三组消费相同请求集合，并保持总 GPU 数和测量窗口一致。</p>
           </div>
-          <p>多副本配置按请求序号使用确定性的 round-robin 分发。全局并发固定为 8，因此 4×TP=1 和 2×TP=2
-            在均匀分发时每实例分别只有约 2 和 4 个并发请求；该实验比较的是固定低并发 workload 下的端到端表现，而不是各拓扑的饱和容量。</p>
+          <p>多副本配置按请求序号使用确定性的 round-robin 分发。全局并发度 8 时，<code>4×TP=1</code>、<code>2×TP=2</code> 和
+            <code>1×TP=4</code> 的每实例并发度约为 2、4 和 8；并发度 32 时约为 8、16 和 32；并发度 64 时约为 16、32 和
+            64。高并发实验对每个拓扑执行 3 次，并按 run 轮换拓扑执行顺序。</p>
 
           <h3>2.4 指标与分析口径</h3>
           <p>吞吐指标包括 output tokens/s、total tokens/s 与 requests/s；延迟指标包括 TTFT、TPOT 和端到端 request latency，并报告 mean、p50、p95 与
-            p99。资源指标来自 1 秒间隔的 <code>nvidia-smi</code> 采样，包括逐卡峰值显存和峰值 GPU 利用率。本轮每个配置执行一次正式测量，因此表中数值是单次点估计；相同物理配置的
-            <code>single_tp4</code> 与 <code>fixed_1rep_tp4</code> 可作为有限的运行稳定性复核，但不能代替多个独立重复实验。</p>
+            p99。资源指标来自 <code>nvidia-smi</code> 采样。并发度 8 的结果为单次运行；并发度 32/64 的结果为 3 次运行的算术均值，吞吐同时报告样本标准差。表中的
+            p50、p95、p99、TTFT、TPOT 与峰值显存均为三个 run-level 指标的均值，不是合并 900 个请求后重新计算的分位数。</p>
         </section>
 
         <section aria-labelledby="tp-scaling-results">
@@ -3244,10 +3189,10 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
             <p class="caption">表 4. 单实例、global concurrency=8 的 TP 扩展结果。Speedup 以 requests/s 计算；并行效率为 speedup/TP。</p>
           </div>
           <p>TP=2 和 TP=4 相对 TP=1 的请求吞吐分别提高 38.2% 和 76.8%，p95 延迟分别降低 30.0% 和 43.4%。增加 TP
-            在当前 workload 下持续改善绝对性能，但 speedup 低于 GPU 数量增长：每 GPU 请求吞吐从 TP=1 的 17.65 requests/s 降至 TP=2 的 12.19 和 TP=4
-            的 7.80。</p>
+            后，speedup 分别为 1.38× 和 1.77×；每 GPU 请求吞吐从 TP=1 的 17.65 requests/s 降至 TP=2 的 12.19 和 TP=4
+            的 7.80 requests/s。</p>
 
-          <h3>3.2 固定 4-GPU 预算</h3>
+          <h3>3.2 固定 4-GPU 预算：concurrency=8</h3>
           <div class="table-block">
             <div class="table-wrap">
               <table>
@@ -3308,103 +3253,179 @@ GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
             <p class="caption">表 5. 固定 4×H100、global concurrency=8 的拓扑对照。所有配置均完成 300/300 个请求，无请求失败或 OOM。</p>
           </div>
           <p>在相同四卡预算下，1×TP=4 相比 4×TP=1 将 requests/s 和 output tokens/s 均提高约 61.7%，同时将 p50 与 p95
-            延迟分别降低 38.7% 和 39.5%；相比 2×TP=2，请求吞吐提高 14.5%，p95 延迟降低 15.1%。在全局并发度 8
-            时，该 workload 更受益于单实例 TP 带来的请求延迟下降。轮询后 4×TP=1 每个副本平均只有约两个并发请求，因此该结果不能说明多副本拓扑的饱和容量。</p>
+            延迟分别降低 38.7% 和 39.5%；相比 2×TP=2，请求吞吐提高 14.5%，p95 延迟降低 15.1%。轮询后 4×TP=1
+            每个副本平均约有两个并发请求。</p>
 
-          <h3>3.3 运行稳定性与显存</h3>
-          <p>六组共完成 1,800/1,800 个请求，没有请求失败或 OOM。物理配置相同的 <code>single_tp4</code> 与
-            <code>fixed_1rep_tp4</code> 分别达到 31.20 和 31.15 requests/s，差异约 0.17%；output tokens/s 差异约
-            0.15%，可作为本次节点内短时测量的有限复核。</p>
-          <p>各已使用 GPU 的峰值显存约为 63.9–65.7GiB。由于所有服务都设置 <code>gpu_memory_utilization=0.80</code>，vLLM 会利用剩余预算预留
-            KV cache，因此该数字主要代表配置的显存预算高水位，不能解释为 TP=4 的模型参数或激活天然占用约 66GiB。单实例 TP=1/2/4 的聚合显存随 GPU 数增加，也不应直接用于比较模型本身的内存效率。</p>
-        </section>
+          <h3>3.3 固定 4-GPU 预算：concurrency=32/64</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Concurrency</th>
+                    <th>拓扑</th>
+                    <th>Requests/s</th>
+                    <th>Output tok/s</th>
+                    <th>Mean latency</th>
+                    <th>Latency p95</th>
+                    <th>Latency p99</th>
+                    <th>Mean TTFT</th>
+                    <th>Mean TPOT</th>
+                    <th>每卡最高显存</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td rowspan="3"><code>32</code></td>
+                    <td><code>4 × TP=1</code></td>
+                    <td>63.76 ± 0.50</td>
+                    <td>2017.91 ± 15.28</td>
+                    <td>453.7ms</td>
+                    <td>939.2ms</td>
+                    <td>1528.0ms</td>
+                    <td>39.7ms</td>
+                    <td>13.78ms/token</td>
+                    <td>64.4GiB</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td><code>2 × TP=2</code></td>
+                    <td><strong>71.22 ± 0.25</strong></td>
+                    <td><strong>2252.90 ± 5.94</strong></td>
+                    <td><strong>416.6ms</strong></td>
+                    <td><strong>886.2ms</strong></td>
+                    <td><strong>1419.0ms</strong></td>
+                    <td>44.0ms</td>
+                    <td><strong>12.46ms/token</strong></td>
+                    <td>65.7GiB</td>
+                  </tr>
+                  <tr>
+                    <td><code>1 × TP=4</code></td>
+                    <td>59.91 ± 0.22</td>
+                    <td>1895.36 ± 8.02</td>
+                    <td>509.1ms</td>
+                    <td>1048.0ms</td>
+                    <td>1766.9ms</td>
+                    <td>56.3ms</td>
+                    <td>15.25ms/token</td>
+                    <td>65.7GiB</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td rowspan="3"><code>64</code></td>
+                    <td><code>4 × TP=1</code></td>
+                    <td><strong>96.62 ± 0.65</strong></td>
+                    <td><strong>3060.32 ± 26.06</strong></td>
+                    <td><strong>528.7ms</strong></td>
+                    <td><strong>1092.1ms</strong></td>
+                    <td><strong>1740.6ms</strong></td>
+                    <td><strong>60.8ms</strong></td>
+                    <td><strong>15.64ms/token</strong></td>
+                    <td>64.4GiB</td>
+                  </tr>
+                  <tr>
+                    <td><code>2 × TP=2</code></td>
+                    <td>95.08 ± 2.14</td>
+                    <td>3005.83 ± 67.65</td>
+                    <td>579.3ms</td>
+                    <td>1200.0ms</td>
+                    <td>1910.8ms</td>
+                    <td>77.0ms</td>
+                    <td>16.97ms/token</td>
+                    <td>65.7GiB</td>
+                  </tr>
+                  <tr>
+                    <td><code>1 × TP=4</code></td>
+                    <td>81.50 ± 3.15</td>
+                    <td>2579.88 ± 100.71</td>
+                    <td>717.3ms</td>
+                    <td>1430.5ms</td>
+                    <td>2452.8ms</td>
+                    <td>89.7ms</td>
+                    <td>21.25ms/token</td>
+                    <td>65.9GiB</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 6. 固定 4×H100 的高并发对照。吞吐为 3 次独立运行的均值 ± 样本标准差；其余指标为三个 run-level
+              汇总值的均值。每组均完成 300/300 个请求。</p>
+          </div>
+          <p>并发度 32 时，<code>2×TP=2</code> 的请求吞吐比 <code>4×TP=1</code> 高 11.7%，比 <code>1×TP=4</code> 高
+            18.9%；三者的三次运行范围分别为 70.97–71.46、63.20–64.17 和 59.66–60.04 requests/s。对应 p95 延迟为
+            886.2ms、939.2ms 和 1048.0ms。</p>
+          <p>并发度 64 时，<code>4×TP=1</code> 与 <code>2×TP=2</code> 的平均请求吞吐相差 1.6%，三次运行范围分别为
+            96.01–97.31 和 93.79–97.55 requests/s；两组范围重叠。<code>1×TP=4</code> 为 81.50±3.15
+            requests/s，比 <code>4×TP=1</code> 低 15.6%，p95 延迟高 31.0%。</p>
 
-        <section aria-labelledby="tp-agent-smoke">
-          <h2 id="tp-agent-smoke">4. 端到端轨迹冒烟验证</h2>
-          <p>为确认 benchmark 可以覆盖完整 SQL agent 路径，补充执行了一个小样本 agent trace smoke：固定 4×H100 预算、global
-            concurrency=2、8 条 validation prompt、每组 1 次运行。该测试包含 write SQL、SQLite 执行、checker 判断和 rewrite turn，统计口径从单次
-            vLLM completion 扩展为完整 trajectory 完成时间。由于样本数和并发度都很小，该结果仅用于验证测量链路与端到端计时，不作为正式性能排序依据。</p>
-
+          <h3>3.4 并发扩展、重复波动与显存</h3>
           <div class="table-block">
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th>拓扑</th>
-                    <th>Traj/s</th>
-                    <th>Model calls/s</th>
-                    <th>Latency p50</th>
-                    <th>Latency p95</th>
-                    <th>平均模型调用</th>
-                    <th>Rewrite rate</th>
-                    <th>Exec acc.</th>
-                    <th>每卡最高显存</th>
+                    <th>C=8 Requests/s</th>
+                    <th>C=32 Requests/s</th>
+                    <th>C=64 Requests/s</th>
+                    <th>C=32→64 吞吐变化</th>
+                    <th>C=32→64 Mean latency 变化</th>
+                    <th>C=32→64 p95 变化</th>
+                    <th>C=64 吞吐 CV</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td><code>4 × TP=1</code></td>
-                    <td>2.33</td>
-                    <td>5.24</td>
-                    <td>606.8ms</td>
-                    <td>1.487s</td>
-                    <td>2.25</td>
-                    <td>12.5%</td>
-                    <td>87.5%</td>
-                    <td>63.9GiB</td>
+                    <td>19.27</td>
+                    <td>63.76 ± 0.50</td>
+                    <td>96.62 ± 0.65</td>
+                    <td>+51.5%</td>
+                    <td>+16.5%</td>
+                    <td>+16.3%</td>
+                    <td>0.68%</td>
                   </tr>
                   <tr>
                     <td><code>2 × TP=2</code></td>
-                    <td>3.39</td>
-                    <td>7.62</td>
-                    <td>407.3ms</td>
-                    <td>1.023s</td>
-                    <td>2.25</td>
-                    <td>12.5%</td>
-                    <td>87.5%</td>
-                    <td>65.7GiB</td>
+                    <td>27.22</td>
+                    <td>71.22 ± 0.25</td>
+                    <td>95.08 ± 2.14</td>
+                    <td>+33.5%</td>
+                    <td>+39.1%</td>
+                    <td>+35.4%</td>
+                    <td>2.25%</td>
                   </tr>
-                  <tr class="best-row">
+                  <tr>
                     <td><code>1 × TP=4</code></td>
-                    <td><strong>4.14</strong></td>
-                    <td><strong>9.33</strong></td>
-                    <td><strong>344.3ms</strong></td>
-                    <td><strong>850.1ms</strong></td>
-                    <td>2.25</td>
-                    <td>12.5%</td>
-                    <td>87.5%</td>
-                    <td>65.7GiB</td>
+                    <td>31.15</td>
+                    <td>59.91 ± 0.22</td>
+                    <td>81.50 ± 3.15</td>
+                    <td>+36.0%</td>
+                    <td>+40.9%</td>
+                    <td>+36.5%</td>
+                    <td>3.86%</td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <p class="caption">表 6. 完整 agent trace smoke。三组均完成 8/8 条 trajectory，无请求失败、无 parse error、无耗尽轮数。</p>
+            <p class="caption">表 7. 同一固定预算拓扑在三个全局并发度下的请求吞吐。C=8 为单次运行；C=32/64 为 3 次运行的均值 ±
+              样本标准差。CV 为 C=64 三次吞吐的样本标准差除以均值。</p>
           </div>
-
-          <p>在该低并发 smoke 中，1×TP=4 相比 4×TP=1 的 trajectory throughput 提高约 78.1%，p95 trajectory latency 从
-            1.487s 降至 850.1ms；相比 2×TP=2，trajectory throughput 提高约 22.4%，p95 latency 降低约 16.9%。三组的平均模型调用数、
-            rewrite rate 和执行准确率完全一致，说明这里的差异主要来自 serving 拓扑与调度路径，而不是样本行为差异。</p>
-          <p>该 smoke 与前面的单 completion 低并发结论方向一致，但因为只有 8 条样本、concurrency=2 且没有重复运行，只能说明完整 agent trace
-            计时链路已经可用。固定 300 条 prompt、global concurrency=32/64、每组至少 3 次独立运行仍是判断饱和吞吐和方差的必要实验。</p>
-          <p class="source">数据来源：<code>artifacts/logs/vllm_tp_followup/agent_smoke_20260805_200936</code> 下三组
-            <code>summary.json</code>、<code>trajectories.jsonl</code>、<code>gpu_monitor.csv</code> 与聚合文件
-            <code>aggregate_summary.csv</code>。</p>
+          <p>从并发度 32 提高到 64 后，<code>4×TP=1</code>、<code>2×TP=2</code> 和 <code>1×TP=4</code> 的吞吐分别增加
+            51.5%、33.5% 和 36.0%，p95 延迟分别增加 16.3%、35.4% 和 36.5%。并发度 32 的吞吐 CV 为
+            0.79%、0.35% 和 0.36%；并发度 64 时为 0.68%、2.25% 和 3.86%。</p>
+          <p>18 次高并发运行共完成 5,400/5,400 个请求。逐卡峰值显存在 64.4–65.9GiB 之间，没有 OOM。所有服务均设置
+            <code>gpu_memory_utilization=0.80</code>，该数值包含 vLLM 的 KV-cache 预留预算。</p>
         </section>
 
         <section aria-labelledby="tp-scaling-conclusion">
-          <h2 id="tp-scaling-conclusion">5. 结论与边界</h2>
+          <h2 id="tp-scaling-conclusion">4. 部署对照与适用范围</h2>
           <ul class="config-list">
-            <li><strong>低并发部署选择</strong>：对当前平均约 224 input tokens、32 output tokens 的 SQL workload，在 global concurrency=8
-              下，1×TP=4 同时取得最高吞吐和最低尾延迟。</li>
-            <li><strong>单实例扩展规律</strong>：TP 从 1 增至 2、4 时绝对性能持续提高，但并行效率从 100% 降至 69.1% 和 44.2%；TP=4
-              的优势是响应速度，而不是每 GPU 吞吐。</li>
-            <li><strong>不能外推最大吞吐</strong>：本轮只有 concurrency=8，且每个配置只有一次正式测量。4×TP=1 与 2×TP=2
-              没有被充分压满，因此当前结果不能回答高并发下哪种拓扑拥有最高饱和容量。</li>
-            <li><strong>后续验证</strong>：已完成 8 条样本的完整 agent trace smoke；正式结论仍需要固定相同 300 条 prompt，在 global concurrency=32/64
-              下重复固定预算对照，并为每个配置执行至少三次独立运行。</li>
+            <li><strong>Concurrency=8</strong>：<code>1×TP=4</code> 为 31.15 requests/s，p95 为 506.6ms。</li>
+            <li><strong>Concurrency=32</strong>：<code>2×TP=2</code> 为 71.22±0.25 requests/s，p95 为 886.2ms。</li>
+            <li><strong>Concurrency=64</strong>：<code>4×TP=1</code> 为 96.62±0.65 requests/s，<code>2×TP=2</code>
+              为 95.08±2.14 requests/s；两组的三次运行范围重叠。</li>
+            <li><strong>测量范围</strong>：300 条 prompt 的平均输入约 224 tokens、平均输出约 32 tokens；计时不包含服务启动、SQL
+              执行、checker 与 rewrite turn。</li>
           </ul>
-          <p class="source">数据来源：<code>artifacts/logs/vllm_tp_scaling/formal_20260805_191101</code> 下六组
-            <code>summary.json</code>、逐请求 <code>requests.jsonl</code> 与 <code>gpu_monitor.csv</code>。服务启动时间不计入请求测量窗口。</p>
         </section>
       </div>
 

@@ -1,0 +1,24 @@
+model:
+  backend: sglang
+  api_url_env: LLM_API_URL_AGENT
+  api_key_env: LLM_API_KEY_AGENT
+  model_name_env: LLM_MODEL_NAME
+  request_timeout_seconds: 300
+  request_retries: 2
+  retry_backoff_seconds: 1.0
+
+data:
+  data_dir: data/spider
+  train_file: train_spider.json
+  validation_file: dev.json
+
+rollout:
+  max_turns: 3
+  max_response_length: 2048
+  temperature: 0.0
+
+eval:
+  sample_size: 300
+  sample_seed: 0
+  concurrency: 16
+  log_every: 20

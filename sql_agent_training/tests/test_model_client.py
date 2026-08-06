@@ -6,6 +6,7 @@ from pathlib import Path
 from sql_agent_training.agent.model_client import (
     HuggingFaceModelClient,
     ModelRequest,
+    OpenAIChatModelClient,
     VllmOpenAIModelClient,
     _resolve_adapter_base_model_path,
 )
@@ -156,3 +157,57 @@ def test_vllm_openai_client_generates_and_loads_lora(monkeypatch, tmp_path: Path
         "lora_path": str(tmp_path / "adapter"),
         "load_inplace": True,
     }
+
+
+def test_openai_chat_client_generates_without_tokenizer(monkeypatch) -> None:
+    calls = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps({"choices": [{"message": {"content": "SELECT 1"}}]}).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        calls.append(
+            {
+                "url": request.full_url,
+                "payload": json.loads(request.data.decode("utf-8")),
+                "authorization": request.get_header("Authorization"),
+                "timeout": timeout,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    client = OpenAIChatModelClient(
+        base_url="https://example.test/v1",
+        model_name="deepseek-chat",
+        api_key="secret",
+        timeout_seconds=15.0,
+        max_new_tokens=128,
+    )
+
+    response = client.generate(
+        ModelRequest(
+            turns=[
+                AgentTurn(role="user", content="Write SQL"),
+                AgentTurn(role="tool", content="syntax error"),
+            ]
+        )
+    )
+
+    assert response.content == "SELECT 1"
+    assert response.prompt_ids is None
+    assert calls[0]["url"] == "https://example.test/v1/chat/completions"
+    assert calls[0]["authorization"] == "Bearer secret"
+    assert calls[0]["timeout"] == 15.0
+    assert calls[0]["payload"]["model"] == "deepseek-chat"
+    assert calls[0]["payload"]["messages"] == [
+        {"role": "user", "content": "Write SQL"},
+        {"role": "user", "content": "Tool observation:\nsyntax error"},
+    ]

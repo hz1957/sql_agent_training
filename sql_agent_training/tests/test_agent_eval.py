@@ -9,7 +9,14 @@ import yaml
 from sql_agent_training.agent.model_client import ScriptedModelClient
 from sql_agent_training.data.schema import load_tables_json
 from sql_agent_training.data.spider_dataset import SpiderExample
-from sql_agent_training.train.agent_eval import evaluate_agent, summarize_agent_eval, write_eval_outputs
+from sql_agent_training.agent.model_client import OpenAIChatModelClient
+from sql_agent_training.train.agent_eval import (
+    _load_env_file,
+    _load_model_client,
+    evaluate_agent,
+    summarize_agent_eval,
+    write_eval_outputs,
+)
 from sql_agent_training.train.eval_sampling import select_eval_examples
 
 
@@ -70,6 +77,62 @@ def test_evaluate_agent_dry_run_gold_writes_metrics(tmp_path: Path) -> None:
     assert metrics["avg_turns"] == 1.0
     assert predictions.exists()
     assert json.loads(metrics_json.read_text(encoding="utf-8"))["total"] == 1
+
+
+def test_evaluate_agent_concurrency_preserves_example_order(tmp_path: Path) -> None:
+    data_dir = tmp_path / "spider"
+    _write_eval_spider_dir(data_dir, row_count=4)
+    tables = load_tables_json(data_dir / "tables.json")
+    examples = [
+        SpiderExample(
+            uid=f"music:{index}",
+            db_id="music",
+            question="List names.",
+            gold_sql="SELECT Name FROM Singer",
+        )
+        for index in range(4)
+    ]
+    progress = []
+
+    rows = evaluate_agent(
+        examples,
+        tables,
+        data_dir,
+        dry_run_gold=True,
+        max_turns=1,
+        concurrency=3,
+        progress_callback=lambda completed, total: progress.append((completed, total)),
+    )
+
+    assert [row.uid for row in rows] == [example.uid for example in examples]
+    assert progress[-1] == (4, 4)
+
+
+def test_load_remote_chat_client_from_env_file(monkeypatch, tmp_path: Path) -> None:
+    for key in ("LLM_API_KEY_AGENT", "LLM_API_URL_AGENT", "LLM_MODEL_NAME"):
+        monkeypatch.delenv(key, raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        'LLM_API_KEY_AGENT="secret"\n'
+        'LLM_API_URL_AGENT="https://example.test/v1"\n'
+        'LLM_MODEL_NAME="deepseek-chat"\n',
+        encoding="utf-8",
+    )
+    _load_env_file(env_file)
+
+    client = _load_model_client(
+        {
+            "model": {"backend": "sglang"},
+            "rollout": {"max_response_length": 512, "temperature": 0.0},
+        },
+        checkpoint=None,
+        tokenizer_path=None,
+    )
+
+    assert isinstance(client, OpenAIChatModelClient)
+    assert client.base_url == "https://example.test/v1"
+    assert client.model_name == "deepseek-chat"
+    assert client.api_key == "secret"
 
 
 def test_evaluate_agent_tree_mode_adds_tree_metrics(tmp_path: Path) -> None:

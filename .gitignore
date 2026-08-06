@@ -222,6 +222,7 @@ agentlightning/dashboard/**/*.svg
 docker/data/
 
 # Local training data and artifacts
+/sql_agent_training/.env
 sql_agent_training/data/
 sql_agent_training/artifacts/
 sql_agent_training/logs/
