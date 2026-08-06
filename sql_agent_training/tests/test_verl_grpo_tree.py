@@ -1,3 +1,4 @@
+import asyncio
 import math
 import random
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ import torch
 from sql_agent_training.train.verl_grpo_tree import (
     TreeNode,
     TreeRewardAgentLoopWorker,
+    TreeSqlAgentLoop,
     backup_tree_values,
     child_state_id,
     compute_grpo_tree_advantage,
@@ -19,6 +21,7 @@ from sql_agent_training.train.verl_grpo_tree import (
     tree_slot_count,
     tree_workload_fingerprint,
 )
+from sql_agent_training.agent.sql_agent_loop import _irrecoverable_sqlite_error_reason
 from sql_agent_training.train.verl_sql_agent_loop import _normalize_reward_scheme
 
 
@@ -29,6 +32,7 @@ def _node(
     correct: bool = False,
     execution_ok: bool = False,
     checker_verdict: bool | None = False,
+    prune_reason: str | None = None,
 ) -> TreeNode:
     return TreeNode(
         node_id=node_id,
@@ -44,6 +48,7 @@ def _node(
         checker_feedback="THE QUERY IS CORRECT." if checker_verdict else "THE QUERY IS INCORRECT.",
         checker_verdict=checker_verdict,
         correct=correct,
+        prune_reason=prune_reason,
     )
 
 
@@ -65,7 +70,7 @@ def test_backup_tree_values_uses_final_reward_mean_backup() -> None:
     assert failed.value == 0.0
 
 
-def test_backup_tree_values_can_use_executable_fallback() -> None:
+def test_backup_tree_values_does_not_clip_success_signal_with_executable_fallback() -> None:
     executable_leaf = _node("executable_leaf", execution_ok=True)
     failed_leaf = _node("failed_leaf", execution_ok=False)
     repaired_parent = _node("repaired_parent", execution_ok=False)
@@ -77,9 +82,9 @@ def test_backup_tree_values_can_use_executable_fallback() -> None:
         executable_fallback_beta=0.1,
     )
 
-    assert executable_leaf.value == 0.1
+    assert executable_leaf.value == 0.0
     assert failed_leaf.value == 0.0
-    assert math.isclose(repaired_parent.value, 0.045)
+    assert math.isclose(repaired_parent.value, 0.0)
 
 
 def test_tree_reward_scheme_aliases() -> None:
@@ -140,6 +145,63 @@ def test_select_frontier_nodes_uses_proxy_not_gold_reward() -> None:
     )
 
     assert [node.node_id for node in selected] == ["checker_positive"]
+
+
+def test_irrecoverable_sqlite_error_reason_is_conservative() -> None:
+    schema_prompt = "Database: music\n- Singer(Name)\n- Album(Title)"
+
+    assert _irrecoverable_sqlite_error_reason("no such table: Phantom", schema_prompt) == "missing_table:Phantom"
+    assert _irrecoverable_sqlite_error_reason("Table 'Phantom' doesn't exist", schema_prompt) == (
+        "missing_table:Phantom"
+    )
+    assert _irrecoverable_sqlite_error_reason("interrupted", schema_prompt) == "timeout_or_interrupted"
+    assert _irrecoverable_sqlite_error_reason("out of memory", schema_prompt) == "memory_limit"
+    assert _irrecoverable_sqlite_error_reason("no such table: Singers", schema_prompt) is None
+
+
+def test_parent_state_prunes_checker_terminal_and_severe_error_not_gold_reward() -> None:
+    async def run_case() -> None:
+        loop = object.__new__(TreeSqlAgentLoop)
+        loop.max_turns = 3
+        loop.prune_on_terminal_proxy = True
+
+        async def encode(_: str, *, remove_system_prompt: bool) -> list[int]:
+            del remove_system_prompt
+            return [101, 102]
+
+        loop._encode_user_prompt = encode
+        fields = {"question": "List names.", "schema_prompt": "Database: music\n- Singer(Name)"}
+
+        gold_correct_checker_rejected = _node(
+            "gold_correct_checker_rejected",
+            correct=True,
+            execution_ok=True,
+            checker_verdict=False,
+        )
+        assert (
+            await loop._parent_state_for_node(
+                fields=fields,
+                root_uid="task",
+                node=gold_correct_checker_rejected,
+            )
+            is not None
+        )
+
+        checker_terminal = _node("checker_terminal", correct=False, execution_ok=True, checker_verdict=True)
+        assert (
+            await loop._parent_state_for_node(fields=fields, root_uid="task", node=checker_terminal)
+        ) is None
+
+        severe_error = _node(
+            "severe_error",
+            correct=False,
+            execution_ok=False,
+            checker_verdict=False,
+            prune_reason="missing_table:Phantom",
+        )
+        assert await loop._parent_state_for_node(fields=fields, root_uid="task", node=severe_error) is None
+
+    asyncio.run(run_case())
 
 
 def test_child_state_id_depends_on_agent_visible_parent_state() -> None:
@@ -275,3 +337,78 @@ def test_grpo_tree_advantage_groups_by_parent_state_and_ignores_dummy_rows() -> 
         torch.testing.assert_close(advantages[row, :2], torch.full((2,), value), rtol=1e-5, atol=1e-5)
     torch.testing.assert_close(advantages[4], torch.zeros(3))
     torch.testing.assert_close(returns, advantages)
+
+
+def test_tree_advantage_uses_correctness_before_executable_fallback() -> None:
+    response_mask = torch.tensor(
+        [
+            [1, 1],
+            [1, 1],
+        ],
+        dtype=torch.float32,
+    )
+    rewards = torch.zeros_like(response_mask)
+    rewards[0, 1] = 0.05
+    rewards[1, 1] = 0.10
+    index = np.array(["parent", "parent"], dtype=object)
+    executable = np.array([True, False], dtype=object)
+
+    advantages, _ = compute_grpo_tree_advantage(
+        token_level_rewards=rewards,
+        response_mask=response_mask,
+        index=index,
+        executable=executable,
+        executable_fallback_weight=0.1,
+    )
+
+    assert advantages[0, 0] < 0
+    assert advantages[1, 0] > 0
+    torch.testing.assert_close(advantages[0], torch.full((2,), -1.0), rtol=1e-4, atol=1e-4)
+    torch.testing.assert_close(advantages[1], torch.full((2,), 1.0), rtol=1e-4, atol=1e-4)
+
+
+def test_tree_advantage_scales_executable_fallback_after_normalization() -> None:
+    response_mask = torch.tensor(
+        [
+            [1, 1],
+            [1, 1],
+        ],
+        dtype=torch.float32,
+    )
+    rewards = torch.zeros_like(response_mask)
+    index = np.array(["parent", "parent"], dtype=object)
+    executable = np.array([True, False], dtype=object)
+
+    advantages, _ = compute_grpo_tree_advantage(
+        token_level_rewards=rewards,
+        response_mask=response_mask,
+        index=index,
+        executable=executable,
+        executable_fallback_weight=0.1,
+    )
+
+    torch.testing.assert_close(advantages[0], torch.full((2,), 0.1), rtol=1e-4, atol=1e-4)
+    torch.testing.assert_close(advantages[1], torch.full((2,), -0.1), rtol=1e-4, atol=1e-4)
+
+
+def test_tree_advantage_skips_all_failed_groups_without_executability_contrast() -> None:
+    response_mask = torch.tensor(
+        [
+            [1, 1],
+            [1, 1],
+        ],
+        dtype=torch.float32,
+    )
+    rewards = torch.zeros_like(response_mask)
+    index = np.array(["parent", "parent"], dtype=object)
+    executable = np.array([True, True], dtype=object)
+
+    advantages, _ = compute_grpo_tree_advantage(
+        token_level_rewards=rewards,
+        response_mask=response_mask,
+        index=index,
+        executable=executable,
+        executable_fallback_weight=0.1,
+    )
+
+    torch.testing.assert_close(advantages, torch.zeros_like(response_mask))

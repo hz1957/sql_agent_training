@@ -114,3 +114,22 @@ def test_tree_eval_falls_back_to_best_executable_when_checker_rejects(tmp_path: 
     assert trajectory.final_sql == "SELECT COUNT(*) FROM Singer"
     assert trajectory.final_sql_source == "tree_executable_fallback"
     assert trajectory.reward == 1.0
+
+
+def test_tree_eval_rule_prunes_unrecoverable_missing_table(tmp_path: Path) -> None:
+    db_path = tmp_path / "music.sqlite"
+    _make_db(db_path)
+    client = ScriptedModelClient(["SELECT Name FROM Phantom"])
+
+    trajectory = TreeSqlAgentEvalLoop(max_turns=3, branch_n=1, beam_size=1, seed=0).run(
+        _sample(),
+        client,
+        db_path,
+        temperature=1.0,
+    )
+
+    assert trajectory.final_sql is None
+    assert trajectory.reward == 0.0
+    assert trajectory.metadata["tree_nodes"] == 1
+    assert trajectory.metadata["tree_rule_pruned_candidates"] == 1
+    assert trajectory.metadata["num_check_calls"] == 0

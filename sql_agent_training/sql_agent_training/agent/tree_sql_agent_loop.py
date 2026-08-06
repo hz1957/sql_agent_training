@@ -17,6 +17,7 @@ from sql_agent_training.agent.sql_agent_loop import (
     SqlAgentLoop,
     _checker_verdict,
     _format_execution_feedback,
+    _irrecoverable_sqlite_error_reason,
 )
 from sql_agent_training.agent.trace_format import AgentTrajectory, AgentTurn
 from sql_agent_training.env.sqlite_tool import SQLiteTool
@@ -90,6 +91,8 @@ class TreeEvalNode:
     execution_feedback: str
     checker_feedback: str | None
     checker_verdict: bool | None
+    prune_reason: str | None = None
+    check_called: bool = False
     child_state: TreeEvalParentState | None = None
     children: list["TreeEvalNode"] = field(default_factory=list)
 
@@ -98,6 +101,10 @@ class TreeEvalNode:
         """Whether this node is a checker-approved executable leaf."""
 
         return bool(self.sql and self.execution_ok and self.checker_verdict is True)
+
+    @property
+    def is_proxy_pruned_leaf(self) -> bool:
+        return self.is_terminal_candidate or self.prune_reason is not None
 
 
 def tree_eval_proxy_score(node: TreeEvalNode) -> float:
@@ -114,6 +121,8 @@ def tree_eval_proxy_score(node: TreeEvalNode) -> float:
             score += 0.2
     else:
         score -= 0.5
+    if node.prune_reason is not None:
+        score -= 2.0
     if node.checker_verdict is True:
         score += 0.3
     elif node.checker_verdict is False:
@@ -224,7 +233,7 @@ class TreeSqlAgentEvalLoop(SqlAgentLoop):
                     )
                     parent_children.append(node)
                     num_execute_calls += int(node.sql is not None)
-                    num_check_calls += int(node.sql is not None)
+                    num_check_calls += int(node.check_called)
                     num_parse_errors += int(node.sql is None)
 
                 if parent.source_node_id is not None:
@@ -297,6 +306,7 @@ class TreeSqlAgentEvalLoop(SqlAgentLoop):
                     max_turns=self.max_turns,
                 ),
                 "tree_terminal_candidates": len(terminal_candidates),
+                "tree_rule_pruned_candidates": sum(1 for node in all_nodes if node.prune_reason is not None),
                 "tree_selected_frontier_nodes": selected_frontier_nodes,
                 "tree_final_node_id": final_node.node_id if final_node is not None else None,
                 "tree_final_turn_index": final_node.turn_index if final_node is not None else None,
@@ -367,6 +377,8 @@ class TreeSqlAgentEvalLoop(SqlAgentLoop):
         execution_feedback = "No SQL query found. Return only one read-only SQLite SELECT query."
         checker_feedback: str | None = execution_feedback
         checker_verdict: bool | None = False
+        prune_reason: str | None = None
+        check_called = False
 
         if candidate_sql is None:
             turns.append(
@@ -388,6 +400,8 @@ class TreeSqlAgentEvalLoop(SqlAgentLoop):
             execution = self.sqlite_tool.execute(sqlite_path, candidate_sql)
             execution_ok = bool(execution.ok)
             execution_feedback = _format_execution_feedback(execution.ok, execution.rows, execution.error)
+            if not execution_ok:
+                prune_reason = _irrecoverable_sqlite_error_reason(execution.error, sample.schema_prompt)
             turns.append(
                 AgentTurn(
                     role="tool",
@@ -407,43 +421,47 @@ class TreeSqlAgentEvalLoop(SqlAgentLoop):
                 )
             )
 
-            check_turn = self._build_check_turn(sample, query=candidate_sql, execution=execution_feedback)
-            check_turn.metadata.update(
-                {
-                    "tree_node_id": node_id,
-                    "tree_parent_state_id": parent.state_id,
-                    "tree_branch_index": branch_index,
-                }
-            )
-            raw_check = model_client.generate(
-                ModelRequest(
-                    turns=(check_turn,),
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    top_p=top_p,
-                    top_k=top_k,
+            if prune_reason is None:
+                check_turn = self._build_check_turn(sample, query=candidate_sql, execution=execution_feedback)
+                check_turn.metadata.update(
+                    {
+                        "tree_node_id": node_id,
+                        "tree_parent_state_id": parent.state_id,
+                        "tree_branch_index": branch_index,
+                    }
                 )
-            )
-            checker_feedback = raw_check.content
-            checker_verdict = _checker_verdict(checker_feedback)
-            turns.append(check_turn)
-            turns.append(
-                AgentTurn(
-                    role="assistant",
-                    content=checker_feedback,
-                    metadata=self._response_metadata(
-                        raw_check,
-                        agent_step="check_query",
-                        trainable=False,
-                        turn_index=parent.turn_index,
-                        node_id=node_id,
-                        parent_state_id=parent.state_id,
-                        branch_index=branch_index,
-                        query=candidate_sql,
-                        execution_ok=execution.ok,
+                raw_check = model_client.generate(
+                    ModelRequest(
+                        turns=(check_turn,),
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        top_k=top_k,
+                    )
+                )
+                check_called = True
+                checker_feedback = raw_check.content
+                checker_verdict = _checker_verdict(checker_feedback)
+                turns.append(check_turn)
+                turns.append(
+                    AgentTurn(
+                        role="assistant",
+                        content=checker_feedback,
+                        metadata=self._response_metadata(
+                            raw_check,
+                            agent_step="check_query",
+                            trainable=False,
+                            turn_index=parent.turn_index,
+                            node_id=node_id,
+                            parent_state_id=parent.state_id,
+                            branch_index=branch_index,
+                            query=candidate_sql,
+                            execution_ok=execution.ok,
+                        ),
                     ),
                 )
-            )
+            else:
+                checker_feedback = f"{execution_feedback}\nRule-pruned: {prune_reason}."
 
         node = TreeEvalNode(
             node_id=node_id,
@@ -457,13 +475,15 @@ class TreeSqlAgentEvalLoop(SqlAgentLoop):
             execution_feedback=execution_feedback,
             checker_feedback=checker_feedback,
             checker_verdict=checker_verdict,
+            prune_reason=prune_reason,
+            check_called=check_called,
         )
         node.child_state = self._child_state_for_node(sample, node=node)
         return node
 
     def _child_state_for_node(self, sample: SqlAgentInput, *, node: TreeEvalNode) -> TreeEvalParentState | None:
         del sample
-        if node.is_terminal_candidate or node.turn_index + 1 >= self.max_turns:
+        if node.is_proxy_pruned_leaf or node.turn_index + 1 >= self.max_turns:
             return None
         return TreeEvalParentState(
             state_id=_child_state_id(

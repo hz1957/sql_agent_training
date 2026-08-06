@@ -25,7 +25,11 @@ import torch
 
 from sql_agent_training.agent.actions import extract_sql_candidate
 from sql_agent_training.agent.prompts import build_check_query_prompt, build_rewrite_query_prompt
-from sql_agent_training.agent.sql_agent_loop import _checker_verdict, _format_execution_feedback
+from sql_agent_training.agent.sql_agent_loop import (
+    _checker_verdict,
+    _format_execution_feedback,
+    _irrecoverable_sqlite_error_reason,
+)
 from sql_agent_training.train.verl_sql_agent_loop import (
     AgentLoopOutput,
     SpiderSqlAgentLoop,
@@ -209,6 +213,7 @@ class TreeNode:
     checker_feedback: str | None
     checker_verdict: bool | None
     correct: bool
+    prune_reason: str | None = None
     child_state: TreeParentState | None = None
     children: list["TreeNode"] = field(default_factory=list)
     value: float = 0.0
@@ -216,6 +221,14 @@ class TreeNode:
     @property
     def trainable(self) -> bool:
         return bool(self.response_ids)
+
+    @property
+    def checker_terminal(self) -> bool:
+        return bool(self.sql and self.execution_ok and self.checker_verdict is True)
+
+    @property
+    def terminal_by_proxy(self) -> bool:
+        return self.checker_terminal or self.prune_reason is not None
 
 
 def proxy_score(node: TreeNode) -> float:
@@ -232,6 +245,8 @@ def proxy_score(node: TreeNode) -> float:
             score += 0.2
     else:
         score -= 0.5
+    if node.prune_reason is not None:
+        score -= 2.0
     if node.checker_verdict is True:
         score += 0.3
     elif node.checker_verdict is False:
@@ -277,18 +292,38 @@ def select_frontier_nodes(
     return selected
 
 
+def _row_float(values: Any, row: int, *, default: float = 0.0) -> float:
+    if values is None:
+        return default
+    if isinstance(values, (int, float, bool, np.number)):
+        return float(values)
+    try:
+        value = values[row]
+    except Exception:
+        return default
+    value = _to_python(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return 1.0
+        if normalized in {"0", "false", "no", "n", "off", "", "none", "null"}:
+            return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def backup_tree_values(nodes: list[TreeNode], *, gamma: float, executable_fallback_beta: float = 0.0) -> None:
-    """Assign tree values with final-reward mean backup and optional executable fallback."""
+    """Assign correctness-backed tree returns without executable fallback clipping."""
+
+    del executable_fallback_beta
 
     def value_for(node: TreeNode) -> float:
         if node.correct:
             node.value = 1.0
         elif node.children:
-            backed_up_value = float(gamma) * sum(value_for(child) for child in node.children) / len(node.children)
-            executable_value = float(executable_fallback_beta) if node.execution_ok else 0.0
-            node.value = max(backed_up_value, executable_value)
-        elif node.execution_ok:
-            node.value = float(executable_fallback_beta)
+            node.value = float(gamma) * sum(value_for(child) for child in node.children) / len(node.children)
         else:
             node.value = 0.0
         return node.value
@@ -301,11 +336,20 @@ def compute_grpo_tree_advantage(
     token_level_rewards: torch.Tensor,
     response_mask: torch.Tensor,
     index: np.ndarray | None = None,
+    executable: Any = None,
+    executable_fallback_weight: Any = 0.0,
+    fallback_range_epsilon: float = 1e-6,
     config: Any = None,
     epsilon: float = 1e-6,
     norm_adv_by_std_in_grpo: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute GRPO advantages grouped by tree parent state id."""
+    """Compute GRPO advantages grouped by tree parent state id.
+
+    Correctness-backed tree returns dominate whenever they separate siblings.
+    Executability is only a gated fallback for groups with no observed success
+    signal, and its post-normalization strength is controlled by
+    executable_fallback_weight.
+    """
 
     del config
     if index is None:
@@ -313,34 +357,66 @@ def compute_grpo_tree_advantage(
     with torch.no_grad():
         scores = token_level_rewards.sum(dim=-1)
         valid_rows = response_mask.sum(dim=-1) > 0
-        groups: dict[str, list[torch.Tensor]] = {}
+        groups: dict[str, list[int]] = {}
         for row in range(response_mask.size(0)):
             if not bool(valid_rows[row].item()):
                 continue
             key = str(index[row])
-            groups.setdefault(key, []).append(scores[row])
+            groups.setdefault(key, []).append(row)
 
-        stats: dict[str, tuple[torch.Tensor, torch.Tensor, bool]] = {}
-        for key, values in groups.items():
-            stacked = torch.stack(values)
-            if len(values) < 2:
-                stats[key] = (stacked.mean(), torch.zeros_like(stacked.mean()), False)
+        stats: dict[str, tuple[str, torch.Tensor, torch.Tensor, bool, float]] = {}
+        for key, rows in groups.items():
+            final_values = torch.stack([scores[row] for row in rows])
+            if len(rows) < 2:
+                stats[key] = ("none", final_values.mean(), torch.zeros_like(final_values.mean()), False, 0.0)
                 continue
-            mean = stacked.mean()
-            std = stacked.std(unbiased=False)
-            stats[key] = (mean, std, bool((std > epsilon).item()))
+
+            final_range = final_values.max() - final_values.min()
+            if bool((final_range > fallback_range_epsilon).item()):
+                mean = final_values.mean()
+                std = final_values.std(unbiased=False)
+                stats[key] = ("final", mean, std, bool((std > epsilon).item()), 1.0)
+                continue
+
+            fallback_weight = max(
+                abs(_row_float(executable_fallback_weight, row, default=0.0)) for row in rows
+            )
+            max_final = final_values.max()
+            if fallback_weight > 0.0 and bool((max_final <= fallback_range_epsilon).item()):
+                exec_values = torch.tensor(
+                    [_row_float(executable, row, default=0.0) for row in rows],
+                    dtype=final_values.dtype,
+                    device=final_values.device,
+                )
+                exec_range = exec_values.max() - exec_values.min()
+                if bool((exec_range > epsilon).item()):
+                    mean = exec_values.mean()
+                    std = exec_values.std(unbiased=False)
+                    stats[key] = ("fallback", mean, std, bool((std > epsilon).item()), fallback_weight)
+                    continue
+
+            stats[key] = ("none", final_values.mean(), torch.zeros_like(final_values.mean()), False, 0.0)
 
         advantages = torch.zeros_like(token_level_rewards, dtype=torch.float32)
         for row in range(response_mask.size(0)):
             if not bool(valid_rows[row].item()):
                 continue
-            mean, std, usable = stats[str(index[row])]
+            signal_kind, mean, std, usable, signal_weight = stats[str(index[row])]
             if not usable:
                 continue
-            if norm_adv_by_std_in_grpo:
-                scalar = (scores[row] - mean) / (std + epsilon)
+            if signal_kind == "fallback":
+                signal = torch.tensor(
+                    _row_float(executable, row, default=0.0),
+                    dtype=mean.dtype,
+                    device=mean.device,
+                )
             else:
-                scalar = scores[row] - mean
+                signal = scores[row]
+            if norm_adv_by_std_in_grpo:
+                scalar = (signal - mean) / (std + epsilon)
+            else:
+                scalar = signal - mean
+            scalar = scalar * float(signal_weight)
             advantages[row] = scalar.to(dtype=advantages.dtype) * response_mask[row].to(dtype=advantages.dtype)
         return advantages, advantages
 
@@ -382,6 +458,8 @@ def patch_verl_compute_advantage() -> bool:
             token_level_rewards=data.batch["token_level_rewards"],
             response_mask=data.batch["response_mask"],
             index=data.non_tensor_batch["tree_group_id"],
+            executable=data.non_tensor_batch.get("tree_execution_ok"),
+            executable_fallback_weight=data.non_tensor_batch.get("tree_executable_fallback_weight"),
             config=config,
             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
         )
@@ -427,11 +505,15 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
                 _env_float("GRPO_TREE_BEAM_EPSILON_RANDOM", 0.1),
             )
         )
-        self.prune_on_gold_reward = bool(
+        prune_on_terminal_proxy_default = _env_bool(
+            "GRPO_TREE_PRUNE_ON_TERMINAL_PROXY",
+            _env_bool("GRPO_TREE_PRUNE_ON_GOLD_REWARD", True),
+        )
+        self.prune_on_terminal_proxy = bool(
             _cfg_agent_get(
                 self.rollout_config,
-                "tree_prune_on_gold_reward",
-                _env_bool("GRPO_TREE_PRUNE_ON_GOLD_REWARD", True),
+                "tree_prune_on_terminal_proxy",
+                _cfg_agent_get(self.rollout_config, "tree_prune_on_gold_reward", prune_on_terminal_proxy_default),
             )
         )
         self.stable_request_seeds = _env_bool("GRPO_TREE_STABLE_REQUEST_SEEDS", False)
@@ -445,7 +527,7 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
         root_uid: str,
         node: TreeNode,
     ) -> TreeParentState | None:
-        if (node.correct and self.prune_on_gold_reward) or node.turn_index + 1 >= self.max_turns:
+        if (node.terminal_by_proxy and self.prune_on_terminal_proxy) or node.turn_index + 1 >= self.max_turns:
             return None
         prompt_content = build_rewrite_query_prompt(
             fields["question"],
@@ -515,6 +597,7 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
         checker_feedback: str | None = execution_feedback
         checker_verdict: bool | None = False
         correct = False
+        prune_reason: str | None = None
 
         if candidate_sql is not None:
             tool_metrics: dict[str, Any] = {}
@@ -529,41 +612,47 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
             metrics["compute_score"] = metrics.get("compute_score", 0.0) + float(
                 score_metrics.get("compute_score", 0.0)
             )
+            if not execution_ok:
+                prune_reason = _irrecoverable_sqlite_error_reason(execution.error, fields["schema_prompt"])
 
-            check_prompt = build_check_query_prompt(
-                fields["question"],
-                fields["schema_prompt"],
-                candidate_sql,
-                execution_feedback,
-            )
-            check_prompt_ids = await self._encode_user_prompt(check_prompt, remove_system_prompt=False)
-            check_sampling_params = dict(sampling_params)
-            if self.stable_request_seeds:
-                check_sampling_params["seed"] = tree_request_seed(
-                    root_uid=root_uid,
-                    parent_state_id=parent.state_id,
-                    child_index=child_index,
-                    request_kind="checker",
+            if prune_reason is None:
+                check_prompt = build_check_query_prompt(
+                    fields["question"],
+                    fields["schema_prompt"],
+                    candidate_sql,
+                    execution_feedback,
                 )
-            check_output = await self._generate(
-                request_id=f"{request_id}-check",
-                prompt_ids=check_prompt_ids,
-                sampling_params=check_sampling_params,
-                response_ids=[],
-                priority=priority,
-                metrics=metrics,
-            )
-            check_ids = [] if check_output is None else list(getattr(check_output, "token_ids", check_output))
-            if request_records is not None:
-                request_records.append(
-                    {
-                        "request_key": f"{parent.state_id}\x1f{child_index}\x1fchecker",
-                        "prompt_ids": list(check_prompt_ids),
-                        "response_ids": check_ids,
-                    }
+                check_prompt_ids = await self._encode_user_prompt(check_prompt, remove_system_prompt=False)
+                check_sampling_params = dict(sampling_params)
+                if self.stable_request_seeds:
+                    check_sampling_params["seed"] = tree_request_seed(
+                        root_uid=root_uid,
+                        parent_state_id=parent.state_id,
+                        child_index=child_index,
+                        request_kind="checker",
+                    )
+                check_output = await self._generate(
+                    request_id=f"{request_id}-check",
+                    prompt_ids=check_prompt_ids,
+                    sampling_params=check_sampling_params,
+                    response_ids=[],
+                    priority=priority,
+                    metrics=metrics,
                 )
-            checker_feedback = self._decode(check_ids) if check_ids else execution_feedback
-            checker_verdict = _checker_verdict(checker_feedback)
+                check_ids = [] if check_output is None else list(getattr(check_output, "token_ids", check_output))
+                if request_records is not None:
+                    request_records.append(
+                        {
+                            "request_key": f"{parent.state_id}\x1f{child_index}\x1fchecker",
+                            "prompt_ids": list(check_prompt_ids),
+                            "response_ids": check_ids,
+                        }
+                    )
+                checker_feedback = self._decode(check_ids) if check_ids else execution_feedback
+                checker_verdict = _checker_verdict(checker_feedback)
+            else:
+                checker_feedback = f"{execution_feedback}\nRule-pruned: {prune_reason}."
+                checker_verdict = False
 
         node = TreeNode(
             node_id=f"{parent.state_id}::child{child_index}",
@@ -579,6 +668,7 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
             checker_feedback=checker_feedback,
             checker_verdict=checker_verdict,
             correct=correct,
+            prune_reason=prune_reason,
         )
         node.child_state = await self._parent_state_for_node(fields=fields, root_uid=root_uid, node=node)
         return node
@@ -615,6 +705,9 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
     def _node_to_output(self, node: TreeNode, metrics: dict[str, Any]) -> Any:
         if AgentLoopOutput is None:  # pragma: no cover - dependency guard.
             raise RuntimeError("Install verl to build AgentLoopOutput.")
+        executable_fallback_weight = (
+            float(self.executable_fallback_beta) if self.reward_scheme == "tree_executable" else 0.0
+        )
         return AgentLoopOutput(
             prompt_ids=node.prompt_ids,
             response_ids=node.response_ids,
@@ -632,7 +725,10 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
                 "tree_sql": node.sql,
                 "tree_execution_ok": node.execution_ok,
                 "tree_correct": node.correct,
+                "tree_checker_terminal": node.checker_terminal,
+                "tree_prune_reason": node.prune_reason,
                 "tree_value": float(node.value),
+                "tree_executable_fallback_weight": executable_fallback_weight,
             },
         )
 
@@ -671,7 +767,10 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
                 "tree_sql": None,
                 "tree_execution_ok": False,
                 "tree_correct": False,
+                "tree_checker_terminal": False,
+                "tree_prune_reason": None,
                 "tree_value": 0.0,
+                "tree_executable_fallback_weight": 0.0,
             },
         )
 
@@ -724,7 +823,7 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
             all_nodes.extend(expanded_nodes)
             if depth + 1 >= self.max_turns:
                 break
-            frontier = [node for node in expanded_nodes if not node.correct and node.child_state is not None]
+            frontier = [node for node in expanded_nodes if node.child_state is not None]
             selected_nodes = select_frontier_nodes(
                 frontier,
                 beam_size=self.beam_size,
@@ -737,11 +836,9 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
                 break
 
         root_nodes = [node for node in all_nodes if node.turn_index == 0]
-        executable_fallback_beta = self.executable_fallback_beta if self.reward_scheme == "tree_executable" else 0.0
         backup_tree_values(
             root_nodes,
             gamma=self.reward_gamma,
-            executable_fallback_beta=executable_fallback_beta,
         )
         rollout_time_sec = max(time.perf_counter() - rollout_start, 1e-9)
         metrics.update(
@@ -762,6 +859,11 @@ class TreeSqlAgentLoop(SpiderSqlAgentLoop):
                 "tree_nodes": len(all_nodes),
                 "tree_slot_count": slot_count,
                 "tree_dummy_count": max(0, slot_count - len(all_nodes)),
+                "tree_checker_terminal_count": sum(1 for node in all_nodes if node.checker_terminal),
+                "tree_rule_pruned_count": sum(1 for node in all_nodes if node.prune_reason is not None),
+                "tree_executable_fallback_weight": (
+                    float(self.executable_fallback_beta) if self.reward_scheme == "tree_executable" else 0.0
+                ),
             }
         )
         if len(all_nodes) > slot_count:

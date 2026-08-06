@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Callable
 
@@ -37,6 +39,80 @@ def _checker_verdict(feedback: str) -> bool | None:
     if correct_index < 0 and incorrect_index < 0:
         return None
     return correct_index > incorrect_index
+
+
+_MISSING_TABLE_PATTERNS = (
+    re.compile(r"\bno\s+such\s+table:\s*['\"`\[]?([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)?)", re.IGNORECASE),
+    re.compile(
+        r"\btable\s+['\"`\[]?([A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)?)['\"`\]]?\s+"
+        r"(?:does\s+not|doesn'?t)\s+exist",
+        re.IGNORECASE,
+    ),
+)
+_TIMEOUT_ERROR_MARKERS = ("timeout", "timed out", "time limit", "interrupted")
+_MEMORY_ERROR_MARKERS = ("out of memory", "memory limit", "memoryerror", "cannot allocate memory", "malloc")
+
+
+def _normalize_identifier(identifier: str) -> str:
+    return re.sub(r"[^a-z0-9_]+", "", identifier.lower())
+
+
+def _schema_table_names(schema_prompt: str) -> set[str]:
+    """Extract likely table names from the schema prompt shown to the agent."""
+
+    tables: set[str] = set()
+    patterns = (
+        re.compile(
+            r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`\"[]?([A-Za-z_][\w$]*)",
+            re.IGNORECASE,
+        ),
+        re.compile(r"(?m)^\s*[-*]\s*[`\"]?([A-Za-z_][\w$]*)[`\"]?\s*\("),
+        re.compile(r"(?im)^\s*table\s*:\s*[`\"]?([A-Za-z_][\w$]*)"),
+    )
+    for pattern in patterns:
+        for match in pattern.finditer(schema_prompt or ""):
+            normalized = _normalize_identifier(match.group(1))
+            if normalized:
+                tables.add(normalized)
+    return tables
+
+
+def _looks_like_table_typo(missing_table: str, schema_tables: set[str]) -> bool:
+    """Return True for likely one-hop table spelling mistakes such as user/users."""
+
+    missing = _normalize_identifier(missing_table.rsplit(".", 1)[-1])
+    if not missing or not schema_tables:
+        return False
+    if missing in schema_tables:
+        return True
+    missing_singular = missing[:-1] if missing.endswith("s") else missing
+    for table in schema_tables:
+        table_singular = table[:-1] if table.endswith("s") else table
+        if missing_singular == table_singular:
+            return True
+        if abs(len(missing) - len(table)) <= 2 and SequenceMatcher(None, missing, table).ratio() >= 0.82:
+            return True
+    return False
+
+
+def _irrecoverable_sqlite_error_reason(error: str | None, schema_prompt: str) -> str | None:
+    """Classify SQLite failures that should become terminal tree leaves."""
+
+    if not error:
+        return None
+    normalized_error = str(error).lower()
+    if any(marker in normalized_error for marker in _TIMEOUT_ERROR_MARKERS):
+        return "timeout_or_interrupted"
+    if any(marker in normalized_error for marker in _MEMORY_ERROR_MARKERS):
+        return "memory_limit"
+
+    schema_tables = _schema_table_names(schema_prompt)
+    for pattern in _MISSING_TABLE_PATTERNS:
+        for match in pattern.finditer(str(error)):
+            missing_table = match.group(1)
+            if not _looks_like_table_typo(missing_table, schema_tables):
+                return f"missing_table:{missing_table.rsplit('.', 1)[-1]}"
+    return None
 
 
 def _default_checker_feedback(execution_ok: bool) -> str:

@@ -1251,7 +1251,8 @@
             <code>chain_final</code>；S2 在 S1 基础上加入失败路径的 executable fallback，对应 <code>chain_executable</code>；S3 表示 tree
             rollout + final execution reward 的树回传，对应 <code>tree_final</code>；S4 在 S3 基础上加入 executable fallback，对应
             <code>tree_executable</code>。其中 chain 方案按同一 prompt 采样多条独立多轮轨迹并在组内估计 advantage；tree 方案在每个 SQL action
-            节点上分支、剪枝并把叶子或子树价值回传给父节点。Executable fallback 的 <code>beta=0.1</code> 只给最终失败但 SQL 可安全执行的路径提供下限奖励，不取代最终正确奖励。
+            节点上分支、剪枝并把叶子或子树价值回传给父节点。Executable fallback 的 <code>beta=0.1</code> 在 tree 方案中作为失败组的辅助 advantage 权重，而不是
+            raw value 下限。
           </p>
 
           <h3>1.1 模型谱系与两阶段 LoRA</h3>
@@ -1461,9 +1462,8 @@
             <p class="caption">表 2. S1–S4 之间实际发生变化的参数。</p>
           </div>
 
-          <p>S2 在 S1 的 chain final reward 上增加 <code>beta=0.1</code> executable fallback，其余显式训练参数相同；S4 同样是在 S3 的 tree
-            final
-            reward 上增加 executable fallback。因此，S1/S2 与 S3/S4 分别构成“是否增加 fallback”的单变量对照。相反，S1 与 S3 不仅改变了 rollout 结构和
+          <p>S2 在 S1 的 chain final reward 上增加 <code>beta=0.1</code> executable fallback，其余显式训练参数相同；S4 则在 S3 的 tree
+            advantage 计算中加入 group-gated executable fallback。因此，S1/S2 与 S3/S4 分别构成“是否增加 fallback”的方案内对照。相反，S1 与 S3 不仅改变了 rollout 结构和
             advantage estimator，还改变了 train batch size、PPO mini-batch size、每个 prompt 的 rollout 数以及每个 batch 配置的 rollout
             slot
             数。</p>
@@ -1473,8 +1473,8 @@
           <h3>1.4 Reward 与 executable fallback</h3>
           <p>需要区分算法语义和代码标识：配置名 <code>chain_executable</code> 表示“chain final + executable
             fallback”，<code>tree_executable</code> 表示“tree final + executable fallback”。S2 和 S4
-            都保留最终正确奖励及其折扣回传；executable
-            reward 只在失败路径上提供 fallback，并不取代 final reward。</p>
+            都保留最终正确奖励及其折扣回传；区别在于 S2 把可执行性写入失败轨迹的 raw score，而 S4 只在 tree sibling group 没有任何最终正确性区分时，把可执行性作为标准化后的 fallback
+            advantage 信号。</p>
           <p>在 chain rollout 中，verifier 只在轨迹终止时给出 outcome reward <em>R</em><sub>T</sub>。若第 <em>T</em> 轮生成语义正确的 SQL，则
             <em>R</em><sub>T</sub>=1；第 <em>t</em> 轮动作使用由该终局奖励反向折扣得到的经验动作回报，而不是把折扣值解释为环境在该轮给出的即时 reward。若整条轨迹最终失败，S1
             的所有动作回报均为 0；S2 则只对能够在 SQLite 中安全、无错误执行的 SQL 动作赋予 fallback score <code>beta=0.1</code>。这里的“可执行”仅表示
@@ -1484,16 +1484,18 @@
             Q_hat(t) = gamma^(T − t) × R_T, 若轨迹最终成功
             Q_hat(t) = beta, 若轨迹最终失败且当前 SQL 可执行（仅 S2）
             Q_hat(t) = 0, 其他情况</div>
-          <p>Executable fallback 是替代失败奖励的下限，而不是附加 bonus。因此，只要轨迹最终成功，S2 就与 S1 一样使用折扣后的正确奖励，不再额外加
+          <p>在 chain S2 中，executable fallback 是替代失败奖励的下限，而不是附加 bonus。因此，只要轨迹最终成功，S2 就与 S1 一样使用折扣后的正确奖励，不再额外加
             <code>beta</code>。这避免“先生成错误但可执行 SQL、随后修正成功”的轨迹因为累加 fallback 而获得高于首轮直接正确的总回报。
           </p>
-          <p>在 tree rollout 中，正确节点是终止节点，其 outcome reward 为 1，因此该节点的经验动作回报也为 1。S3 对非正确的内部节点使用子节点经验回报的均值进行折扣回传，失败叶节点为
-            0。S4 在相同回传值与当前节点的 executable fallback 之间取最大值；因此，可执行性仍是回报下限，而不会与未来成功价值相加。</p>
-          <div class="equation" aria-label="Tree return 公式">Q_hat(n) = 1, 若当前 SQL 正确
-            Q_hat(n) = gamma × mean[Q_hat(c)], S3 的非正确内部节点
-            Q_hat(n) = 0, S3 的失败叶节点
-            Q_hat(n) = max(gamma × mean[Q_hat(c)], beta × I_executable(n)), S4 的非正确内部节点
-            Q_hat(n) = beta × I_executable(n), S4 的非正确叶节点</div>
+          <p>在 tree rollout 中，正确节点是终止节点，其 outcome reward 为 1，因此该节点的 correctness-backed return 也为 1。S3/S4 都先独立计算由最终正确性回传得到的
+            <em>F</em>(<em>n</em>)：非正确内部节点取子节点 <em>F</em> 的均值并乘 <code>gamma</code>，失败叶节点为 0。S4
+            不再逐节点取 <code>max(F, beta × I_executable)</code>；executable fallback 只在 sibling group 的最终正确性信号完全无法区分节点时，用标准化后的可执行性指标打破平局。</p>
+          <div class="equation" aria-label="Tree return and fallback advantage 公式">F(n) = 1, 若当前 SQL 正确
+            F(n) = gamma × mean[F(c)], 非正确内部节点
+            F(n) = 0, 失败叶节点
+            A_i = Normalize(F_i), 若 range(F) > tau
+            A_i = beta × Normalize(I_executable(i)), 若 max(F)=0 且可执行性有差异（仅 S4）
+            A_i = 0, 其他情况</div>
           <p>因此，chain 与 tree 使用的是同一类终局 reward 折扣传播；区别在于 chain 沿一条已采样轨迹传播，而 tree 在每个内部节点对多个已采样子分支的回报取均值。这里没有学习 critic，也不是
             GAE；<code>gamma</code>
             用于构造供 GRPO 组内比较的经验动作回报。同一 parent state 生成的兄弟节点构成一个 GRPO 比较组，节点回报在组内进行中心化和标准化后得到 advantage。由此，tree
@@ -1520,10 +1522,12 @@
             可能使同组样本全部正确或全部错误，需要监控组内 reward 方差，避免 GRPO advantage 退化为零。</p>
 
           <h3>1.5 Tree frontier 与 beam 选择</h3>
-          <p>树的根状态首先采样 <code>branch_n=4</code> 个 SQL。语义正确的节点在 <code>prune_on_gold_reward=True</code>
-            下立即终止；只有不正确、尚未达到最大轮数且能够构造 rewrite state 的节点进入下一层 frontier。当 frontier 超过 <code>beam_size=2</code> 时，beam
+          <p>树的根状态首先采样 <code>branch_n=4</code> 个 SQL。通过 checker 的可执行节点在 <code>prune_on_terminal_proxy=True</code>
+            下立即终止；SQLite 反馈为不可恢复错误的节点也作为失败叶子剪枝，包括表不存在且与 schema 表名不构成轻微拼写差异的明显幻觉表名、timeout 和 memory limit。只有未被 proxy
+            终止、尚未达到最大轮数且能够构造 rewrite state
+            的节点进入下一层 frontier。当 frontier 超过 <code>beam_size=2</code> 时，beam
             并非按模型
-            log probability 直接取 top-2，也不使用失败节点的最终 gold reward 排序，而是使用 rollout 过程中 agent 可见的执行信号计算 proxy score：</p>
+            log probability 直接取 top-2，也不使用节点的最终 gold reward 排序，而是使用 rollout 过程中 agent 可见的执行信号计算 proxy score：</p>
           <div class="equation" aria-label="Beam proxy score 公式">proxy(n) =
             +0.2 若成功解析出 SQL；否则 −2.0
             +1.0 若 SQL 可执行；否则 −0.5
@@ -1544,6 +1548,8 @@
             重复，这
             0.33 个百分点不能解释为 tree rollout 的独立收益。S2 达到 79.67%，比参数匹配的 S1 低 0.66 个百分点；S4 为 76.00%，比参数匹配的 S3 低 4.67 个百分点，并低于
             SFT-Merged baseline 1.33 个百分点。按照当前点估计排序，结果为 S3、S1、S2、SFT-Merged baseline、S4。</p>
+          <p>需要注意，表 3 中的 S4 checkpoint 来自早期 <code>max(F, beta × I_executable)</code> 实现；当前代码已改为 group-gated fallback
+            advantage，因此该历史 S4 结果不代表新 S4 设计的效果。</p>
 
           <div class="table-block">
             <div class="table-wrap">
@@ -1603,7 +1609,7 @@
                   </tr>
                   <tr>
                     <td>S4</td>
-                    <td>tree, final + executable fallback</td>
+                    <td>tree, final + executable fallback（旧 max 实现）</td>
                     <td><code>bs=2</code>, <code>n=20</code>, <code>beta=0.1</code></td>
                     <td>76.00%</td>
                     <td>228/300</td>
@@ -1625,7 +1631,7 @@
             15，<em>p</em>=0.860。S3 与 S4 的独占正确数为 24 对 10，<em>p</em>=0.024；该结果为未做多重比较校正的探索性比较，并且所有评测检验都不包含训练 seed 带来的方差。
           </p>
           <p>可执行率与执行准确率不呈单调关系。S2 的可执行率为 98.67%，在五组结果中最高，但执行准确率仍低于 S1；S3 的可执行率为 96.67%，低于 S1 和 S2，却获得最高点估计。现有结果只能说明
-            executable fallback 在这些具体配置和 checkpoint 上没有转化为更高的语义执行准确率。</p>
+            已完成的 S2 和旧实现 S4 checkpoint 没有把 executable fallback 转化为更高的语义执行准确率。</p>
         </section>
 
         <section aria-labelledby="grpo-tuning">
