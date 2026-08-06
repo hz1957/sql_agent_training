@@ -27,6 +27,15 @@ case "${MODE}" in
     ;;
 esac
 
+BENCHMARK_KIND="${BENCHMARK_KIND:-prompt}"
+case "${BENCHMARK_KIND}" in
+  prompt|agent) ;;
+  *)
+    echo "ERROR: BENCHMARK_KIND must be prompt or agent, got ${BENCHMARK_KIND}" >&2
+    exit 2
+    ;;
+esac
+
 MODEL_PATH="${MODEL_PATH:-data/models/Qwen2.5-Coder-14B-Instruct-SFT-Ratio-Gold3200-D1137-R463-LR5e5-R32-Merged}"
 TOKENIZER_PATH="${TOKENIZER_PATH:-${MODEL_PATH}}"
 SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-qwen25-coder-14b-sql}"
@@ -35,6 +44,7 @@ if [[ ! -f "${DEFAULT_DATASET_PARQUET}" && -f "sql_agent_training/data/verl_spid
   DEFAULT_DATASET_PARQUET="sql_agent_training/data/verl_spider/validation.parquet"
 fi
 DATASET_PARQUET="${DATASET_PARQUET:-${DEFAULT_DATASET_PARQUET}}"
+DATA_DIR="${DATA_DIR:-data/spider}"
 RESULT_ROOT_RAW="${RESULT_ROOT:-artifacts/logs/vllm_tp_scaling/$(date +%Y%m%d_%H%M%S)}"
 if [[ "${RESULT_ROOT_RAW}" = /* ]]; then
   RESULT_ROOT="${RESULT_ROOT_RAW}"
@@ -63,6 +73,7 @@ PORT_BASE="${PORT_BASE:-8100}"
 STREAM="${STREAM:-1}"
 SHUFFLE="${SHUFFLE:-1}"
 SEED="${SEED:-0}"
+MAX_TURNS="${MAX_TURNS:-3}"
 
 export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
 export VLLM_USE_V1="${VLLM_USE_V1:-1}"
@@ -256,7 +267,7 @@ run_case() {
   echo
   echo "CASE ${case_name}"
   echo "RESULT_DIR ${case_dir}"
-  echo "CONFIG model=${MODEL_PATH} dataset=${DATASET_PARQUET} limit=${LIMIT} repetitions=${REPETITIONS} concurrency=${CONCURRENCY} max_tokens=${MAX_TOKENS} stream=${STREAM}"
+  echo "CONFIG kind=${BENCHMARK_KIND} model=${MODEL_PATH} dataset=${DATASET_PARQUET} limit=${LIMIT} repetitions=${REPETITIONS} concurrency=${CONCURRENCY} max_tokens=${MAX_TOKENS} stream=${STREAM}"
 
   check_ports_available "${server_specs}"
   wait_for_gpus_free "${server_specs}"
@@ -291,25 +302,47 @@ run_case() {
     *) shuffle_args=() ;;
   esac
 
-  uv run --no-sync python "${SCRIPT_DIR}/bench_vllm_tp_scaling.py" \
-    --case-name "${case_name}" \
-    --base-urls "${urls[@]}" \
-    --model-name "${SERVED_MODEL_NAME}" \
-    --dataset-parquet "${DATASET_PARQUET}" \
-    --tokenizer-path "${TOKENIZER_PATH}" \
-    --limit "${LIMIT}" \
-    --repetitions "${REPETITIONS}" \
-    --seed "${SEED}" \
-    "${shuffle_args[@]}" \
-    --concurrency "${CONCURRENCY}" \
-    --max-tokens "${MAX_TOKENS}" \
-    --temperature "${TEMPERATURE}" \
-    --top-p "${TOP_P}" \
-    --top-k "${TOP_K}" \
-    --timeout-seconds "${TIMEOUT_SECONDS}" \
-    "${stream_args[@]}" \
-    --gpu-monitor-csv "${gpu_csv}" \
-    --output-dir "${case_dir}" | tee "${case_dir}/benchmark_stdout.log"
+  if [[ "${BENCHMARK_KIND}" == "agent" ]]; then
+    uv run --no-sync python "${SCRIPT_DIR}/bench_vllm_agent_trace.py" \
+      --case-name "${case_name}" \
+      --base-urls "${urls[@]}" \
+      --model-name "${SERVED_MODEL_NAME}" \
+      --dataset-parquet "${DATASET_PARQUET}" \
+      --data-dir "${DATA_DIR}" \
+      --tokenizer-path "${TOKENIZER_PATH}" \
+      --limit "${LIMIT}" \
+      --seed "${SEED}" \
+      "${shuffle_args[@]}" \
+      --concurrency "${CONCURRENCY}" \
+      --max-turns "${MAX_TURNS}" \
+      --max-tokens "${MAX_TOKENS}" \
+      --temperature "${TEMPERATURE}" \
+      --top-p "${TOP_P}" \
+      --top-k "${TOP_K}" \
+      --timeout-seconds "${TIMEOUT_SECONDS}" \
+      --gpu-monitor-csv "${gpu_csv}" \
+      --output-dir "${case_dir}" | tee "${case_dir}/benchmark_stdout.log"
+  else
+    uv run --no-sync python "${SCRIPT_DIR}/bench_vllm_tp_scaling.py" \
+      --case-name "${case_name}" \
+      --base-urls "${urls[@]}" \
+      --model-name "${SERVED_MODEL_NAME}" \
+      --dataset-parquet "${DATASET_PARQUET}" \
+      --tokenizer-path "${TOKENIZER_PATH}" \
+      --limit "${LIMIT}" \
+      --repetitions "${REPETITIONS}" \
+      --seed "${SEED}" \
+      "${shuffle_args[@]}" \
+      --concurrency "${CONCURRENCY}" \
+      --max-tokens "${MAX_TOKENS}" \
+      --temperature "${TEMPERATURE}" \
+      --top-p "${TOP_P}" \
+      --top-k "${TOP_K}" \
+      --timeout-seconds "${TIMEOUT_SECONDS}" \
+      "${stream_args[@]}" \
+      --gpu-monitor-csv "${gpu_csv}" \
+      --output-dir "${case_dir}" | tee "${case_dir}/benchmark_stdout.log"
+  fi
 
   cleanup_case
 }

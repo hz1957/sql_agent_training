@@ -321,6 +321,7 @@ def _summarize(
     output_tokens = sum(row.completion_tokens or 0 for row in ok_results)
     total_tokens = sum(row.total_tokens or 0 for row in ok_results)
     summary = {
+        "benchmark_kind": "prompt",
         "case_name": args.case_name,
         "model_name": args.model_name,
         "dataset_parquet": str(_resolve_path(args.dataset_parquet)),

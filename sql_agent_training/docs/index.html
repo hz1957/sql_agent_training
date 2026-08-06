@@ -102,12 +102,14 @@
       display: block;
     }
 
-    .perf-tab-menu {
+    .perf-tab-menu,
+    .grpo-tab-menu {
       position: relative;
       display: flex;
     }
 
-    .perf-tab-menu .tab-button {
+    .perf-tab-menu .tab-button,
+    .grpo-tab-menu .tab-button {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -122,7 +124,8 @@
       transform: rotate(45deg);
     }
 
-    .perf-dropdown {
+    .perf-dropdown,
+    .grpo-dropdown {
       --menu-x: -50%;
       position: absolute;
       top: calc(100% - 1px);
@@ -144,14 +147,18 @@
 
     .perf-tab-menu:hover .perf-dropdown,
     .perf-tab-menu:focus-within .perf-dropdown,
-    .perf-tab-menu.menu-open .perf-dropdown {
+    .perf-tab-menu.menu-open .perf-dropdown,
+    .grpo-tab-menu:hover .grpo-dropdown,
+    .grpo-tab-menu:focus-within .grpo-dropdown,
+    .grpo-tab-menu.menu-open .grpo-dropdown {
       opacity: 1;
       visibility: visible;
       pointer-events: auto;
       transform: translate(var(--menu-x), 0);
     }
 
-    .perf-option {
+    .perf-option,
+    .grpo-option {
       display: block;
       width: 100%;
       padding: 10px 12px;
@@ -165,24 +172,66 @@
     }
 
     .perf-option:hover,
-    .perf-option:focus-visible {
+    .perf-option:focus-visible,
+    .grpo-option:hover,
+    .grpo-option:focus-visible {
       background: var(--soft);
       outline: none;
     }
 
-    .perf-option[aria-checked="true"] {
+    .perf-option[aria-checked="true"],
+    .grpo-option[aria-checked="true"] {
       border-left-color: var(--accent);
       color: var(--accent);
       font-weight: 650;
     }
 
-    .perf-subview[hidden] {
+    .perf-subview[hidden],
+    .grpo-subview[hidden] {
       display: none;
     }
 
     .study-title {
       margin: 0 0 28px;
       font-size: 25px;
+    }
+
+    .case-study {
+      padding: 18px 0;
+      border-top: 1px solid var(--line-light);
+    }
+
+    .case-study:last-child {
+      border-bottom: 1px solid var(--line-light);
+    }
+
+    .case-study summary {
+      color: var(--ink);
+      cursor: pointer;
+      font: 650 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    }
+
+    .case-grid {
+      display: grid;
+      grid-template-columns: 112px minmax(0, 1fr);
+      gap: 10px 18px;
+      margin: 18px 0 0;
+    }
+
+    .case-grid dt {
+      color: var(--muted);
+      font: 600 12px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    }
+
+    .case-grid dd {
+      min-width: 0;
+      margin: 0;
+    }
+
+    .case-grid pre {
+      margin: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
 
     .paper-header {
@@ -437,15 +486,22 @@
         min-width: 0;
       }
 
-      .perf-tab-menu .tab-button {
+      .perf-tab-menu .tab-button,
+      .grpo-tab-menu .tab-button {
         width: 100%;
       }
 
-      .perf-dropdown {
+      .perf-dropdown,
+      .grpo-dropdown {
         --menu-x: 0;
         right: 0;
         left: auto;
         width: min(300px, calc(100vw - 24px));
+      }
+
+      .case-grid {
+        grid-template-columns: 1fr;
+        gap: 4px;
       }
 
       .equation {
@@ -481,8 +537,18 @@
       <div class="tab-list" role="tablist">
         <button class="tab-button" role="tab" id="tab-sft" aria-controls="panel-sft" aria-selected="true">SFT
           实验</button>
-        <button class="tab-button" role="tab" id="tab-grpo" aria-controls="panel-grpo" aria-selected="false">GRPO
-          实验</button>
+        <div class="grpo-tab-menu" id="grpo-tab-menu" role="presentation">
+          <button class="tab-button" role="tab" id="tab-grpo" aria-controls="panel-grpo" aria-selected="false"
+            aria-haspopup="menu" aria-expanded="false">
+            GRPO<span class="tab-caret" aria-hidden="true"></span>
+          </button>
+          <div class="grpo-dropdown" id="grpo-dropdown" role="menu" aria-label="GRPO 报告">
+            <button class="grpo-option" type="button" role="menuitemradio" aria-checked="true"
+              data-grpo-value="experiment">GRPO 实验</button>
+            <button class="grpo-option" type="button" role="menuitemradio" aria-checked="false"
+              data-grpo-value="error-analysis">错误分析</button>
+          </div>
+        </div>
         <div class="perf-tab-menu" id="perf-tab-menu" role="presentation">
           <button class="tab-button" role="tab" id="tab-perf" aria-controls="panel-perf" aria-selected="false"
             aria-haspopup="menu" aria-expanded="false">
@@ -849,7 +915,8 @@
         <p>在第一步确定 Mixed-SFT 优于 Pure-SFT 的点估计后，本研究进一步考察监督微调阶段的学习率与 LoRA 容量是否构成主要性能瓶颈。该实验固定原始
           <code>Qwen2.5-Coder-14B-Instruct</code> 起点、4,800 条 Mixed-SFT 训练记录、global batch size 16、300 optimizer
           steps、bf16、gradient checkpointing 与 DeepSpeed ZeRO-2，仅改变学习率与 LoRA rank。所有候选均在同一组 500 条 Spider validation 样本、相同
-          agent protocol 与 greedy decoding 下评测 checkpoint-300。</p>
+          agent protocol 与 greedy decoding 下评测 checkpoint-300。
+        </p>
 
         <div class="table-block">
           <div class="table-wrap">
@@ -943,7 +1010,8 @@
 
         <p>结果表明，扩大 LoRA rank 并未在当前设置下产生稳定收益。新增网格中最佳配置为 <code>lr=3e-5, r=64</code>，execution accuracy 为 79.60%，较既有
           <code>lr=5e-5, r=32</code> 主候选低 1.00 个百分点，即少 5 条正确样本。训练日志显示 <code>r=64</code> 与较高学习率能够进一步降低训练损失，但对应的
-          agent-level execution accuracy 未同步提高，说明 token-level 拟合程度不能直接作为 agent policy 选择准则。</p>
+          agent-level execution accuracy 未同步提高，说明 token-level 拟合程度不能直接作为 agent policy 选择准则。
+        </p>
         <p>因此，本研究不替换第一步选定的 Mixed-SFT checkpoint-300 主候选。该结论基于当前 500-sample validation subset 与单一训练 seed；在本轮实验条件下，LoRA
           容量扩大未显示稳定的 agent-level 收益。</p>
       </section>
@@ -1151,674 +1219,1145 @@
     </article>
 
     <article id="panel-grpo" class="tab-panel" role="tabpanel" aria-labelledby="tab-grpo">
-      <header class="paper-header">
-        <p class="paper-kicker">Qwen2.5-Coder-14B-Instruct-SFT-Merged</p>
-        <h1>GRPO 奖励方案与搜索策略实验结果</h1>
-        <p class="paper-meta">实验记录</p>
-      </header>
+      <div class="grpo-subview" data-grpo-view="experiment">
+        <header class="paper-header">
+          <p class="paper-kicker">Qwen2.5-Coder-14B-Instruct-SFT-Merged</p>
+          <h1>GRPO 奖励方案与搜索策略实验结果</h1>
+          <p class="paper-meta">实验记录</p>
+        </header>
 
-      <section class="abstract" aria-labelledby="grpo-abstract">
-        <h2 id="grpo-abstract">摘要</h2>
-        <p>本实验研究的是两阶段参数高效训练：首先将 Qwen2.5-Coder-14B-Instruct 的 SFT LoRA 合并进 14B 基座，形成统一的 SFT-Merged policy；随后在该 policy
-          上为每个 GRPO 方案训练一套新的 LoRA，而不是更新 14B 全部参数。初始 S1–S4 reward 设计对照中，S3 的执行准确率点估计最高，为 80.67%，相对 SFT-Merged baseline 提升
-          3.33 个百分点；随后的超参数实验确定 <code>KL=0.01</code>、<code>PPO epoch=2</code>、<code>temperature=1.0</code> 与
-          <code>gamma=0.9</code>。在更新后的 SFT ratio base 上，rollout 对照得到 S3 <code>branch=4/beam=2/n=20</code> 83.67%、S1
-          <code>n=8</code> 83.33% 和 S3 <code>branch=8/beam=1/n=24</code> 82.00%；准确率没有拉开清晰差距，但 S1 n=8 的计算与交互效率最好。</p>
-      </section>
+        <section class="abstract" aria-labelledby="grpo-abstract">
+          <h2 id="grpo-abstract">摘要</h2>
+          <p>本实验研究的是两阶段参数高效训练：首先将 Qwen2.5-Coder-14B-Instruct 的 SFT LoRA 合并进 14B 基座，形成统一的 SFT-Merged policy；随后在该 policy
+            上为每个 GRPO 方案训练一套新的 LoRA，而不是更新 14B 全部参数。初始 S1–S4 reward 设计对照中，S3 的执行准确率点估计最高，为 80.67%，相对 SFT-Merged baseline
+            提升
+            3.33 个百分点；随后的超参数实验确定 <code>KL=0.01</code>、<code>PPO epoch=2</code>、<code>temperature=1.0</code> 与
+            <code>gamma=0.9</code>。在更新后的 SFT ratio base 上，rollout 对照得到 S3 <code>branch=4/beam=2/n=20</code> 83.67%、S1
+            <code>n=8</code> 83.33% 和 S3 <code>branch=8/beam=1/n=24</code> 82.00%；准确率没有拉开清晰差距，但 S1 n=8 的计算与交互效率最好。
+          </p>
+        </section>
 
-      <section aria-labelledby="grpo-research-question">
-        <h2 id="grpo-research-question">研究问题</h2>
-        <p>本实验旨在回答：在相同 SFT-Merged base policy 与相同第二阶段 LoRA 训练框架下，不同 reward 设计与 rollout 搜索策略是否能够相对 SFT-Merged baseline
-          提供额外的 execution accuracy 增益；同时，S1–S4 之间的差异应如何在 reward 变量、chain/tree rollout 形式、batch size 与 PPO mini-batch
-          size 等潜在混杂因素共同存在的条件下进行解释。</p>
-      </section>
+        <section aria-labelledby="grpo-research-question">
+          <h2 id="grpo-research-question">研究问题</h2>
+          <p>本实验旨在回答：在相同 SFT-Merged base policy 与相同第二阶段 LoRA 训练框架下，不同 reward 设计与 rollout 搜索策略是否能够相对 SFT-Merged baseline
+            提供额外的 execution accuracy 增益；同时，S1–S4 之间的差异应如何在 reward 变量、chain/tree rollout 形式、batch size 与 PPO mini-batch
+            size 等潜在混杂因素共同存在的条件下进行解释。</p>
+        </section>
 
-      <section aria-labelledby="grpo-method">
-        <h2 id="grpo-method">1. 方法</h2>
-        <p>本节描述 GRPO 实验的比较对象、控制变量与评测协议。为避免把第一阶段监督微调和第二阶段强化学习混在一起，报告将 SFT policy 的构造、GRPO adapter 的训练以及最终 agent
-          evaluation 分开说明。</p>
-        <p>本文中的 S1–S4 是四个 GRPO 方案代码名，用来同时标记 rollout 结构和 reward 设计。S1 表示 chain rollout + final execution reward，对应
-          <code>chain_final</code>；S2 在 S1 基础上加入失败路径的 executable fallback，对应 <code>chain_executable</code>；S3 表示 tree
-          rollout + final execution reward 的树回传，对应 <code>tree_final</code>；S4 在 S3 基础上加入 executable fallback，对应
-          <code>tree_executable</code>。其中 chain 方案按同一 prompt 采样多条独立多轮轨迹并在组内估计 advantage；tree 方案在每个 SQL action
-          节点上分支、剪枝并把叶子或子树价值回传给父节点。Executable fallback 的 <code>beta=0.1</code> 只给最终失败但 SQL 可安全执行的路径提供下限奖励，不取代最终正确奖励。</p>
+        <section aria-labelledby="grpo-method">
+          <h2 id="grpo-method">1. 方法</h2>
+          <p>本节描述 GRPO 实验的比较对象、控制变量与评测协议。为避免把第一阶段监督微调和第二阶段强化学习混在一起，报告将 SFT policy 的构造、GRPO adapter 的训练以及最终 agent
+            evaluation 分开说明。</p>
+          <p>本文中的 S1–S4 是四个 GRPO 方案代码名，用来同时标记 rollout 结构和 reward 设计。S1 表示 chain rollout + final execution reward，对应
+            <code>chain_final</code>；S2 在 S1 基础上加入失败路径的 executable fallback，对应 <code>chain_executable</code>；S3 表示 tree
+            rollout + final execution reward 的树回传，对应 <code>tree_final</code>；S4 在 S3 基础上加入 executable fallback，对应
+            <code>tree_executable</code>。其中 chain 方案按同一 prompt 采样多条独立多轮轨迹并在组内估计 advantage；tree 方案在每个 SQL action
+            节点上分支、剪枝并把叶子或子树价值回传给父节点。Executable fallback 的 <code>beta=0.1</code> 只给最终失败但 SQL 可安全执行的路径提供下限奖励，不取代最终正确奖励。
+          </p>
 
-        <h3>1.1 模型谱系与两阶段 LoRA</h3>
-        <p>第一阶段从 <code>Qwen2.5-Coder-14B-Instruct</code> 初始化一个监督微调 policy。后续 GRPO 实验统一使用同一个 SFT checkpoint 作为起点；该
-          checkpoint 对应 LoRA rank 32、alpha 64、学习率 <code>5e-5</code>，训练进度为 global step 300。这里的关键控制点是：S1–S4 并不是从不同 SFT
-          起点出发，而是共享同一个已完成监督微调的 policy。</p>
-        <p>为了让第二阶段训练只比较 GRPO 本身的差异，选定的 SFT adapter 先被合并进 14B base，形成统一的
-          <code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code> policy。tokenizer 与原始 14B 模型保持一致。因此，SFT-Merged 可以视为“14B base
-          + SFT LoRA 效果”的固定初始 policy；进入 GRPO 后，不再重复加载第一阶段的 SFT adapter。</p>
-        <div class="equation" aria-label="两阶段 LoRA 模型谱系">Qwen2.5-Coder-14B-Instruct
-          + SFT LoRA (r=32, alpha=64, checkpoint-300)
-          → fixed SFT-Merged policy
-          + fresh GRPO LoRA (r=64, alpha=128, all-linear)
-          → S1 / S2 / S3 / S4 LoRA checkpoint</div>
-        <p>第二阶段为每个 GRPO 方案单独训练一套新的 actor LoRA，rank 为 64、alpha 为 128，目标模块为 <code>all-linear</code>，学习率仍为
-          <code>5e-5</code>。因此，S1–S4 的比较对象是“同一 SFT policy 上训练出的不同 GRPO adapter”，而不是四个不同的全参数模型。</p>
-        <p>评测时，SFT-Merged baseline 只加载固定的 SFT policy；S1–S4 则在同一 SFT policy 上挂载各自的第二阶段 GRPO adapter。这样可以把报告中的性能差异解释为 GRPO
-          阶段 policy update 的结果，同时避免把第一阶段 SFT 权重差异引入比较。</p>
+          <h3>1.1 模型谱系与两阶段 LoRA</h3>
+          <p>第一阶段从 <code>Qwen2.5-Coder-14B-Instruct</code> 初始化一个监督微调 policy。后续 GRPO 实验统一使用同一个 SFT checkpoint 作为起点；该
+            checkpoint 对应 LoRA rank 32、alpha 64、学习率 <code>5e-5</code>，训练进度为 global step 300。这里的关键控制点是：S1–S4 并不是从不同 SFT
+            起点出发，而是共享同一个已完成监督微调的 policy。</p>
+          <p>为了让第二阶段训练只比较 GRPO 本身的差异，选定的 SFT adapter 先被合并进 14B base，形成统一的
+            <code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code> policy。tokenizer 与原始 14B 模型保持一致。因此，SFT-Merged 可以视为“14B
+            base
+            + SFT LoRA 效果”的固定初始 policy；进入 GRPO 后，不再重复加载第一阶段的 SFT adapter。
+          </p>
+          <div class="equation" aria-label="两阶段 LoRA 模型谱系">Qwen2.5-Coder-14B-Instruct
+            + SFT LoRA (r=32, alpha=64, checkpoint-300)
+            → fixed SFT-Merged policy
+            + fresh GRPO LoRA (r=64, alpha=128, all-linear)
+            → S1 / S2 / S3 / S4 LoRA checkpoint</div>
+          <p>第二阶段为每个 GRPO 方案单独训练一套新的 actor LoRA，rank 为 64、alpha 为 128，目标模块为 <code>all-linear</code>，学习率仍为
+            <code>5e-5</code>。因此，S1–S4 的比较对象是“同一 SFT policy 上训练出的不同 GRPO adapter”，而不是四个不同的全参数模型。
+          </p>
+          <p>评测时，SFT-Merged baseline 只加载固定的 SFT policy；S1–S4 则在同一 SFT policy 上挂载各自的第二阶段 GRPO adapter。这样可以把报告中的性能差异解释为
+            GRPO
+            阶段 policy update 的结果，同时避免把第一阶段 SFT 权重差异引入比较。</p>
 
-        <h3>1.2 SFT/GRPO 数据隔离与正式训练规模</h3>
-        <p>最终的 S1 chain 正式训练按 <code>source_uid</code> 隔离 SFT 与 GRPO 数据。Spider train 原始池共有 7,000 个问题；选定的 Mixed-SFT 数据集包含
-          4,800 条训练记录，即 3,200 条 gold、1,137 条 direct trajectory 和 463 条 rewrite trajectory，对应 4,533 个唯一 source
-          questions。训练记录数高于唯一问题数，是因为同一个 source question 可以贡献多条 trajectory record。</p>
-        <p>构建正式 GRPO 数据时，训练池排除了全部 4,533 个 SFT <code>source_uid</code>，得到 2,467 条 GRPO prompt，按 source question 计算的
-          SFT/GRPO overlap 为 0<sup><a href="#ref-sft-grpo-overlap">[1]</a></sup>。正式运行完成 275 step，train batch size 为 8，因此累计进行了 2,200 次 prompt presentation；每个 prompt 配置
-          <code>rollout_n=8</code>，对应 17,600 个 rollout slots。这里需要区分数据池规模与训练预算：GRPO 可用池为 2,467 条，实际优化过程累计消费 2,200 个
-          prompt instances；SFT 的 4,800 则是训练记录数，对应 4,533 个唯一问题。</p>
-        <p>上述零重叠结论特指最终 275-step 正式 S1 训练。此前用于 reward、KL、temperature、gamma 和 rollout 方案选择的短程实验沿用完整 Spider train
-          训练池，不应表述为同一套数据隔离实验。</p>
+          <h3>1.2 SFT/GRPO 数据隔离与正式训练规模</h3>
+          <p>最终的 S1 chain 正式训练按 <code>source_uid</code> 隔离 SFT 与 GRPO 数据。Spider train 原始池共有 7,000 个问题；选定的 Mixed-SFT
+            数据集包含
+            4,800 条训练记录，即 3,200 条 gold、1,137 条 direct trajectory 和 463 条 rewrite trajectory，对应 4,533 个唯一 source
+            questions。训练记录数高于唯一问题数，是因为同一个 source question 可以贡献多条 trajectory record。</p>
+          <p>构建正式 GRPO 数据时，训练池排除了全部 4,533 个 SFT <code>source_uid</code>，得到 2,467 条 GRPO prompt，按 source question 计算的
+            SFT/GRPO overlap 为 0<sup><a href="#ref-sft-grpo-overlap">[1]</a></sup>。正式运行完成 275 step，train batch size 为
+            8，因此累计进行了 2,200 次 prompt presentation；每个 prompt 配置
+            <code>rollout_n=8</code>，对应 17,600 个 rollout slots。这里需要区分数据池规模与训练预算：GRPO 可用池为 2,467 条，实际优化过程累计消费 2,200 个
+            prompt instances；SFT 的 4,800 则是训练记录数，对应 4,533 个唯一问题。
+          </p>
+          <p>上述零重叠结论特指最终 275-step 正式 S1 训练。此前用于 reward、KL、temperature、gamma 和 rollout 方案选择的短程实验沿用完整 Spider train
+            训练池，不应表述为同一套数据隔离实验。</p>
 
-        <h3>1.3 控制变量与对照关系</h3>
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>参数组</th>
-                  <th>S1–S4 共同设置</th>
-                  <th>控制目的</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>GRPO base policy</td>
-                  <td><code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code>，即 14B 基座 + 已合并的 SFT LoRA checkpoint-300</td>
-                  <td>四组从完全相同的 SFT policy 开始</td>
-                </tr>
-                <tr>
-                  <td>Tokenizer</td>
-                  <td>与原始 Qwen2.5-Coder-14B-Instruct tokenizer 相同</td>
-                  <td>S1–S4 没有方案特有的 tokenizer</td>
-                </tr>
-                <tr>
-                  <td>训练数据与硬件</td>
-                  <td>Spider train prompts；单节点 4×H100</td>
-                  <td>固定训练样本来源与硬件规模</td>
-                </tr>
-                <tr>
-                  <td>GRPO actor 优化</td>
-                  <td>actor learning rate <code>5e-5</code>；PPO epoch 1；micro-batch/GPU=1；FSDP；gradient checkpointing
-                  </td>
-                  <td>学习率只作用于新建的 GRPO LoRA 参数</td>
-                </tr>
-                <tr>
-                  <td>GRPO LoRA</td>
-                  <td>fresh adapter；rank=64；alpha=128；target=<code>all-linear</code></td>
-                  <td>固定第二阶段的可训练参数结构</td>
-                </tr>
-                <tr>
-                  <td>GRPO checkpoint</td>
-                  <td>仅保存第二阶段 GRPO adapter</td>
-                  <td>只保存第二阶段 adapter，不复制 14B 全参数模型</td>
-                </tr>
-                <tr>
-                  <td>训练计划</td>
-                  <td>150 training steps；每 25 step 保存；统一评测 global step 150</td>
-                  <td>固定训练长度与 checkpoint 位置</td>
-                </tr>
-                <tr>
-                  <td>KL</td>
-                  <td>未使用 reference KL reward 或 KL loss</td>
-                  <td>S1–S4 均不使用 reference KL</td>
-                </tr>
-                <tr>
-                  <td>Rollout 采样</td>
-                  <td>
-                    <code>temperature=1.0</code>；<code>top_p=1.0</code>；<code>top_k=-1</code>；<code>do_sample=True</code>
-                  </td>
-                  <td>固定生成分布参数</td>
-                </tr>
-                <tr>
-                  <td>交互与长度</td>
-                  <td><code>max_turns=3</code>；prompt/response length 均为 2048</td>
-                  <td>固定最大修正轮数与上下文预算</td>
-                </tr>
-                <tr>
-                  <td>vLLM rollout</td>
-                  <td>TP=4；PP=1；GPU memory utilization=0.32；max batched tokens=4096；max sequences=4；layered summon=True
-                  </td>
-                  <td>固定推理部署和并发上限</td>
-                </tr>
-                <tr>
-                  <td>Reward 公共参数</td>
-                  <td><code>gamma=0.9</code></td>
-                  <td>固定多轮与树回传折扣</td>
-                </tr>
-                <tr>
-                  <td>Agent evaluation</td>
-                  <td>validation 300
-                    条；<code>sample_seed=0</code>；<code>temperature=0.0</code>；<code>max_turns=3</code>；response
-                    length=2048</td>
-                  <td>S1–S4 的 300 个 UID 及顺序已核验完全一致</td>
-                </tr>
-              </tbody>
-            </table>
+          <h3>1.3 控制变量与对照关系</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>参数组</th>
+                    <th>S1–S4 共同设置</th>
+                    <th>控制目的</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>GRPO base policy</td>
+                    <td><code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code>，即 14B 基座 + 已合并的 SFT LoRA checkpoint-300</td>
+                    <td>四组从完全相同的 SFT policy 开始</td>
+                  </tr>
+                  <tr>
+                    <td>Tokenizer</td>
+                    <td>与原始 Qwen2.5-Coder-14B-Instruct tokenizer 相同</td>
+                    <td>S1–S4 没有方案特有的 tokenizer</td>
+                  </tr>
+                  <tr>
+                    <td>训练数据与硬件</td>
+                    <td>Spider train prompts；单节点 4×H100</td>
+                    <td>固定训练样本来源与硬件规模</td>
+                  </tr>
+                  <tr>
+                    <td>GRPO actor 优化</td>
+                    <td>actor learning rate <code>5e-5</code>；PPO epoch 1；micro-batch/GPU=1；FSDP；gradient checkpointing
+                    </td>
+                    <td>学习率只作用于新建的 GRPO LoRA 参数</td>
+                  </tr>
+                  <tr>
+                    <td>GRPO LoRA</td>
+                    <td>fresh adapter；rank=64；alpha=128；target=<code>all-linear</code></td>
+                    <td>固定第二阶段的可训练参数结构</td>
+                  </tr>
+                  <tr>
+                    <td>GRPO checkpoint</td>
+                    <td>仅保存第二阶段 GRPO adapter</td>
+                    <td>只保存第二阶段 adapter，不复制 14B 全参数模型</td>
+                  </tr>
+                  <tr>
+                    <td>训练计划</td>
+                    <td>150 training steps；每 25 step 保存；统一评测 global step 150</td>
+                    <td>固定训练长度与 checkpoint 位置</td>
+                  </tr>
+                  <tr>
+                    <td>KL</td>
+                    <td>未使用 reference KL reward 或 KL loss</td>
+                    <td>S1–S4 均不使用 reference KL</td>
+                  </tr>
+                  <tr>
+                    <td>Rollout 采样</td>
+                    <td>
+                      <code>temperature=1.0</code>；<code>top_p=1.0</code>；<code>top_k=-1</code>；<code>do_sample=True</code>
+                    </td>
+                    <td>固定生成分布参数</td>
+                  </tr>
+                  <tr>
+                    <td>交互与长度</td>
+                    <td><code>max_turns=3</code>；prompt/response length 均为 2048</td>
+                    <td>固定最大修正轮数与上下文预算</td>
+                  </tr>
+                  <tr>
+                    <td>vLLM rollout</td>
+                    <td>TP=4；PP=1；GPU memory utilization=0.32；max batched tokens=4096；max sequences=4；layered
+                      summon=True
+                    </td>
+                    <td>固定推理部署和并发上限</td>
+                  </tr>
+                  <tr>
+                    <td>Reward 公共参数</td>
+                    <td><code>gamma=0.9</code></td>
+                    <td>固定多轮与树回传折扣</td>
+                  </tr>
+                  <tr>
+                    <td>Agent evaluation</td>
+                    <td>validation 300
+                      条；<code>sample_seed=0</code>；<code>temperature=0.0</code>；<code>max_turns=3</code>；response
+                      length=2048</td>
+                    <td>S1–S4 的 300 个 UID 及顺序已核验完全一致</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 1. S1–S4 启动脚本中保持一致的训练、rollout 与评测参数。</p>
           </div>
-          <p class="caption">表 1. S1–S4 启动脚本中保持一致的训练、rollout 与评测参数。</p>
-        </div>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>变化参数</th>
-                  <th>S1</th>
-                  <th>S2</th>
-                  <th>S3</th>
-                  <th>S4</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Rollout 结构</td>
-                  <td>chain</td>
-                  <td>chain</td>
-                  <td>tree</td>
-                  <td>tree</td>
-                </tr>
-                <tr>
-                  <td>Reward scheme</td>
-                  <td>chain final<br><code>chain_final</code></td>
-                  <td>chain final + executable fallback<br><code>chain_executable</code></td>
-                  <td>tree final<br><code>tree_final</code></td>
-                  <td>tree final + executable fallback<br><code>tree_executable</code></td>
-                </tr>
-                <tr>
-                  <td>Executable beta</td>
-                  <td>不使用</td>
-                  <td>0.1</td>
-                  <td>不使用</td>
-                  <td>0.1</td>
-                </tr>
-                <tr>
-                  <td>Advantage estimator</td>
-                  <td><code>grpo_multi_step</code></td>
-                  <td><code>grpo_multi_step</code></td>
-                  <td><code>grpo_tree</code></td>
-                  <td><code>grpo_tree</code></td>
-                </tr>
-                <tr>
-                  <td>Train batch size</td>
-                  <td>4</td>
-                  <td>4</td>
-                  <td>2</td>
-                  <td>2</td>
-                </tr>
-                <tr>
-                  <td>PPO mini-batch size</td>
-                  <td>4</td>
-                  <td>4</td>
-                  <td>2</td>
-                  <td>2</td>
-                </tr>
-                <tr>
-                  <td>Rollout n / tree slots</td>
-                  <td>8</td>
-                  <td>8</td>
-                  <td>20</td>
-                  <td>20</td>
-                </tr>
-                <tr>
-                  <td>配置的 rollout slots / batch</td>
-                  <td>4×8=32</td>
-                  <td>4×8=32</td>
-                  <td>2×20=40</td>
-                  <td>2×20=40</td>
-                </tr>
-                <tr>
-                  <td>Tree 参数</td>
-                  <td>不适用</td>
-                  <td>不适用</td>
-                  <td>branch=4；beam=2；tau=1.0；epsilon=0.1</td>
-                  <td>branch=4；beam=2；tau=1.0；epsilon=0.1</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>变化参数</th>
+                    <th>S1</th>
+                    <th>S2</th>
+                    <th>S3</th>
+                    <th>S4</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Rollout 结构</td>
+                    <td>chain</td>
+                    <td>chain</td>
+                    <td>tree</td>
+                    <td>tree</td>
+                  </tr>
+                  <tr>
+                    <td>Reward scheme</td>
+                    <td>chain final<br><code>chain_final</code></td>
+                    <td>chain final + executable fallback<br><code>chain_executable</code></td>
+                    <td>tree final<br><code>tree_final</code></td>
+                    <td>tree final + executable fallback<br><code>tree_executable</code></td>
+                  </tr>
+                  <tr>
+                    <td>Executable beta</td>
+                    <td>不使用</td>
+                    <td>0.1</td>
+                    <td>不使用</td>
+                    <td>0.1</td>
+                  </tr>
+                  <tr>
+                    <td>Advantage estimator</td>
+                    <td><code>grpo_multi_step</code></td>
+                    <td><code>grpo_multi_step</code></td>
+                    <td><code>grpo_tree</code></td>
+                    <td><code>grpo_tree</code></td>
+                  </tr>
+                  <tr>
+                    <td>Train batch size</td>
+                    <td>4</td>
+                    <td>4</td>
+                    <td>2</td>
+                    <td>2</td>
+                  </tr>
+                  <tr>
+                    <td>PPO mini-batch size</td>
+                    <td>4</td>
+                    <td>4</td>
+                    <td>2</td>
+                    <td>2</td>
+                  </tr>
+                  <tr>
+                    <td>Rollout n / tree slots</td>
+                    <td>8</td>
+                    <td>8</td>
+                    <td>20</td>
+                    <td>20</td>
+                  </tr>
+                  <tr>
+                    <td>配置的 rollout slots / batch</td>
+                    <td>4×8=32</td>
+                    <td>4×8=32</td>
+                    <td>2×20=40</td>
+                    <td>2×20=40</td>
+                  </tr>
+                  <tr>
+                    <td>Tree 参数</td>
+                    <td>不适用</td>
+                    <td>不适用</td>
+                    <td>branch=4；beam=2；tau=1.0；epsilon=0.1</td>
+                    <td>branch=4；beam=2；tau=1.0；epsilon=0.1</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 2. S1–S4 之间实际发生变化的参数。</p>
           </div>
-          <p class="caption">表 2. S1–S4 之间实际发生变化的参数。</p>
-        </div>
 
-        <p>S2 在 S1 的 chain final reward 上增加 <code>beta=0.1</code> executable fallback，其余显式训练参数相同；S4 同样是在 S3 的 tree final
-          reward 上增加 executable fallback。因此，S1/S2 与 S3/S4 分别构成“是否增加 fallback”的单变量对照。相反，S1 与 S3 不仅改变了 rollout 结构和
-          advantage estimator，还改变了 train batch size、PPO mini-batch size、每个 prompt 的 rollout 数以及每个 batch 配置的 rollout slot
-          数。</p>
-        <p>此外，四个启动脚本没有显式设置训练随机种子，且当前每个方案只有一次训练结果。即使在 S1/S2 或 S3/S4 的成对比较中，仍不能排除训练随机波动。若要报告置信区间或稳定的 effect
-          size，需要为每个候选显式固定并重复多个训练 seed。</p>
+          <p>S2 在 S1 的 chain final reward 上增加 <code>beta=0.1</code> executable fallback，其余显式训练参数相同；S4 同样是在 S3 的 tree
+            final
+            reward 上增加 executable fallback。因此，S1/S2 与 S3/S4 分别构成“是否增加 fallback”的单变量对照。相反，S1 与 S3 不仅改变了 rollout 结构和
+            advantage estimator，还改变了 train batch size、PPO mini-batch size、每个 prompt 的 rollout 数以及每个 batch 配置的 rollout
+            slot
+            数。</p>
+          <p>此外，四个启动脚本没有显式设置训练随机种子，且当前每个方案只有一次训练结果。即使在 S1/S2 或 S3/S4 的成对比较中，仍不能排除训练随机波动。若要报告置信区间或稳定的 effect
+            size，需要为每个候选显式固定并重复多个训练 seed。</p>
 
-        <h3>1.4 Reward 与 executable fallback</h3>
-        <p>需要区分算法语义和代码标识：配置名 <code>chain_executable</code> 表示“chain final + executable
-          fallback”，<code>tree_executable</code> 表示“tree final + executable fallback”。S2 和 S4 都保留最终正确奖励及其折扣回传；executable
-          reward 只在失败路径上提供 fallback，并不取代 final reward。</p>
-        <p>在 chain rollout 中，verifier 只在轨迹终止时给出 outcome reward <em>R</em><sub>T</sub>。若第 <em>T</em> 轮生成语义正确的 SQL，则
-          <em>R</em><sub>T</sub>=1；第 <em>t</em> 轮动作使用由该终局奖励反向折扣得到的经验动作回报，而不是把折扣值解释为环境在该轮给出的即时 reward。若整条轨迹最终失败，S1
-          的所有动作回报均为 0；S2 则只对能够在 SQLite 中安全、无错误执行的 SQL 动作赋予 fallback score <code>beta=0.1</code>。这里的“可执行”仅表示
-          <code>execution.ok=True</code>，不表示 SQL 与 gold query 语义等价。</p>
-        <div class="equation" aria-label="Chain return 公式">R_T = 1, 若最终 SQL 正确；否则为 0
-          Q_hat(t) = gamma^(T − t) × R_T, 若轨迹最终成功
-          Q_hat(t) = beta, 若轨迹最终失败且当前 SQL 可执行（仅 S2）
-          Q_hat(t) = 0, 其他情况</div>
-        <p>Executable fallback 是替代失败奖励的下限，而不是附加 bonus。因此，只要轨迹最终成功，S2 就与 S1 一样使用折扣后的正确奖励，不再额外加
-          <code>beta</code>。这避免“先生成错误但可执行 SQL、随后修正成功”的轨迹因为累加 fallback 而获得高于首轮直接正确的总回报。</p>
-        <p>在 tree rollout 中，正确节点是终止节点，其 outcome reward 为 1，因此该节点的经验动作回报也为 1。S3 对非正确的内部节点使用子节点经验回报的均值进行折扣回传，失败叶节点为
-          0。S4 在相同回传值与当前节点的 executable fallback 之间取最大值；因此，可执行性仍是回报下限，而不会与未来成功价值相加。</p>
-        <div class="equation" aria-label="Tree return 公式">Q_hat(n) = 1, 若当前 SQL 正确
-          Q_hat(n) = gamma × mean[Q_hat(c)], S3 的非正确内部节点
-          Q_hat(n) = 0, S3 的失败叶节点
-          Q_hat(n) = max(gamma × mean[Q_hat(c)], beta × I_executable(n)), S4 的非正确内部节点
-          Q_hat(n) = beta × I_executable(n), S4 的非正确叶节点</div>
-        <p>因此，chain 与 tree 使用的是同一类终局 reward 折扣传播；区别在于 chain 沿一条已采样轨迹传播，而 tree 在每个内部节点对多个已采样子分支的回报取均值。这里没有学习 critic，也不是 GAE；<code>gamma</code>
-          用于构造供 GRPO 组内比较的经验动作回报。同一 parent state 生成的兄弟节点构成一个 GRPO 比较组，节点回报在组内进行中心化和标准化后得到 advantage。由此，tree
-          方案比较的是“同一数据库状态和反馈下，不同 SQL 动作的相对回报”。
-        </p>
-        <p>从论文定位看，只用最终 verifier reward 训练 GRPO 是合理的 outcome-supervision 版本：DeepSeekMath 的 GRPO 会将同一 prompt 下多条输出的最终
-          reward 做组内归一化，并把得到的 advantage 分配到该输出的 token 上<sup><a href="#ref-deepseekmath">[2]</a></sup>。在二元正确/错误奖励、组内正负样本明确，尤其是
-          <code>G=2</code> 时，这种目标非常接近在线 DPO/对比学习；但普通 GRPO 仍包含 on-policy sampling、group normalization、PPO clip/KL 等机制，不能简单视为严格等同
-          DPO<sup><a href="#ref-grpo-dpo">[3]</a></sup>。</p>
-        <p>DeepSeekMath 同时给出了 outcome-supervised 与 process-supervised GRPO。前者说明最终 reward 足以定义有效的 GRPO 训练目标，但其消融结果显示，在对应数学任务中，process
-          supervision 优于 outcome supervision<sup><a href="#ref-deepseekmath">[2]</a></sup>。因此，该结果支持把最终 verifier reward 作为简单、可复现的基线，而不支持其优于过程奖励的结论。</p>
-        <p>DeepSeek-R1 讨论的是另一个维度：reward 的来源。在数学和代码等可验证任务中，程序化规则 verifier 可以避免额外训练神经奖励模型及其 reward hacking
-          风险<sup><a href="#ref-deepseek-r1">[4]</a></sup>。这里的神经奖励模型包括只对完整输出进行预测评分的 outcome reward model（ORM），以及对中间推理步骤进行预测评分的 process
-          reward model（PRM）；规则 verifier 与神经奖励模型的取舍，并不等价于 outcome supervision 与 process supervision 的取舍。</p>
-        <p>本实验使用程序化 SQL verifier 产生终局正确性奖励，再通过 chain 折扣或 tree backup 进行 credit assignment，但没有引入独立的过程奖励模型。因此，最终 SQL execution
-          reward 是低复杂度、可审计的基线，而不是已经证明的最优 reward design；过程级奖励能否进一步改善训练仍需单独消融。此外，二元 verifier reward
-          可能使同组样本全部正确或全部错误，需要监控组内 reward 方差，避免 GRPO advantage 退化为零。</p>
+          <h3>1.4 Reward 与 executable fallback</h3>
+          <p>需要区分算法语义和代码标识：配置名 <code>chain_executable</code> 表示“chain final + executable
+            fallback”，<code>tree_executable</code> 表示“tree final + executable fallback”。S2 和 S4
+            都保留最终正确奖励及其折扣回传；executable
+            reward 只在失败路径上提供 fallback，并不取代 final reward。</p>
+          <p>在 chain rollout 中，verifier 只在轨迹终止时给出 outcome reward <em>R</em><sub>T</sub>。若第 <em>T</em> 轮生成语义正确的 SQL，则
+            <em>R</em><sub>T</sub>=1；第 <em>t</em> 轮动作使用由该终局奖励反向折扣得到的经验动作回报，而不是把折扣值解释为环境在该轮给出的即时 reward。若整条轨迹最终失败，S1
+            的所有动作回报均为 0；S2 则只对能够在 SQLite 中安全、无错误执行的 SQL 动作赋予 fallback score <code>beta=0.1</code>。这里的“可执行”仅表示
+            <code>execution.ok=True</code>，不表示 SQL 与 gold query 语义等价。
+          </p>
+          <div class="equation" aria-label="Chain return 公式">R_T = 1, 若最终 SQL 正确；否则为 0
+            Q_hat(t) = gamma^(T − t) × R_T, 若轨迹最终成功
+            Q_hat(t) = beta, 若轨迹最终失败且当前 SQL 可执行（仅 S2）
+            Q_hat(t) = 0, 其他情况</div>
+          <p>Executable fallback 是替代失败奖励的下限，而不是附加 bonus。因此，只要轨迹最终成功，S2 就与 S1 一样使用折扣后的正确奖励，不再额外加
+            <code>beta</code>。这避免“先生成错误但可执行 SQL、随后修正成功”的轨迹因为累加 fallback 而获得高于首轮直接正确的总回报。
+          </p>
+          <p>在 tree rollout 中，正确节点是终止节点，其 outcome reward 为 1，因此该节点的经验动作回报也为 1。S3 对非正确的内部节点使用子节点经验回报的均值进行折扣回传，失败叶节点为
+            0。S4 在相同回传值与当前节点的 executable fallback 之间取最大值；因此，可执行性仍是回报下限，而不会与未来成功价值相加。</p>
+          <div class="equation" aria-label="Tree return 公式">Q_hat(n) = 1, 若当前 SQL 正确
+            Q_hat(n) = gamma × mean[Q_hat(c)], S3 的非正确内部节点
+            Q_hat(n) = 0, S3 的失败叶节点
+            Q_hat(n) = max(gamma × mean[Q_hat(c)], beta × I_executable(n)), S4 的非正确内部节点
+            Q_hat(n) = beta × I_executable(n), S4 的非正确叶节点</div>
+          <p>因此，chain 与 tree 使用的是同一类终局 reward 折扣传播；区别在于 chain 沿一条已采样轨迹传播，而 tree 在每个内部节点对多个已采样子分支的回报取均值。这里没有学习 critic，也不是
+            GAE；<code>gamma</code>
+            用于构造供 GRPO 组内比较的经验动作回报。同一 parent state 生成的兄弟节点构成一个 GRPO 比较组，节点回报在组内进行中心化和标准化后得到 advantage。由此，tree
+            方案比较的是“同一数据库状态和反馈下，不同 SQL 动作的相对回报”。
+          </p>
+          <p>从论文定位看，只用最终 verifier reward 训练 GRPO 是合理的 outcome-supervision 版本：DeepSeekMath 的 GRPO 会将同一 prompt 下多条输出的最终
+            reward 做组内归一化，并把得到的 advantage 分配到该输出的 token 上<sup><a
+                href="#ref-deepseekmath">[2]</a></sup>。在二元正确/错误奖励、组内正负样本明确，尤其是
+            <code>G=2</code> 时，这种目标非常接近在线 DPO/对比学习；但普通 GRPO 仍包含 on-policy sampling、group normalization、PPO clip/KL
+            等机制，不能简单视为严格等同
+            DPO<sup><a href="#ref-grpo-dpo">[3]</a></sup>。
+          </p>
+          <p>DeepSeekMath 同时给出了 outcome-supervised 与 process-supervised GRPO。前者说明最终 reward 足以定义有效的 GRPO
+            训练目标，但其消融结果显示，在对应数学任务中，process
+            supervision 优于 outcome supervision<sup><a href="#ref-deepseekmath">[2]</a></sup>。因此，该结果支持把最终 verifier reward
+            作为简单、可复现的基线，而不支持其优于过程奖励的结论。</p>
+          <p>DeepSeek-R1 讨论的是另一个维度：reward 的来源。在数学和代码等可验证任务中，程序化规则 verifier 可以避免额外训练神经奖励模型及其 reward hacking
+            风险<sup><a href="#ref-deepseek-r1">[4]</a></sup>。这里的神经奖励模型包括只对完整输出进行预测评分的 outcome reward
+            model（ORM），以及对中间推理步骤进行预测评分的 process
+            reward model（PRM）；规则 verifier 与神经奖励模型的取舍，并不等价于 outcome supervision 与 process supervision 的取舍。</p>
+          <p>本实验使用程序化 SQL verifier 产生终局正确性奖励，再通过 chain 折扣或 tree backup 进行 credit assignment，但没有引入独立的过程奖励模型。因此，最终 SQL
+            execution
+            reward 是低复杂度、可审计的基线，而不是已经证明的最优 reward design；过程级奖励能否进一步改善训练仍需单独消融。此外，二元 verifier reward
+            可能使同组样本全部正确或全部错误，需要监控组内 reward 方差，避免 GRPO advantage 退化为零。</p>
 
-        <h3>1.5 Tree frontier 与 beam 选择</h3>
-        <p>树的根状态首先采样 <code>branch_n=4</code> 个 SQL。语义正确的节点在 <code>prune_on_gold_reward=True</code>
-          下立即终止；只有不正确、尚未达到最大轮数且能够构造 rewrite state 的节点进入下一层 frontier。当 frontier 超过 <code>beam_size=2</code> 时，beam 并非按模型
-          log probability 直接取 top-2，也不使用失败节点的最终 gold reward 排序，而是使用 rollout 过程中 agent 可见的执行信号计算 proxy score：</p>
-        <div class="equation" aria-label="Beam proxy score 公式">proxy(n) =
-          +0.2 若成功解析出 SQL；否则 −2.0
-          +1.0 若 SQL 可执行；否则 −0.5
-          +0.2 若 SQL 可执行且结果不是空集</div>
-        <p>本实验设置 <code>beam_tau=1.0</code> 和 <code>beam_epsilon_random=0.1</code>。每次选择时有 10% 概率从 frontier 中均匀、无放回地随机保留 2
-          个节点；其余 90% 情况按照 <code>exp(proxy(n) / tau)</code> 对节点进行加权、无放回抽样，而不是确定性地选择最高分的两个节点。若 frontier 不超过 2
-          个节点，则全部保留。随机数由任务的 <code>root_uid</code> 派生，因此在 frontier 内容及顺序相同的条件下，beam 抽样可以复现。</p>
-        <p>每一层被保留的 2 个 parent node 都继续生成 4 个分支。于是三轮树搜索的最大 rollout slot 数为 <code>4 + (3 − 1) × 2 × 4 = 20</code>：首轮 4
-          个节点，第二轮和第三轮各最多 8 个节点。</p>
-      </section>
+          <h3>1.5 Tree frontier 与 beam 选择</h3>
+          <p>树的根状态首先采样 <code>branch_n=4</code> 个 SQL。语义正确的节点在 <code>prune_on_gold_reward=True</code>
+            下立即终止；只有不正确、尚未达到最大轮数且能够构造 rewrite state 的节点进入下一层 frontier。当 frontier 超过 <code>beam_size=2</code> 时，beam
+            并非按模型
+            log probability 直接取 top-2，也不使用失败节点的最终 gold reward 排序，而是使用 rollout 过程中 agent 可见的执行信号计算 proxy score：</p>
+          <div class="equation" aria-label="Beam proxy score 公式">proxy(n) =
+            +0.2 若成功解析出 SQL；否则 −2.0
+            +1.0 若 SQL 可执行；否则 −0.5
+            +0.2 若 SQL 可执行且结果不是空集</div>
+          <p>本实验设置 <code>beam_tau=1.0</code> 和 <code>beam_epsilon_random=0.1</code>。每次选择时有 10% 概率从 frontier 中均匀、无放回地随机保留
+            2
+            个节点；其余 90% 情况按照 <code>exp(proxy(n) / tau)</code> 对节点进行加权、无放回抽样，而不是确定性地选择最高分的两个节点。若 frontier 不超过 2
+            个节点，则全部保留。随机数由任务的 <code>root_uid</code> 派生，因此在 frontier 内容及顺序相同的条件下，beam 抽样可以复现。</p>
+          <p>每一层被保留的 2 个 parent node 都继续生成 4 个分支。于是三轮树搜索的最大 rollout slot 数为 <code>4 + (3 − 1) × 2 × 4 = 20</code>：首轮 4
+            个节点，第二轮和第三轮各最多 8 个节点。</p>
+        </section>
 
-      <section aria-labelledby="grpo-results">
-        <h2 id="grpo-results">2. 结果</h2>
-        <p>S3 在 300 条 validation 样本上取得 80.67% 的执行准确率，是本轮筛选中数值最高的方案，比不挂载 GRPO adapter 的 SFT-Merged baseline（77.33%）高 3.33
-          个百分点。S1 的执行准确率为 80.33%，仅比 S3 低 0.33 个百分点；由于两组同时存在 batch size、rollout 数量和 advantage estimator 差异，且没有多 seed 重复，这
-          0.33 个百分点不能解释为 tree rollout 的独立收益。S2 达到 79.67%，比参数匹配的 S1 低 0.66 个百分点；S4 为 76.00%，比参数匹配的 S3 低 4.67 个百分点，并低于
-          SFT-Merged baseline 1.33 个百分点。按照当前点估计排序，结果为 S3、S1、S2、SFT-Merged baseline、S4。</p>
+        <section aria-labelledby="grpo-results">
+          <h2 id="grpo-results">2. 结果</h2>
+          <p>S3 在 300 条 validation 样本上取得 80.67% 的执行准确率，是本轮筛选中数值最高的方案，比不挂载 GRPO adapter 的 SFT-Merged baseline（77.33%）高
+            3.33
+            个百分点。S1 的执行准确率为 80.33%，仅比 S3 低 0.33 个百分点；由于两组同时存在 batch size、rollout 数量和 advantage estimator 差异，且没有多 seed
+            重复，这
+            0.33 个百分点不能解释为 tree rollout 的独立收益。S2 达到 79.67%，比参数匹配的 S1 低 0.66 个百分点；S4 为 76.00%，比参数匹配的 S3 低 4.67 个百分点，并低于
+            SFT-Merged baseline 1.33 个百分点。按照当前点估计排序，结果为 S3、S1、S2、SFT-Merged baseline、S4。</p>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>方案</th>
-                  <th>采样与奖励</th>
-                  <th>训练设置</th>
-                  <th>执行准确率</th>
-                  <th>正确数</th>
-                  <th>可执行率</th>
-                  <th>相对 baseline</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>SFT-Merged baseline</td>
-                  <td>14B 基座 + 已合并 SFT LoRA；无 GRPO adapter</td>
-                  <td>GRPO step 0</td>
-                  <td>77.33%</td>
-                  <td>232/300</td>
-                  <td>98.33%</td>
-                  <td>0.00pp</td>
-                  <td><span class="status">参考线</span></td>
-                </tr>
-                <tr>
-                  <td>S1</td>
-                  <td>chain, final reward</td>
-                  <td><code>bs=4</code>, <code>n=8</code></td>
-                  <td>80.33%</td>
-                  <td>241/300</td>
-                  <td>98.33%</td>
-                  <td>+3.00pp</td>
-                  <td><span class="status">点估计提高</span></td>
-                </tr>
-                <tr>
-                  <td>S2</td>
-                  <td>chain, final + executable fallback</td>
-                  <td><code>bs=4</code>, <code>n=8</code>, <code>beta=0.1</code></td>
-                  <td>79.67%</td>
-                  <td>239/300</td>
-                  <td>98.67%</td>
-                  <td>+2.33pp</td>
-                  <td><span class="status">点估计提高</span></td>
-                </tr>
-                <tr class="best-row">
-                  <td><strong>S3</strong></td>
-                  <td>tree, final reward</td>
-                  <td><code>bs=2</code>, <code>n=20</code>, <code>branch=4</code>, <code>beam=2</code></td>
-                  <td><strong>80.67%</strong></td>
-                  <td><strong>242/300</strong></td>
-                  <td>96.67%</td>
-                  <td><strong>+3.33pp</strong></td>
-                  <td><span class="status best">最高点估计</span></td>
-                </tr>
-                <tr>
-                  <td>S4</td>
-                  <td>tree, final + executable fallback</td>
-                  <td><code>bs=2</code>, <code>n=20</code>, <code>beta=0.1</code></td>
-                  <td>76.00%</td>
-                  <td>228/300</td>
-                  <td>97.33%</td>
-                  <td>-1.33pp</td>
-                  <td><span class="status">暂不采用</span></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>方案</th>
+                    <th>采样与奖励</th>
+                    <th>训练设置</th>
+                    <th>执行准确率</th>
+                    <th>正确数</th>
+                    <th>可执行率</th>
+                    <th>相对 baseline</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>SFT-Merged baseline</td>
+                    <td>14B 基座 + 已合并 SFT LoRA；无 GRPO adapter</td>
+                    <td>GRPO step 0</td>
+                    <td>77.33%</td>
+                    <td>232/300</td>
+                    <td>98.33%</td>
+                    <td>0.00pp</td>
+                    <td><span class="status">参考线</span></td>
+                  </tr>
+                  <tr>
+                    <td>S1</td>
+                    <td>chain, final reward</td>
+                    <td><code>bs=4</code>, <code>n=8</code></td>
+                    <td>80.33%</td>
+                    <td>241/300</td>
+                    <td>98.33%</td>
+                    <td>+3.00pp</td>
+                    <td><span class="status">点估计提高</span></td>
+                  </tr>
+                  <tr>
+                    <td>S2</td>
+                    <td>chain, final + executable fallback</td>
+                    <td><code>bs=4</code>, <code>n=8</code>, <code>beta=0.1</code></td>
+                    <td>79.67%</td>
+                    <td>239/300</td>
+                    <td>98.67%</td>
+                    <td>+2.33pp</td>
+                    <td><span class="status">点估计提高</span></td>
+                  </tr>
+                  <tr class="best-row">
+                    <td><strong>S3</strong></td>
+                    <td>tree, final reward</td>
+                    <td><code>bs=2</code>, <code>n=20</code>, <code>branch=4</code>, <code>beam=2</code></td>
+                    <td><strong>80.67%</strong></td>
+                    <td><strong>242/300</strong></td>
+                    <td>96.67%</td>
+                    <td><strong>+3.33pp</strong></td>
+                    <td><span class="status best">最高点估计</span></td>
+                  </tr>
+                  <tr>
+                    <td>S4</td>
+                    <td>tree, final + executable fallback</td>
+                    <td><code>bs=2</code>, <code>n=20</code>, <code>beta=0.1</code></td>
+                    <td>76.00%</td>
+                    <td>228/300</td>
+                    <td>97.33%</td>
+                    <td>-1.33pp</td>
+                    <td><span class="status">暂不采用</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 3. 四个 GRPO LoRA step 100 checkpoint 与共同 SFT-Merged base policy 的评测结果。所有结果均来自相同的 300 条
+              validation 样本。</p>
           </div>
-          <p class="caption">表 3. 四个 GRPO LoRA step 100 checkpoint 与共同 SFT-Merged base policy 的评测结果。所有结果均来自相同的 300 条
-            validation 样本。</p>
-        </div>
 
-        <p>由于五组评测使用完全相同的 300 个 UID，可以进行成对检验。相对 SFT-Merged baseline，S1–S4 的“GRPO 独占正确数 : baseline 独占正确数”依次为
-          18:9、18:11、26:16 和 22:26，对应 exact McNemar <em>p</em> 分别为 0.122、0.265、0.164 和 0.665；因此，任何单个 GRPO checkpoint 相对
-          baseline 的差异都未达到 0.05 显著性水平。S3 与 S1 分别只在 19 和 18 条样本上单独答对，净差仅 1 条，<em>p</em>=1.000。S1 与 S2 的独占正确数为 17 对
-          15，<em>p</em>=0.860。S3 与 S4 的独占正确数为 24 对 10，<em>p</em>=0.024；该结果为未做多重比较校正的探索性比较，并且所有评测检验都不包含训练 seed 带来的方差。</p>
-        <p>可执行率与执行准确率不呈单调关系。S2 的可执行率为 98.67%，在五组结果中最高，但执行准确率仍低于 S1；S3 的可执行率为 96.67%，低于 S1 和 S2，却获得最高点估计。现有结果只能说明
-          executable fallback 在这些具体配置和 checkpoint 上没有转化为更高的语义执行准确率。</p>
-      </section>
+          <p>由于五组评测使用完全相同的 300 个 UID，可以进行成对检验。相对 SFT-Merged baseline，S1–S4 的“GRPO 独占正确数 : baseline 独占正确数”依次为
+            18:9、18:11、26:16 和 22:26，对应 exact McNemar <em>p</em> 分别为 0.122、0.265、0.164 和 0.665；因此，任何单个 GRPO checkpoint
+            相对
+            baseline 的差异都未达到 0.05 显著性水平。S3 与 S1 分别只在 19 和 18 条样本上单独答对，净差仅 1 条，<em>p</em>=1.000。S1 与 S2 的独占正确数为 17 对
+            15，<em>p</em>=0.860。S3 与 S4 的独占正确数为 24 对 10，<em>p</em>=0.024；该结果为未做多重比较校正的探索性比较，并且所有评测检验都不包含训练 seed 带来的方差。
+          </p>
+          <p>可执行率与执行准确率不呈单调关系。S2 的可执行率为 98.67%，在五组结果中最高，但执行准确率仍低于 S1；S3 的可执行率为 96.67%，低于 S1 和 S2，却获得最高点估计。现有结果只能说明
+            executable fallback 在这些具体配置和 checkpoint 上没有转化为更高的语义执行准确率。</p>
+        </section>
 
-      <section aria-labelledby="grpo-tuning">
-        <h2 id="grpo-tuning">3. S3 超参数调优</h2>
-        <p>S3 因 step 100 点估计最高且不使用 executable fallback，被选为超参数调优的工程候选；这一选择不代表 S3 已被证明显著优于 S1 或 SFT-Merged baseline。第一阶段固定
-          S3 的 SFT-Merged base、fresh GRPO LoRA 配置、tree rollout、batch size、<code>temperature=1.0</code> 与
-          <code>gamma=0.9</code>，仅研究 reference KL 和 PPO epoch。所有候选统一在 global step 100、相同的 300 条 validation 样本上评测。</p>
+        <section aria-labelledby="grpo-tuning">
+          <h2 id="grpo-tuning">3. S3 超参数调优</h2>
+          <p>S3 因 step 100 点估计最高且不使用 executable fallback，被选为超参数调优的工程候选；这一选择不代表 S3 已被证明显著优于 S1 或 SFT-Merged
+            baseline。第一阶段固定
+            S3 的 SFT-Merged base、fresh GRPO LoRA 配置、tree rollout、batch size、<code>temperature=1.0</code> 与
+            <code>gamma=0.9</code>，仅研究 reference KL 和 PPO epoch。所有候选统一在 global step 100、相同的 300 条 validation 样本上评测。
+          </p>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>候选</th>
-                  <th>KL 系数</th>
-                  <th>PPO epoch</th>
-                  <th>评测 step</th>
-                  <th>执行准确率</th>
-                  <th>可执行率</th>
-                  <th>平均轮数</th>
-                  <th>重写成功率</th>
-                  <th>耗尽轮数率</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>S3 历史 baseline</td>
-                  <td>关闭 reference KL</td>
-                  <td>1</td>
-                  <td>100</td>
-                  <td>80.67%</td>
-                  <td>96.67%</td>
-                  <td>1.763</td>
-                  <td>62.20%</td>
-                  <td>33.33%</td>
-                  <td><span class="status">历史参考</span></td>
-                </tr>
-                <tr>
-                  <td>S3 epoch sweep</td>
-                  <td>关闭 reference KL</td>
-                  <td>2</td>
-                  <td>100</td>
-                  <td>65.33%</td>
-                  <td>92.67%</td>
-                  <td>2.553</td>
-                  <td>57.38%</td>
-                  <td>75.33%</td>
-                  <td><span class="status">明显退化</span></td>
-                </tr>
-                <tr>
-                  <td>S3 epoch sweep</td>
-                  <td>关闭 reference KL</td>
-                  <td>3</td>
-                  <td>100</td>
-                  <td>77.67%</td>
-                  <td>96.33%</td>
-                  <td>1.490</td>
-                  <td>50.59%</td>
-                  <td>20.33%</td>
-                  <td><span class="status">已评测</span></td>
-                </tr>
-                <tr class="best-row">
-                  <td>S3 KL sweep</td>
-                  <td>0.01</td>
-                  <td>2</td>
-                  <td>100</td>
-                  <td><strong>79.67%</strong></td>
-                  <td>98.33%</td>
-                  <td>1.687</td>
-                  <td><strong>66.09%</strong></td>
-                  <td>28.67%</td>
-                  <td><span class="status best">step 100 当前最佳</span></td>
-                </tr>
-                <tr>
-                  <td>S3 KL sweep</td>
-                  <td>0.02</td>
-                  <td>2</td>
-                  <td>100</td>
-                  <td>79.00%</td>
-                  <td>98.33%</td>
-                  <td>1.750</td>
-                  <td>60.66%</td>
-                  <td>31.33%</td>
-                  <td><span class="status">已评测</span></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>候选</th>
+                    <th>KL 系数</th>
+                    <th>PPO epoch</th>
+                    <th>评测 step</th>
+                    <th>执行准确率</th>
+                    <th>可执行率</th>
+                    <th>平均轮数</th>
+                    <th>重写成功率</th>
+                    <th>耗尽轮数率</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>S3 历史 baseline</td>
+                    <td>关闭 reference KL</td>
+                    <td>1</td>
+                    <td>100</td>
+                    <td>80.67%</td>
+                    <td>96.67%</td>
+                    <td>1.763</td>
+                    <td>62.20%</td>
+                    <td>33.33%</td>
+                    <td><span class="status">历史参考</span></td>
+                  </tr>
+                  <tr>
+                    <td>S3 epoch sweep</td>
+                    <td>关闭 reference KL</td>
+                    <td>2</td>
+                    <td>100</td>
+                    <td>65.33%</td>
+                    <td>92.67%</td>
+                    <td>2.553</td>
+                    <td>57.38%</td>
+                    <td>75.33%</td>
+                    <td><span class="status">明显退化</span></td>
+                  </tr>
+                  <tr>
+                    <td>S3 epoch sweep</td>
+                    <td>关闭 reference KL</td>
+                    <td>3</td>
+                    <td>100</td>
+                    <td>77.67%</td>
+                    <td>96.33%</td>
+                    <td>1.490</td>
+                    <td>50.59%</td>
+                    <td>20.33%</td>
+                    <td><span class="status">已评测</span></td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>S3 KL sweep</td>
+                    <td>0.01</td>
+                    <td>2</td>
+                    <td>100</td>
+                    <td><strong>79.67%</strong></td>
+                    <td>98.33%</td>
+                    <td>1.687</td>
+                    <td><strong>66.09%</strong></td>
+                    <td>28.67%</td>
+                    <td><span class="status best">step 100 当前最佳</span></td>
+                  </tr>
+                  <tr>
+                    <td>S3 KL sweep</td>
+                    <td>0.02</td>
+                    <td>2</td>
+                    <td>100</td>
+                    <td>79.00%</td>
+                    <td>98.33%</td>
+                    <td>1.750</td>
+                    <td>60.66%</td>
+                    <td>31.33%</td>
+                    <td><span class="status">已评测</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 4. S3 的 reference KL 与 PPO epoch 调优结果。所有候选固定
+              <code>temperature=1.0</code>、<code>gamma=0.9</code>，使用相同的 300 条 validation 样本并统一评测 global step 100。
+            </p>
           </div>
-          <p class="caption">表 4. S3 的 reference KL 与 PPO epoch 调优结果。所有候选固定
-            <code>temperature=1.0</code>、<code>gamma=0.9</code>，使用相同的 300 条 validation 样本并统一评测 global step 100。</p>
-        </div>
-        <p>四个 step 100 候选中，<code>KL=0.01, PPO epoch=2</code> 的执行准确率最高，为 79.67%。关闭 KL 的 epoch 2 明显退化至 65.33%，平均轮数达到
-          2.553，75.33% 的样本耗尽三轮。相对 SFT-Merged policy，该 checkpoint 的执行准确率下降 12.00 个百分点，rewrite rate 从 28.33% 上升至
-          79.00%，耗尽轮数率从 21.67% 上升至 75.33%；训练日志也显示后期平均轮数和响应长度持续上升。因此，这一结果首先应解释为无 reference KL 运行中的 cumulative behavioral
-          drift，而不是 eval 随机波动。</p>
-        <p><code>KL=0.01, PPO epoch=2</code> 将执行准确率恢复至 79.67%，同时把平均轮数和耗尽轮数率分别降至 1.687 和 28.67%；KL 提高至 0.02
-          后没有进一步收益，执行准确率反而下降 0.67 个百分点。该结果为使用 KL=0.01 稳定 policy 提供了明确的工程依据，但旧实验日志同时显示 <code>data.seed=None</code> 且
-          <code>shuffle=True</code>，所以不同运行之间的差值不能全部因果归于 KL 或 PPO epoch。</p>
-      </section>
+          <p>四个 step 100 候选中，<code>KL=0.01, PPO epoch=2</code> 的执行准确率最高，为 79.67%。关闭 KL 的 epoch 2 明显退化至 65.33%，平均轮数达到
+            2.553，75.33% 的样本耗尽三轮。相对 SFT-Merged policy，该 checkpoint 的执行准确率下降 12.00 个百分点，rewrite rate 从 28.33% 上升至
+            79.00%，耗尽轮数率从 21.67% 上升至 75.33%；训练日志也显示后期平均轮数和响应长度持续上升。因此，这一结果首先应解释为无 reference KL 运行中的 cumulative
+            behavioral
+            drift，而不是 eval 随机波动。</p>
+          <p><code>KL=0.01, PPO epoch=2</code> 将执行准确率恢复至 79.67%，同时把平均轮数和耗尽轮数率分别降至 1.687 和 28.67%；KL 提高至 0.02
+            后没有进一步收益，执行准确率反而下降 0.67 个百分点。该结果为使用 KL=0.01 稳定 policy 提供了明确的工程依据，但旧实验日志同时显示 <code>data.seed=None</code> 且
+            <code>shuffle=True</code>，所以不同运行之间的差值不能全部因果归于 KL 或 PPO epoch。
+          </p>
+        </section>
 
-      <section aria-labelledby="grpo-temperature-gamma">
-        <h2 id="grpo-temperature-gamma">4. Temperature 与 Gamma 调优</h2>
-        <p>第二阶段固定 S3 tree-final、<code>KL=0.01</code>、<code>PPO epoch=2</code>、actor learning rate 5e-5、batch size
-          2、branch 4、beam 2 与 max turns 3，只研究 rollout temperature 和 tree reward gamma。为消除上一阶段未固定数据顺序的混杂，三组运行均显式设置
-          <code>data.seed=42</code> 与 <code>rollout.seed=42</code>，训练 100 step，并统一评测 global step 100 的相同 300 条
-          validation 样本。</p>
+        <section aria-labelledby="grpo-temperature-gamma">
+          <h2 id="grpo-temperature-gamma">4. Temperature 与 Gamma 调优</h2>
+          <p>第二阶段固定 S3 tree-final、<code>KL=0.01</code>、<code>PPO epoch=2</code>、actor learning rate 5e-5、batch size
+            2、branch 4、beam 2 与 max turns 3，只研究 rollout temperature 和 tree reward gamma。为消除上一阶段未固定数据顺序的混杂，三组运行均显式设置
+            <code>data.seed=42</code> 与 <code>rollout.seed=42</code>，训练 100 step，并统一评测 global step 100 的相同 300 条
+            validation 样本。
+          </p>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>候选</th>
-                  <th>Temperature</th>
-                  <th>Gamma</th>
-                  <th>KL</th>
-                  <th>PPO epoch</th>
-                  <th>Seed</th>
-                  <th>评测 step</th>
-                  <th>执行准确率</th>
-                  <th>可执行率</th>
-                  <th>平均轮数</th>
-                  <th>Rewrite rate</th>
-                  <th>耗尽轮数率</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr class="best-row">
-                  <td>固定 seed baseline</td>
-                  <td>1.0</td>
-                  <td>0.9</td>
-                  <td>0.01</td>
-                  <td>2</td>
-                  <td>42</td>
-                  <td>100</td>
-                  <td><strong>81.33%</strong></td>
-                  <td>98.00%</td>
-                  <td><strong>1.477</strong></td>
-                  <td><strong>28.33%</strong></td>
-                  <td><strong>16.33%</strong></td>
-                  <td><span class="status best">当前最佳</span></td>
-                </tr>
-                <tr>
-                  <td>Temperature sweep</td>
-                  <td>1.2</td>
-                  <td>0.9</td>
-                  <td>0.01</td>
-                  <td>2</td>
-                  <td>42</td>
-                  <td>100</td>
-                  <td>79.67%</td>
-                  <td><strong>98.33%</strong></td>
-                  <td>1.667</td>
-                  <td>38.00%</td>
-                  <td>27.33%</td>
-                  <td><span class="status">无正向收益</span></td>
-                </tr>
-                <tr>
-                  <td>Gamma sweep</td>
-                  <td>1.0</td>
-                  <td>0.8</td>
-                  <td>0.01</td>
-                  <td>2</td>
-                  <td>42</td>
-                  <td>100</td>
-                  <td>76.33%</td>
-                  <td>94.00%</td>
-                  <td>2.067</td>
-                  <td>55.67%</td>
-                  <td>49.00%</td>
-                  <td><span class="status">明显退化</span></td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>候选</th>
+                    <th>Temperature</th>
+                    <th>Gamma</th>
+                    <th>KL</th>
+                    <th>PPO epoch</th>
+                    <th>Seed</th>
+                    <th>评测 step</th>
+                    <th>执行准确率</th>
+                    <th>可执行率</th>
+                    <th>平均轮数</th>
+                    <th>Rewrite rate</th>
+                    <th>耗尽轮数率</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="best-row">
+                    <td>固定 seed baseline</td>
+                    <td>1.0</td>
+                    <td>0.9</td>
+                    <td>0.01</td>
+                    <td>2</td>
+                    <td>42</td>
+                    <td>100</td>
+                    <td><strong>81.33%</strong></td>
+                    <td>98.00%</td>
+                    <td><strong>1.477</strong></td>
+                    <td><strong>28.33%</strong></td>
+                    <td><strong>16.33%</strong></td>
+                    <td><span class="status best">当前最佳</span></td>
+                  </tr>
+                  <tr>
+                    <td>Temperature sweep</td>
+                    <td>1.2</td>
+                    <td>0.9</td>
+                    <td>0.01</td>
+                    <td>2</td>
+                    <td>42</td>
+                    <td>100</td>
+                    <td>79.67%</td>
+                    <td><strong>98.33%</strong></td>
+                    <td>1.667</td>
+                    <td>38.00%</td>
+                    <td>27.33%</td>
+                    <td><span class="status">无正向收益</span></td>
+                  </tr>
+                  <tr>
+                    <td>Gamma sweep</td>
+                    <td>1.0</td>
+                    <td>0.8</td>
+                    <td>0.01</td>
+                    <td>2</td>
+                    <td>42</td>
+                    <td>100</td>
+                    <td>76.33%</td>
+                    <td>94.00%</td>
+                    <td>2.067</td>
+                    <td>55.67%</td>
+                    <td>49.00%</td>
+                    <td><span class="status">明显退化</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 5. Temperature 与 gamma 的固定 seed 单变量实验。三组均完整训练 100 step，并在相同 300 条 validation 样本上评测
+              global
+              step 100。</p>
           </div>
-          <p class="caption">表 5. Temperature 与 gamma 的固定 seed 单变量实验。三组均完整训练 100 step，并在相同 300 条 validation 样本上评测 global
-            step 100。</p>
-        </div>
-        <p>固定 seed baseline 的执行准确率最高，为 81.33%。将 temperature 从 1.0 提高到 1.2 后，执行准确率下降 1.67 个百分点；配对结果为 baseline 独对 14
-          题、temperature 独对 9 题，exact McNemar <em>p</em>=0.405，尚不能证明两者存在统计差异，但 temperature=1.2 的平均轮数、rewrite rate
-          和耗尽轮数率均更高，因此没有工程收益。将 gamma 从 0.9 降至 0.8 后，执行准确率下降 5.00 个百分点，可执行率下降 4.00 个百分点，耗尽轮数率从 16.33% 上升至 49.00%；配对结果为
-          baseline 独对 30 题、gamma=0.8 独对 15 题，未校正 exact McNemar <em>p</em>=0.0357。对两项预设主比较进行 Holm 校正后该差异为
-          <em>p</em>=0.0714，因此统计结论仍保持审慎，但工程上应拒绝 gamma=0.8。</p>
-        <p>两项单变量改动都没有产生正向点估计，因此没有补跑 <code>temperature=1.2, gamma=0.8</code> 的交互组合。Rollout 规模与搜索结构对照据此固定
-          <code>temperature=1.0, gamma=0.9, KL=0.01, PPO epoch=2</code>。</p>
-      </section>
+          <p>固定 seed baseline 的执行准确率最高，为 81.33%。将 temperature 从 1.0 提高到 1.2 后，执行准确率下降 1.67 个百分点；配对结果为 baseline 独对 14
+            题、temperature 独对 9 题，exact McNemar <em>p</em>=0.405，尚不能证明两者存在统计差异，但 temperature=1.2 的平均轮数、rewrite rate
+            和耗尽轮数率均更高，因此没有工程收益。将 gamma 从 0.9 降至 0.8 后，执行准确率下降 5.00 个百分点，可执行率下降 4.00 个百分点，耗尽轮数率从 16.33% 上升至 49.00%；配对结果为
+            baseline 独对 30 题、gamma=0.8 独对 15 题，未校正 exact McNemar <em>p</em>=0.0357。对两项预设主比较进行 Holm 校正后该差异为
+            <em>p</em>=0.0714，因此统计结论仍保持审慎，但工程上应拒绝 gamma=0.8。
+          </p>
+          <p>两项单变量改动都没有产生正向点估计，因此没有补跑 <code>temperature=1.2, gamma=0.8</code> 的交互组合。Rollout 规模与搜索结构对照据此固定
+            <code>temperature=1.0, gamma=0.9, KL=0.01, PPO epoch=2</code>。
+          </p>
+        </section>
 
-      <section aria-labelledby="grpo-rollout-comparison">
-        <h2 id="grpo-rollout-comparison">5. Rollout 规模与搜索结构对照</h2>
-        <p>三组正式训练均从 <code>Qwen2.5-Coder-14B-Instruct-SFT-Ratio-Gold3200-D1137-R463-LR5e5-R32-Merged</code> 起步，固定 train
-          batch size=4、KL=0.01、PPO epoch=2、temperature=1.0、gamma=0.9、dynamic batching、remove padding、layered
-          summon、训练步数和随机种子，并使用相同的 validation 子集与 greedy agent protocol 评测。S3 的两组实验同时改变 branch、beam 和 rollout slot 数；S1
-          还改变了 chain/tree rollout、reward scheme 与 advantage estimator，因此这里比较的是完整方案，不把差异单独归因于某一个参数。</p>
-        <p>需要先区分训练与推理：chain 并不是过时方案，而是当前 GRPO/RLVR 和 CoT 推理里的强基线。DeepSeekMath 与 DeepSeek-R1 的 GRPO 都采用“同一问题采样多条完整输出、用组内
-          reward 估计 advantage”的链式输出单位；CoT prompting、self-consistency 与 best-of-N 推理也都是围绕多条独立 reasoning chain
-          做采样、投票或重排。chain 的工程优势是简单、易并行、直接匹配最终答案 verifier 或 SQL execution reward，且不会引入 beam/proxy score 的额外偏置。因此，在本实验这种
-          <code>max_turns=3</code>、最终 SQL 可验证、评测使用 greedy agent protocol 的设置下，S1 chain <code>n=8</code>
-          成为默认候选是有文献和工程依据的。</p>
-        <p>tree-based GRPO/agent RL 文献支持的是另一个方向：当任务长程、多跳、工具调用昂贵或中间决策高不确定时，把共享前缀组织成树，可以在固定 token
-          或工具调用预算下复用公共前缀，并把叶子节点最终奖励回传为分支、步骤或 token 级 advantage。Tree-GRPO 还指出 intra-tree GRPO 与 step-level DPO
-          具有相同的偏好梯度结构。因此，tree 的主要理论收益不是“多采样必然更准”，而是更好的探索预算利用与 credit assignment；但这些收益依赖任务长度、branch 位置、advantage
-          estimator 和 rollout 预算。本实验的 S3 tree-final 属于 SQL agent 的工程化 tree rollout 变体，不等同于 ICLR 2026 Tree-GRPO 的完整
-          intra-tree/inter-tree advantage estimator。</p>
+        <section aria-labelledby="grpo-rollout-comparison">
+          <h2 id="grpo-rollout-comparison">5. Rollout 规模与搜索结构对照</h2>
+          <p>三组正式训练均从 <code>Qwen2.5-Coder-14B-Instruct-SFT-Ratio-Gold3200-D1137-R463-LR5e5-R32-Merged</code> 起步，固定 train
+            batch size=4、KL=0.01、PPO epoch=2、temperature=1.0、gamma=0.9、dynamic batching、remove padding、layered
+            summon、训练步数和随机种子，并使用相同的 validation 子集与 greedy agent protocol 评测。S3 的两组实验同时改变 branch、beam 和 rollout slot 数；S1
+            还改变了 chain/tree rollout、reward scheme 与 advantage estimator，因此这里比较的是完整方案，不把差异单独归因于某一个参数。</p>
+          <p>需要先区分训练与推理：chain 并不是过时方案，而是当前 GRPO/RLVR 和 CoT 推理里的强基线。DeepSeekMath 与 DeepSeek-R1 的 GRPO
+            都采用“同一问题采样多条完整输出、用组内
+            reward 估计 advantage”的链式输出单位；CoT prompting、self-consistency 与 best-of-N 推理也都是围绕多条独立 reasoning chain
+            做采样、投票或重排。chain 的工程优势是简单、易并行、直接匹配最终答案 verifier 或 SQL execution reward，且不会引入 beam/proxy score 的额外偏置。因此，在本实验这种
+            <code>max_turns=3</code>、最终 SQL 可验证、评测使用 greedy agent protocol 的设置下，S1 chain <code>n=8</code>
+            成为默认候选是有文献和工程依据的。
+          </p>
+          <p>tree-based GRPO/agent RL 文献支持的是另一个方向：当任务长程、多跳、工具调用昂贵或中间决策高不确定时，把共享前缀组织成树，可以在固定 token
+            或工具调用预算下复用公共前缀，并把叶子节点最终奖励回传为分支、步骤或 token 级 advantage。Tree-GRPO 还指出 intra-tree GRPO 与 step-level DPO
+            具有相同的偏好梯度结构。因此，tree 的主要理论收益不是“多采样必然更准”，而是更好的探索预算利用与 credit assignment；但这些收益依赖任务长度、branch 位置、advantage
+            estimator 和 rollout 预算。本实验的 S3 tree-final 属于 SQL agent 的工程化 tree rollout 变体，不等同于 ICLR 2026 Tree-GRPO 的完整
+            intra-tree/inter-tree advantage estimator。</p>
 
-        <div class="table-block">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>方案</th>
-                  <th>Rollout slots</th>
-                  <th>执行准确率</th>
-                  <th>可执行率</th>
-                  <th>平均轮数</th>
-                  <th>耗尽轮数率</th>
-                  <th>Rewrite rate</th>
-                  <th>Rewrite success</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Full Mixed-SFT（无 GRPO）</td>
-                  <td>—</td>
-                  <td>79.00%</td>
-                  <td>96.80%</td>
-                  <td>1.44</td>
-                  <td>18.80%</td>
-                  <td>25.20%</td>
-                  <td>57.14%</td>
-                </tr>
-                <tr>
-                  <td>S3 <code>branch=4</code> / <code>beam=2</code> / <code>n=20</code></td>
-                  <td>20</td>
-                  <td><strong>83.67%</strong></td>
-                  <td><strong>98.33%</strong></td>
-                  <td>1.46</td>
-                  <td>17.67%</td>
-                  <td>27.33%</td>
-                  <td><strong>68.29%</strong></td>
-                </tr>
-                <tr>
-                  <td>S3 <code>branch=8</code> / <code>beam=1</code> / <code>n=24</code></td>
-                  <td>24</td>
-                  <td>82.00%</td>
-                  <td><strong>98.33%</strong></td>
-                  <td>1.65</td>
-                  <td>28.00%</td>
-                  <td>35.67%</td>
-                  <td>65.42%</td>
-                </tr>
-                <tr class="best-row">
-                  <td>S1 chain <code>n=8</code> <span class="status best">效率候选</span></td>
-                  <td>8</td>
-                  <td>83.33%</td>
-                  <td>97.67%</td>
-                  <td><strong>1.38</strong></td>
-                  <td><strong>14.33%</strong></td>
-                  <td><strong>22.33%</strong></td>
-                  <td>59.70%</td>
-                </tr>
-              </tbody>
-            </table>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>方案</th>
+                    <th>Rollout slots</th>
+                    <th>执行准确率</th>
+                    <th>可执行率</th>
+                    <th>平均轮数</th>
+                    <th>耗尽轮数率</th>
+                    <th>Rewrite rate</th>
+                    <th>Rewrite success</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Full Mixed-SFT（无 GRPO）</td>
+                    <td>—</td>
+                    <td>79.00%</td>
+                    <td>96.80%</td>
+                    <td>1.44</td>
+                    <td>18.80%</td>
+                    <td>25.20%</td>
+                    <td>57.14%</td>
+                  </tr>
+                  <tr>
+                    <td>S3 <code>branch=4</code> / <code>beam=2</code> / <code>n=20</code></td>
+                    <td>20</td>
+                    <td><strong>83.67%</strong></td>
+                    <td><strong>98.33%</strong></td>
+                    <td>1.46</td>
+                    <td>17.67%</td>
+                    <td>27.33%</td>
+                    <td><strong>68.29%</strong></td>
+                  </tr>
+                  <tr>
+                    <td>S3 <code>branch=8</code> / <code>beam=1</code> / <code>n=24</code></td>
+                    <td>24</td>
+                    <td>82.00%</td>
+                    <td><strong>98.33%</strong></td>
+                    <td>1.65</td>
+                    <td>28.00%</td>
+                    <td>35.67%</td>
+                    <td>65.42%</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>S1 chain <code>n=8</code> <span class="status best">效率候选</span></td>
+                    <td>8</td>
+                    <td>83.33%</td>
+                    <td>97.67%</td>
+                    <td><strong>1.38</strong></td>
+                    <td><strong>14.33%</strong></td>
+                    <td><strong>22.33%</strong></td>
+                    <td>59.70%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 6. Full Mixed-SFT 基线与三组 rollout 方案的 agent evaluation。三组 GRPO 方案采用相同 base
+              policy、训练稳定性配置和评测协议；粗体标出每列最优点估计。</p>
           </div>
-          <p class="caption">表 6. Full Mixed-SFT 基线与三组 rollout 方案的 agent evaluation。三组 GRPO 方案采用相同 base policy、训练稳定性配置和评测协议；粗体标出每列最优点估计。</p>
-        </div>
 
-        <p>三组执行准确率的点估计仅分布在 82.00%–83.67% 之间，当前结果没有拉开清晰差距。S3 <code>branch=4/beam=2/n=20</code> 的准确率最高，但仅比 S1
-          <code>n=8</code> 高 0.33 个百分点；这一微小差值不足以支持 tree rollout 更准确的结论。S3 <code>branch=8/beam=1/n=24</code> 比前者低 1.67
-          个百分点，没有显示扩大 branch 和 rollout slots 的收益。</p>
-        <p>行为与资源指标提供了更明确的工程区分。S3 n=24 相比 S3 n=20 的平均轮数从 1.46 增至 1.65，耗尽轮数率从 17.67% 增至 28.00%，rewrite rate 从 27.33% 增至
-          35.67%，同时训练计算量和阶段边界显存压力更高，因此不再采用。S1 n=8 的准确率与 S3 n=20 基本持平，但平均轮数、耗尽轮数率和 rewrite rate 均最低，且 rollout slots
-          最少，因此是当前性价比最好的默认方案；需要保留 tree search 时，则使用 <code>branch=4/beam=2/n=20</code>。</p>
-      </section>
+          <p>三组执行准确率的点估计仅分布在 82.00%–83.67% 之间，当前结果没有拉开清晰差距。S3 <code>branch=4/beam=2/n=20</code> 的准确率最高，但仅比 S1
+            <code>n=8</code> 高 0.33 个百分点；这一微小差值不足以支持 tree rollout 更准确的结论。S3 <code>branch=8/beam=1/n=24</code> 比前者低 1.67
+            个百分点，没有显示扩大 branch 和 rollout slots 的收益。
+          </p>
+          <p>行为与资源指标提供了更明确的工程区分。S3 n=24 相比 S3 n=20 的平均轮数从 1.46 增至 1.65，耗尽轮数率从 17.67% 增至 28.00%，rewrite rate 从 27.33% 增至
+            35.67%，同时训练计算量和阶段边界显存压力更高，因此不再采用。S1 n=8 的准确率与 S3 n=20 基本持平，但平均轮数、耗尽轮数率和 rewrite rate 均最低，且 rollout slots
+            最少，因此是当前性价比最好的默认方案；需要保留 tree search 时，则使用 <code>branch=4/beam=2/n=20</code>。</p>
+        </section>
 
-      <footer class="source">
-        <div>参考文献：</div>
-        <div><a href="https://arxiv.org/abs/2201.11903">Chain-of-Thought Prompting Elicits Reasoning in Large Language Models</a></div>
-        <div><a href="https://arxiv.org/abs/2203.11171">Self-Consistency Improves Chain of Thought Reasoning in Language Models</a></div>
-        <div><a href="https://arxiv.org/abs/2408.03314">Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling Model Parameters</a></div>
-        <div><a id="ref-deepseekmath" href="https://arxiv.org/abs/2402.03300">[2] DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models</a></div>
-        <div><a id="ref-grpo-dpo" href="https://arxiv.org/abs/2510.00977">[3] It Takes Two: Your GRPO Is Secretly DPO</a></div>
-        <div><a id="ref-deepseek-r1" href="https://arxiv.org/abs/2501.12948">[4] DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning</a></div>
-        <div><a href="https://arxiv.org/abs/2305.18290">Direct Preference Optimization: Your Language Model is Secretly a Reward Model</a></div>
-        <div><a href="https://arxiv.org/abs/2509.21240">Tree Search for LLM Agent Reinforcement Learning</a></div>
-        <div><a href="https://aclanthology.org/2025.acl-long.604/">TreeRL: LLM Reinforcement Learning with On-Policy Tree Search</a></div>
-        <div><a href="https://arxiv.org/abs/2506.05183">TreeRPO: Tree Relative Policy Optimization</a></div>
-        <div><a href="https://arxiv.org/abs/2601.03703">TreeAdv: Tree-Structured Advantage Redistribution for Group-Based RL</a></div>
-        <div><a id="ref-sft-grpo-overlap" href="https://arxiv.org/abs/2604.13515">[1] SFT-GRPO Data Overlap as a Post-Training Hyperparameter for Autoformalization</a></div>
-      </footer>
+        <footer class="source">
+          <div>参考文献：</div>
+          <div><a href="https://arxiv.org/abs/2201.11903">Chain-of-Thought Prompting Elicits Reasoning in Large Language
+              Models</a></div>
+          <div><a href="https://arxiv.org/abs/2203.11171">Self-Consistency Improves Chain of Thought Reasoning in
+              Language Models</a></div>
+          <div><a href="https://arxiv.org/abs/2408.03314">Scaling LLM Test-Time Compute Optimally can be More Effective
+              than Scaling Model Parameters</a></div>
+          <div><a id="ref-deepseekmath" href="https://arxiv.org/abs/2402.03300">[2] DeepSeekMath: Pushing the Limits of
+              Mathematical Reasoning in Open Language Models</a></div>
+          <div><a id="ref-grpo-dpo" href="https://arxiv.org/abs/2510.00977">[3] It Takes Two: Your GRPO Is Secretly
+              DPO</a></div>
+          <div><a id="ref-deepseek-r1" href="https://arxiv.org/abs/2501.12948">[4] DeepSeek-R1: Incentivizing Reasoning
+              Capability in LLMs via Reinforcement Learning</a></div>
+          <div><a href="https://arxiv.org/abs/2305.18290">Direct Preference Optimization: Your Language Model is
+              Secretly a Reward Model</a></div>
+          <div><a href="https://arxiv.org/abs/2509.21240">Tree Search for LLM Agent Reinforcement Learning</a></div>
+          <div><a href="https://aclanthology.org/2025.acl-long.604/">TreeRL: LLM Reinforcement Learning with On-Policy
+              Tree Search</a></div>
+          <div><a href="https://arxiv.org/abs/2506.05183">TreeRPO: Tree Relative Policy Optimization</a></div>
+          <div><a href="https://arxiv.org/abs/2601.03703">TreeAdv: Tree-Structured Advantage Redistribution for
+              Group-Based RL</a></div>
+          <div><a id="ref-sft-grpo-overlap" href="https://arxiv.org/abs/2604.13515">[1] SFT-GRPO Data Overlap as a
+              Post-Training Hyperparameter for Autoformalization</a></div>
+        </footer>
+      </div>
+
+      <div class="grpo-subview" data-grpo-view="error-analysis" hidden>
+        <header class="paper-header">
+          <p class="paper-kicker">500-sample paired evaluation · seed 0</p>
+          <h1>GRPO 配对误差分析</h1>
+          <p class="paper-meta">S3 vs. SFT · S3 vs. S1</p>
+        </header>
+
+        <section class="abstract" aria-labelledby="error-analysis-abstract">
+          <h2 id="error-analysis-abstract">摘要</h2>
+          <p>本页只做训练完成后的误差分析，不参与 checkpoint 选择或超参数调优。SFT、S1 chain GRPO
+            <code>n=8</code> 与 S3 tree GRPO <code>branch=4/beam=2/n=20</code> 均在相同的 500 个 validation UID
+            上重新评测；三组使用相同的 chain greedy agent protocol、<code>temperature=0</code>、<code>max_turns=3</code> 与
+            <code>sample_seed=0</code>。因此，本页比较的是不同训练策略得到的 policy，不把 tree test-time search 的额外计算收益混入结果。
+          </p>
+          <p>配对结果表明，S3 相对 SFT 的 29 次修正同时伴随 16 次回退，exact McNemar 双侧检验为 <code>p=0.0725</code>；S3 相对 S1 为
+            23 次独占正确和 19 次回退，<code>p=0.6440</code>。两组比较在
+            <code>α=0.05</code> 下均未达到显著，因此应报告为方向性点估计，而不是已确认的总体优势。
+          </p>
+        </section>
+
+        <section aria-labelledby="error-analysis-method">
+          <h2 id="error-analysis-method">1. 数据与方法</h2>
+          <p>分析以 UID 为配对单位，逐条校验三份结果的 UID、question 与 gold SQL；500 条记录全部对齐，无缺失、重复或顺序错位。主分析只预先指定两组比较：S3 vs. SFT
+            用于判断 GRPO 相对初始化 policy 的错误迁移，S3 vs. S1 用于比较 tree-trained 与 chain-trained policy。McNemar 检验只使用两种 policy
+            结果不一致的样本，并采用二项分布的 exact two-sided p-value。</p>
+
+        </section>
+
+        <section aria-labelledby="error-analysis-paired">
+          <h2 id="error-analysis-paired">2. 错误迁移与 McNemar 检验</h2>
+
+          <h3>2.1 S3 vs. SFT</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>SFT \ S3</th>
+                    <th>S3 正确</th>
+                    <th>S3 错误</th>
+                    <th>合计</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>SFT 正确</td>
+                    <td>383</td>
+                    <td>16</td>
+                    <td>399</td>
+                  </tr>
+                  <tr>
+                    <td>SFT 错误</td>
+                    <td><strong>29</strong></td>
+                    <td>72</td>
+                    <td>101</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 1. S3 相对 SFT 的配对迁移。29 条被修正，16 条发生回退，共 45 个 discordant pairs。</p>
+          </div>
+          <p>在 45 个不一致样本中，修正与回退之比为 <code>29/16</code>，matched odds ratio 为 <code>1.81</code>。Exact McNemar
+            双侧检验得到 <code>p=0.07245</code>，说明修正多于回退的方向值得继续验证，但当前 500 条样本不足以在 5% 水平拒绝“两个方向迁移概率相同”的原假设。</p>
+
+          <h3>2.2 S3 vs. S1</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>S1 \ S3</th>
+                    <th>S3 正确</th>
+                    <th>S3 错误</th>
+                    <th>合计</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>S1 正确</td>
+                    <td>389</td>
+                    <td>19</td>
+                    <td>408</td>
+                  </tr>
+                  <tr>
+                    <td>S1 错误</td>
+                    <td><strong>23</strong></td>
+                    <td>69</td>
+                    <td>92</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 2. S3 相对 S1 的配对迁移。S3 独占正确 23 条，S1 独占正确 19 条，共 42 个 discordant pairs。</p>
+          </div>
+          <p>在 42 个不一致样本中，S3 与 S1 独占正确之比为 <code>23/19</code>，matched odds ratio 为 <code>1.21</code>，exact McNemar
+            双侧检验为 <code>p=0.64397</code>。这组结果没有提供 tree-trained policy 比 chain-trained policy 更准确的统计证据，与主实验中“二者点估计接近、S1
+            更节省 rollout slots”的工程结论一致。</p>
+        </section>
+
+        <section aria-labelledby="error-analysis-profile">
+          <h2 id="error-analysis-profile">3. 失败输出画像</h2>
+          <p>三组失败仍以“SQL 可执行但语义不正确”为主，而不是 syntax error。下面的行为标签来自完整 agent trace，可直接由日志判断；同一条失败可同时属于多类，因此各列不能相加得到失败总数。</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Policy</th>
+                    <th>失败总数</th>
+                    <th>可执行但语义错误</th>
+                    <th>执行/协议失败</th>
+                    <th>失败中耗尽轮数</th>
+                    <th>Checker 接受错误 SQL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>SFT</td>
+                    <td>101</td>
+                    <td>87</td>
+                    <td>14</td>
+                    <td>38</td>
+                    <td>63</td>
+                  </tr>
+                  <tr>
+                    <td>S1</td>
+                    <td>92</td>
+                    <td>78</td>
+                    <td>14</td>
+                    <td>39</td>
+                    <td>53</td>
+                  </tr>
+                  <tr>
+                    <td>S3</td>
+                    <td><strong>88</strong></td>
+                    <td>77</td>
+                    <td><strong>11</strong></td>
+                    <td>41</td>
+                    <td><strong>49</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 3. 失败输出的行为事实。Checker 接受错误 SQL 指最后一次 checker 输出 <code>THE QUERY IS CORRECT.</code>，但
+              execution reward 为 0。</p>
+          </div>
+
+          <p>S3 将失败数从 SFT 的 101 降至 88，也把不可执行/协议失败从 14 降至 11；但其 88 个失败中仍有 77 个可以执行，说明主要剩余瓶颈是语义约束而不是 SQL
+            语法。S3 的失败中有 41 条耗尽三轮，高于 SFT 的 38 条；这与 S3 平均轮数更高一致，也说明更强 policy 并未消除 checker 驱动的无效修复。</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Policy</th>
+                    <th>Join path/key</th>
+                    <th>Schema linking</th>
+                    <th>Predicate/value</th>
+                    <th>Nested/set</th>
+                    <th>Aggregation</th>
+                    <th>DISTINCT/order/limit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>SFT</td>
+                    <td>51</td>
+                    <td>51</td>
+                    <td>48</td>
+                    <td>21</td>
+                    <td>12</td>
+                    <td>13</td>
+                  </tr>
+                  <tr>
+                    <td>S1</td>
+                    <td>45</td>
+                    <td>46</td>
+                    <td>36</td>
+                    <td>27</td>
+                    <td>15</td>
+                    <td>9</td>
+                  </tr>
+                  <tr>
+                    <td>S3</td>
+                    <td>40</td>
+                    <td>39</td>
+                    <td>46</td>
+                    <td>25</td>
+                    <td>16</td>
+                    <td>9</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 4. 失败 SQL 相对 gold SQL 的结构差异候选标签。标签允许多选，用于组织人工复核，不应直接解释为互斥的真实根因。</p>
+          </div>
+          <p>结构标签显示，S3 相对 SFT 的 join 与 schema-linking 候选错误较少，但 predicate/value grounding 仍是最高频类别。结合代表案例，后续改进应优先处理三点：约束
+            join
+            graph、强化反向条件与聚合语义、校准 checker 对已正确 SQL 的误拒绝和对错误 SQL 的误接受。</p>
+        </section>
+
+        <section aria-labelledby="error-analysis-cases">
+          <h2 id="error-analysis-cases">4. 代表性案例</h2>
+          <p>以下 8 个案例从配对不一致样本与共同失败样本中选取，同时覆盖 S3 修正、S3 回退、S1 独占正确以及 checker 导致的行为错误。相关 schema 只保留判断根因所需的表和字段。</p>
+
+          <details class="case-study" open>
+            <summary>案例 1 · <code>car_1:97</code> · S3 修正 join path</summary>
+            <dl class="case-grid">
+              <dt>问题</dt>
+              <dd>找出重量低于平均重量的汽车型号。</dd>
+              <dt>相关 Schema</dt>
+              <dd>
+                <code>CAR_NAMES(MakeId, Model)</code>；<code>CARS_DATA(Id, Weight)</code>；<code>MODEL_LIST(ModelId, Maker, Model)</code>
+              </dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT T1.Model FROM CAR_NAMES T1 JOIN CARS_DATA T2 ON T1.MakeId = T2.Id
+WHERE T2.Weight &lt; (SELECT AVG(Weight) FROM CARS_DATA)</code></pre>
+              </dd>
+              <dt>模型轨迹</dt>
+              <dd>SFT 直接把 <code>CARS_DATA</code> 连到 <code>MODEL_LIST</code>，checker 误判为正确；S1 三轮都停留在错误的
+                <code>MODEL_LIST</code> 路径。S3 从四表过度连接改写为 <code>CAR_NAMES ↔ CARS_DATA</code>，最终 reward=1。
+              </dd>
+              <dt>执行结果</dt>
+              <dd>SFT 返回 12 行错误 maker；S3 最终 SQL 返回 230 行目标 model，并获得 execution reward=1。与此同时，checker 连续输出
+                <code>THE QUERY IS INCORRECT.</code>，说明轨迹内自检与最终执行判定不一致。
+              </dd>
+              <dt>根因</dt>
+              <dd>Schema linking 与 join key 混淆；checker 对正确改写存在 false rejection。</dd>
+              <dt>改进</dt>
+              <dd>从 schema foreign-key graph 约束候选 join，并用 execution-equivalence 信号校准 checker。</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>案例 2 · <code>museum_visit:427</code> · S3 正确建模补集</summary>
+            <dl class="case-grid">
+              <dt>问题</dt>
+              <dd>统计没有访问过任何 2010 年后开馆博物馆的访客数。</dd>
+              <dt>相关 Schema</dt>
+              <dd>
+                <code>visitor(Id)</code>；<code>museum(Museum_ID, Open_Year)</code>；<code>visit(Museum_ID, visitor_ID)</code>
+              </dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT COUNT(*) FROM visitor WHERE Id NOT IN (
+  SELECT visitor_ID FROM museum JOIN visit USING (Museum_ID) WHERE Open_Year &gt; 2010
+)</code></pre>
+              </dd>
+              <dt>模型轨迹</dt>
+              <dd>SFT 先统计访问过 2010 年后博物馆的人，再把条件翻成 <code>&lt;= 2010</code>；S1 只在 visit 表中排除 museum，遗漏从未访问过博物馆的人。S3 从完整
+                visitor universe 做 <code>NOT IN</code>。</dd>
+              <dt>执行结果</dt>
+              <dd>SFT 与 S1 都返回 2；S3 返回与 gold 一致的 3。</dd>
+              <dt>根因</dt>
+              <dd>反向条件的 universe 选择错误，属于 predicate grounding 与 nested anti-join 错误。</dd>
+              <dt>改进</dt>
+              <dd>为“未做过任何 X”建立显式 anti-join 模板，并检查外层实体集合是否完整。</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>案例 3 · <code>network_1:898</code> · 修正集合运算列语义</summary>
+            <dl class="case-grid">
+              <dt>问题</dt>
+              <dd>找出既有朋友、又被其他人喜欢的高中生 ID。</dd>
+              <dt>相关 Schema</dt>
+              <dd><code>Friend(student_id, friend_id)</code>；<code>Likes(student_id, liked_id)</code></dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT student_id FROM Friend INTERSECT SELECT liked_id FROM Likes</code></pre>
+              </dd>
+              <dt>模型轨迹</dt>
+              <dd>SFT 连续三轮都使用 <code>Likes.student_id</code>，忽略 checker 反馈；S1 与 S3 使用 <code>liked_id</code>。S1 虽被 checker
+                连续误拒绝，最终仍回到正确 SQL；S3 一轮完成。</dd>
+              <dt>执行结果</dt>
+              <dd>SFT 返回 8 个错误 ID；S1/S3 返回另一组 8 个与 gold 一致的 ID。</dd>
+              <dt>根因</dt>
+              <dd>集合运算右侧列的角色混淆，以及重复生成相同错误。</dd>
+              <dt>改进</dt>
+              <dd>在 schema 表示中加入列角色描述，并对连续相同 SQL 设置 no-progress 检测。</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>案例 4 · <code>dog_kennels:976</code> · S3 将时间语义误写为数值最大值</summary>
+            <dl class="case-grid">
+              <dt>问题</dt>
+              <dd>最近一次治疗花费多少？</dd>
+              <dt>相关 Schema</dt>
+              <dd><code>Treatments(cost_of_treatment, date_of_treatment)</code></dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT cost_of_treatment FROM Treatments ORDER BY date_of_treatment DESC LIMIT 1</code></pre>
+              </dd>
+              <dt>模型轨迹</dt>
+              <dd>SFT 与 S1 均一轮生成 gold-equivalent SQL；S3 生成 <code>MAX(cost_of_treatment)</code>，checker 错误接受并提前停止。</dd>
+              <dt>执行结果</dt>
+              <dd>最近一次治疗费用为 407；S3 返回历史最高费用 945。</dd>
+              <dt>根因</dt>
+              <dd>把“most recent”错误映射为数值最大值，属于 temporal predicate 与 ORDER BY/LIMIT 语义错误。</dd>
+              <dt>改进</dt>
+              <dd>加入时间 superlative 对照样本，并要求 checker 核对排序字段与返回字段是否一致。</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>案例 5 · <code>tvshow:620</code> · Checker 把正确中间 SQL 改回错误表</summary>
+            <dl class="case-grid">
+              <dt>问题</dt>
+              <dd>剧集 “A Love of a Lifetime” 在何时播出？</dd>
+              <dt>相关 Schema</dt>
+              <dd><code>TV_series(Episode, Air_Date)</code>；<code>Cartoon(Title, Original_air_date)</code></dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT Air_Date FROM TV_series WHERE Episode = 'A Love of a Lifetime'</code></pre>
+              </dd>
+              <dt>模型轨迹</dt>
+              <dd>SFT/S1 一轮正确。S3 第 1 轮误查 Cartoon，第 2 轮已生成 gold SQL 并返回正确日期，但 checker 仍判错；第 3 轮又退回 Cartoon。</dd>
+              <dt>执行结果</dt>
+              <dd>正确 SQL 返回 <code>September 24, 2007</code>；错误 Cartoon 查询返回空集。</dd>
+              <dt>根因</dt>
+              <dd>初始 schema linking 错误叠加 checker false rejection，导致修复回退。</dd>
+              <dt>改进</dt>
+              <dd>保存并比较历史执行结果，对“空集 → 单条合理结果 → 空集”的回退施加约束。</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>案例 6 · <code>student_transcripts_tracking:564</code> · 相同反馈下的不同恢复能力</summary>
+            <dl class="case-grid">
+              <dt>问题</dt>
+              <dd>平均 transcript date 是多少？</dd>
+              <dt>相关 Schema</dt>
+              <dd><code>Transcripts(transcript_date)</code></dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT AVG(transcript_date) FROM Transcripts</code></pre>
+              </dd>
+              <dt>模型轨迹</dt>
+              <dd>S1 首轮正确，却因 checker 质疑 date averaging，最终改成 <code>AVG(julianday(...))</code>；S3 同样被连续拒绝，但第 3 轮回到原始正确
+                SQL。SFT 最终也保持 execution-equivalent 结果。</dd>
+              <dt>执行结果</dt>
+              <dd>Gold/S3 返回 1989.9333；S1 返回 Julian day 2448053.8885。</dd>
+              <dt>根因</dt>
+              <dd>Checker 引入错误修复方向；S3 在耗尽前恢复，S1 被反馈带偏。</dd>
+              <dt>改进</dt>
+              <dd>将 checker 的自然语言建议视为低置信度证据，并允许保留/回滚历史最佳 SQL。</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>案例 7 · <code>student_transcripts_tracking:581</code> · S1 独占正确的 projection 错误</summary>
+            <dl class="case-grid">
+              <dt>问题</dt>
+              <dd>描述 section h。</dd>
+              <dt>相关 Schema</dt>
+              <dd><code>Sections(section_name, section_description, other_details)</code></dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT section_description FROM Sections WHERE section_name = 'h'</code></pre>
+              </dd>
+              <dt>模型轨迹</dt>
+              <dd>SFT 使用 <code>SELECT *</code>；S3 选择 <code>other_details</code>；两者均被 checker 误接受。S1 明确选择
+                <code>section_description</code>。
+              </dd>
+              <dt>执行结果</dt>
+              <dd>SFT 返回整行，S3 返回 <code>NULL</code>，S1 返回正确描述 <code>et</code>。</dd>
+              <dt>根因</dt>
+              <dd>自然语言“describe”与 schema 中 description 字段的 projection grounding。</dd>
+              <dt>改进</dt>
+              <dd>加强问题词与字段名的 lexical linking，并让 checker 检查输出列数量和含义。</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>案例 8 · <code>student_transcripts_tracking:530</code> · Gold SQL 被 Checker 拒绝后退化</summary>
+            <dl class="case-grid">
+              <dt>问题</dt>
+              <dd>找出注册学生数最多的 semester name 与 semester id。</dd>
+              <dt>相关 Schema</dt>
+              <dd>
+                <code>Semesters(semester_id, semester_name)</code>；<code>Student_Enrolment(semester_id, student_id)</code>
+              </dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT T1.semester_name, T1.semester_id
+FROM Semesters T1 JOIN Student_Enrolment T2 ON T1.semester_id = T2.semester_id
+GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
+              </dd>
+              <dt>模型轨迹</dt>
+              <dd>SFT/S1 从一开始就返回 student_id 等错误列。S3 首轮与 gold SQL 等价并返回正确 semester，但 checker 判错；后两轮依次删除排序限制、再加入学生个人字段，最终
+                reward=0。</dd>
+              <dt>执行结果</dt>
+              <dd>S3 首轮返回 <code>('summer 2010', 2)</code>；最终错误 SQL 返回额外的 student id/name 字段。</dd>
+              <dt>根因</dt>
+              <dd>Checker false rejection 直接造成“正确 → 错误”的行为回退，是当前 plan-execute-repair 闭环的高优先级缺陷。</dd>
+              <dt>改进</dt>
+              <dd>对通过执行且结果形状符合问题的历史 SQL保留 best-so-far；没有新证据时禁止覆盖。</dd>
+            </dl>
+          </details>
+        </section>
+
+        <section aria-labelledby="error-analysis-limitations">
+          <h2 id="error-analysis-limitations">5. 结论与限制</h2>
+          <p>500-sample 配对结果支持两个克制结论。第一，S3 相对 SFT 出现 29 次“由错误变正确”和 16 次“由正确变错误”，但 exact McNemar
+            尚未跨过 0.05。第二，S3 与 S1 的独占正确数量接近，没有显示稳定的策略差异；结合主实验的资源结果，S1 仍是更便宜的默认方案。</p>
+          <p>误差案例进一步表明，下一阶段最有价值的改进点不是单纯扩大 rollout，而是提升 checker 的精度与轨迹状态管理：在错误 SQL 上过早接受、对正确 SQL
+            反复拒绝、以及缺少 best-so-far 回滚，都会吞掉 policy 已具备的 SQL 能力。本页的分析范围限定为最终输出与选中轨迹，不对 tree search
+            的内部候选分支过程作进一步归因。</p>
+        </section>
+
+      </div>
     </article>
 
     <article id="panel-perf" class="tab-panel" role="tabpanel" aria-labelledby="tab-perf">
@@ -1838,7 +2377,8 @@
             5-step 运行作为当前同步路径 baseline 后，策略优化成为最主要的稳定开销；开启 <code>dynamic_bsz</code> 与 <code>remove_padding</code>
             后，策略优化耗时下降约 88.1%，整卡显存峰值仍在约 59.9GB。继续提高 rollout 并发容量到
             <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code> 后，rollout 耗时进一步下降约 26.7%，平均 step 耗时下降约
-            18.7%，且没有推高整卡显存峰值。</p>
+            18.7%，且没有推高整卡显存峰值。
+          </p>
         </section>
 
         <section aria-labelledby="perf-question">
@@ -1854,28 +2394,33 @@
           <p>分析对象为 S3 tree rollout 的 KL=0.01、PPO epoch=2 训练日志。policy 仍由 SFT-Merged 14B base 和 fresh GRPO
             LoRA（rank=64、alpha=128、all-linear）组成，actor 学习率为 <code>5e-5</code>。该运行使用 4 张 H100，训练 batch size 为 2，rollout
             slot 数为 20，并设置 <code>branch_n=4</code>、<code>beam_size=2</code>、<code>max_turns=3</code>。KL 通过
-            <code>use_kl_loss=True</code> 引入，actor 参数与优化器不 offload。</p>
+            <code>use_kl_loss=True</code> 引入，actor 参数与优化器不 offload。
+          </p>
           <p>项目锁定的 <code>verl@f663282</code> 在检测到 actor <code>lora_rank=64</code> 后设置
             <code>ref_in_actor=True</code>，不会创建独立 reference worker。trainer 的 <code>_compute_ref_log_prob()</code> 转而调用
             actor worker，并传入 <code>no_lora_adapter=True</code>；worker 在 <code>disable_adapter()</code> 上下文中执行真实的 no-grad
             forward，从而以 SFT-Merged base 作为 reference policy。虽然启动脚本仍传入 <code>REF_PARAM_OFFLOAD=True</code>，该配置没有一份独立
-            reference model 可供 offload，因此不能把本次运行描述为“CPU-offloaded reference”。</p>
+            reference model 可供 offload，因此不能把本次运行描述为“CPU-offloaded reference”。
+          </p>
           <p>历史日志中共提取到 22 个完整 timing step。为降低初始化、图编译和缓存预热的影响，统计时去掉前 5 个 warmup step，对剩余 17 个 step 分别计算总耗时，以及
             <code>gen</code>、<code>old_log_prob</code>、<code>ref</code>、<code>update_actor</code> 和
             <code>update_weights</code> 的均值、最小值与最大值。报告将原始字段 <code>update_actor</code> 称为“策略优化”，将
-            <code>update_weights</code> 称为“Actor→vLLM 同步”。历史日志只用于解释 fallback 瓶颈，不作为后续参数实验的 baseline。</p>
+            <code>update_weights</code> 称为“Actor→vLLM 同步”。历史日志只用于解释 fallback 瓶颈，不作为后续参数实验的 baseline。
+          </p>
           <p>训练侧参数实验改用 layered summon 成功的短运行作为 baseline。该 baseline 固定
             <code>ppo_micro_batch_size_per_gpu=1</code>、<code>LOG_PROB_USE_DYNAMIC_BSZ=False</code>、<code>MODEL_USE_REMOVE_PADDING=False</code>，完成
             5 个 step 且无 fallback。三个候选实验保持 S3 tree、KL=0.01、PPO epoch=2、batch size=2、rollout
             slot=20、<code>branch_n=4</code>、<code>beam_size=2</code>、<code>max_turns=3</code> 和 layered summon 不变；候选 A
             仅将 micro batch 提高到 2，候选 B 开启 dynamic batching 与 remove padding 并使用
             <code>ppo_max_token_len_per_gpu=16384</code>，候选 C 在候选 B 的基础上只把 token cap 提高到 32768。候选日志各跑 10 step，并去掉前 2
-            step warmup 后统计剩余 8 step。</p>
+            step warmup 后统计剩余 8 step。
+          </p>
           <p>rollout 并发实验继续从训练侧最优解出发：固定 <code>dynamic_bsz=True</code>、<code>remove_padding=True</code>、KL=0.01、PPO
             epoch=2 与 layered summon，只改变 vLLM rollout 侧的容量上限。baseline 使用
             <code>max_num_seqs=4</code>、<code>max_num_batched_tokens=4096</code>；候选同时提高到
             <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。两组各跑 10 step，并去掉前 2 step warmup 后统计剩余 8
-            step。</p>
+            step。
+          </p>
           <p>资源统计来自训练日志中的 <code>GPU_MONITOR</code>、verl actor perf 指标，以及历史 OOM/debug 记录。<code>GPU_MONITOR</code>
             用于报告整卡显存峰值和逐卡利用率；<code>actor/perf/cpu_memory_used_gb</code> 与 actor allocated/reserved 指标用于观察 actor 侧容量；历史
             cgroup/RSS 记录只用于解释 CPU-offload fallback 的主机内存压力。不同来源口径不同，因此只并列报告，不直接计算严格下降比例。</p>
@@ -1893,14 +2438,17 @@
             adapter 传输时间。策略优化平均耗时为 29.047 秒，占 28.6%。表 1 保留为历史 fallback 的瓶颈诊断，而不是修复后流水线的阶段排序。</p>
           <p><code>gen</code> 平均耗时 22.788 秒，占 22.4%，但在不同 step 之间从 4.100 秒变化到 68.199
             秒，是波动最大的阶段。这种变化与样本的生成长度和多轮交互路径有关。<code>old_log_prob</code> 平均耗时为 4.473 秒；共享 actor base、禁用 LoRA adapter 后计算的
-            <code>ref</code> 阶段平均耗时为 0.959 秒，占稳定阶段平均 step 时间的 0.9%。</p>
+            <code>ref</code> 阶段平均耗时为 0.959 秒，占稳定阶段平均 step 时间的 0.9%。
+          </p>
           <p>源码中的 <code>ref</code> timer 包住完整的 <code>_compute_ref_log_prob(batch)</code> 调用及结果回收，worker 内部也确实执行模型
             forward，因此该字段不是仅记录异步任务提交的空计时。<code>old_log_prob</code> 同时设置 <code>calculate_entropy=True</code>，而 reference
             明确设置 <code>calculate_entropy=False</code>，这是前者约 4.47 秒而后者约 0.96 秒的主要实现差异。本次日志的 22 个训练 step 均记录了非零
-            <code>actor/kl_loss</code>，也说明 reference log-prob 已实际进入 KL loss。</p>
+            <code>actor/kl_loss</code>，也说明 reference log-prob 已实际进入 KL loss。
+          </p>
           <p>表 1 同时给出基于当前平均 step 的 Amdahl 式投影：只改变目标阶段、保持其他阶段耗时不变。前三个主要阶段和 <code>old_log_prob</code> 按耗时减半计算；由于
             <code>ref</code> 已经很短，使用“完全消除 reference 计算”作为其理论上限。投影吞吐收益按 <code>101.601 / projected_step_time − 1</code>
-            计算，不代表已经实测得到相同加速。</p>
+            计算，不代表已经实测得到相同加速。
+          </p>
 
           <div class="table-block">
             <div class="table-wrap">
@@ -2132,7 +2680,8 @@
               </table>
             </div>
             <p class="caption">表 4. 修复后 layered summon 路径下的 actor update 参数实验。baseline 为
-              <code>verl_grpo_s3_summon_layered_14b_h100_4gpu_5step_bs2_n20_ep2.log</code>；三个候选去掉前 2 个 warmup step。</p>
+              <code>verl_grpo_s3_summon_layered_14b_h100_4gpu_5step_bs2_n20_ep2.log</code>；三个候选去掉前 2 个 warmup step。
+            </p>
           </div>
 
           <p>对应的资源结果显示，micro=2 没有增加 actor 显存峰值；dynamic/remove-padding 带来少量 actor 侧临时 workspace，actor allocated 峰值增加约
@@ -2210,7 +2759,8 @@
           <h3>3.3 Rollout 并发容量</h3>
           <p>训练侧优化后，rollout 成为新的主要耗时来源。因此 rollout 容量实验只调整 vLLM rollout 并发容量。表 6 显示，将 <code>max_num_seqs</code> 与
             <code>max_num_batched_tokens</code> 同时提高后，rollout 平均耗时从 24.558 秒降至 18.000 秒，端到端 step 从 35.225 秒降至 28.629
-            秒。actor update、old log-prob、reference 和 Actor→vLLM 同步均基本不变，说明该改动主要作用在 rollout 侧。</p>
+            秒。actor update、old log-prob、reference 和 Actor→vLLM 同步均基本不变，说明该改动主要作用在 rollout 侧。
+          </p>
 
           <div class="table-block">
             <div class="table-wrap">
@@ -2258,7 +2808,8 @@
               </table>
             </div>
             <p class="caption">表 6. 在当前最优训练侧配置上继续提高 vLLM rollout 并发容量。两组均去掉前 2 个 warmup step；该实验同时改变
-              <code>max_num_seqs</code> 与 <code>max_num_batched_tokens</code>，因此结论是更大的 rollout 容量有效，而不是区分两个参数的独立贡献。</p>
+              <code>max_num_seqs</code> 与 <code>max_num_batched_tokens</code>，因此结论是更大的 rollout 容量有效，而不是区分两个参数的独立贡献。
+            </p>
           </div>
 
           <p>资源上，提高 rollout 容量没有把整卡显存峰值推高：<code>seqs=4/tokens=4096</code> 的峰值为 59,891
@@ -2317,7 +2868,8 @@
             <code>branch=8/beam=1/rollout_n=24</code> 的初始运行则在完成第 32 step 后失败。异常栈停在
             <code>checkpoint_manager.update_weights → rollout.resume(tags=["weights"]) → vLLM wake_up → CuMem create_and_map</code>，因此这不是
             vLLM 动态生成阶段的 KV-cache OOM，也不是 actor forward/backward 内核直接 OOM，而是 actor 更新结束后、vLLM 重新映射 sleeping weight
-            buffers 时发生的阶段边界 OOM。加入唤醒前 actor cache 清理后，同一 n=24 配置已完成 100 step，因而该故障现在同时具备失败日志和修复复跑证据。</p>
+            buffers 时发生的阶段边界 OOM。加入唤醒前 actor cache 清理后，同一 n=24 配置已完成 100 step，因而该故障现在同时具备失败日志和修复复跑证据。
+          </p>
 
           <h3>4.2 分析方法</h3>
           <p>分析首先对齐三份日志的共同配置和前 32 个完整 step，比较
@@ -2325,7 +2877,8 @@
             与 actor allocated/reserved 高水位；随后用 <code>GPU_MONITOR</code> 区分 rollout/generation、actor update 和 Actor→vLLM
             同步阶段。最后核对项目锁定的 <code>verl@f663282</code> 源码：每个训练 batch 在 backward 前清梯度，FSDP train-mode 在整个 PPO update
             退出时再次调用 <code>optimizer_zero_grad()</code>。因此 attention
-            中间量、activation、计算图和最后一次梯度在权重同步前都已失效；仍需长期保留的是模型参数、LoRA 参数、优化器状态以及 FSDP/NCCL 固定 buffer。</p>
+            中间量、activation、计算图和最后一次梯度在权重同步前都已失效；仍需长期保留的是模型参数、LoRA 参数、优化器状态以及 FSDP/NCCL 固定 buffer。
+          </p>
 
           <div class="table-block">
             <div class="table-wrap">
@@ -2393,10 +2946,12 @@
           <p>第一组在 rollout/generation 阶段约使用 59.6/81.6GB，确实还剩约 20GB；但第 33 step 的训练同步峰值实际接近 76.0GB，只剩约 5.5GB。失败组 OOM 前约使用
             74.5GB，剩余约 7GB，无法再容纳 vLLM TP4 的固定权重 shard 及映射开销。<code>max_num_seqs=8</code> 和
             <code>max_num_batched_tokens=8192</code> 只约束生成阶段的调度并发与 KV cache，不改变 <code>wake_up(weights)</code>
-            所需的固定权重映射容量。</p>
+            所需的固定权重映射容量。
+          </p>
           <p>综合三组结果，根因是：n=24 的较高训练峰值扩大了 PyTorch CUDA allocator 的 reserved cache；activation、attention
             中间量和梯度虽然在语义上已经作废，但对应空闲 block 没有立即归还给 CUDA。随后 layered summon 进入固定大小的 vLLM 权重唤醒，跨进程可用物理显存不足，最终在 CuMem
-            <code>create_and_map</code> 处 OOM。换言之，rollout_n=24 是训练侧高水位的触发因素，vLLM wake-up 是显存冲突实际暴露的位置。</p>
+            <code>create_and_map</code> 处 OOM。换言之，rollout_n=24 是训练侧高水位的触发因素，vLLM wake-up 是显存冲突实际暴露的位置。
+          </p>
 
           <h3>4.4 修复与验证</h3>
           <p>提交 <code>1ba45c38</code> 在调用原始 <code>update_weights()</code>、即 vLLM 权重唤醒之前执行当前 actor rank 的
@@ -2404,7 +2959,8 @@
             从 0.32 降到 0.20 的运行仍在第 33 step 边界 OOM；保持 0.20 和其他关键训练配置不变、加入 cache fix 后，运行以 <code>EXIT_CODE 0</code> 完成 100
             step，总 wall time 为 4,964 秒。这个前后对照验证了缓存清理是解决本次 OOM 的关键改动，不需要降低 rollout 数或训练 token cap。后续容量实验仍应记录清理前后的逐 rank
             <code>memory_allocated</code>、<code>memory_reserved</code> 与 <code>mem_get_info</code>，用于量化实际归还的显存，而不是仅依赖 10
-            秒粒度的 <code>GPU_MONITOR</code> 峰值。</p>
+            秒粒度的 <code>GPU_MONITOR</code> 峰值。
+          </p>
           <p class="source">
             分析日志：<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b4_beam2_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n20_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>；<code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b8_beam1_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n24_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>；无
             cache
@@ -2423,7 +2979,8 @@
             <code>max_num_batched_tokens=8192</code>。该组合先把策略优化从 30.864 秒降至 3.670 秒，再把 rollout 从 24.558 秒降至 18.000 秒；最终
             10-step profiling 的平均 step 为 28.629 秒。资源上，actor/update 与 rollout 容量实验的整卡峰值保持在约 59.6–59.9GB，适合 80GB
             H100；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，并在一次短 profiling 中取得更低端到端 step time，但加速主要来自 rollout
-            波动而不是 actor update 下降，因此默认配置仍保守使用 16384，并将 32768 保留为可切换候选。</p>
+            波动而不是 actor update 下降，因此默认配置仍保守使用 16384，并将 32768 保留为可切换候选。
+          </p>
         </section>
         <section aria-labelledby="perf-optimal-config">
           <h2 id="perf-optimal-config">6. 当前性能最优配置</h2>
@@ -2439,9 +2996,11 @@
             </li>
             <li><strong>vLLM rollout 侧</strong>：使用
               <code>tensor_parallel_size=4</code>、<code>pipeline_parallel_size=1</code>、<code>gpu_memory_utilization=0.32</code>，并将容量上限设为
-              <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。</li>
+              <code>max_num_seqs=8</code>、<code>max_num_batched_tokens=8192</code>。
+            </li>
             <li><strong>可切换候选</strong>：固定 micro batch 提到 2 有收益，但弱于 dynamic token
-              packing；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，短 profiling 中端到端更快，但该差异主要来自 rollout 波动，不能直接归因于
+              packing；<code>ppo_max_token_len_per_gpu=32768</code> 已验证容量可行，短 profiling 中端到端更快，但该差异主要来自 rollout
+              波动，不能直接归因于
               token cap，因此默认仍用 16384。</li>
             <li><strong>容量守门</strong>：保留 <code>GPU_MONITOR</code> 与 actor perf 指标；当前组合的整卡显存峰值约 59.6–59.9GB，适合 80GB H100。
             </li>
@@ -2452,24 +3011,80 @@
       <div class="perf-subview" data-perf-view="tp-scaling" hidden>
         <h2 class="study-title">vLLM Tensor Parallel 扩展与固定 GPU 预算实验</h2>
 
+        <section class="abstract" aria-labelledby="tp-scaling-abstract">
+          <h2 id="tp-scaling-abstract">摘要</h2>
+          <p>本实验在同一台 4×H100 节点上，以 300 条 SQL agent validation prompt 和全局并发度 8，对
+            Qwen2.5-Coder-14B policy 的 vLLM tensor parallel 配置进行两组对照。单实例实验中，TP=2 与 TP=4 相对 TP=1
+            的请求吞吐分别提高 38.2% 与 76.8%，但并行效率下降到 69.1% 与 44.2%，表明跨卡扩展存在明显递减收益。固定 4-GPU
+            预算下，1×TP=4 达到 31.15 requests/s 和 985.04 output tokens/s，较 4×TP=1 均提高约 61.7%，并将 p95
+            延迟从 836.8ms 降至 506.6ms。该结论仅适用于当前低并发、短输出 SQL 生成负载；多副本配置在每副本约两个并发下没有进入饱和区间，不能据此判断最大服务容量。</p>
+        </section>
+
         <section aria-labelledby="tp-scaling-question">
           <h2 id="tp-scaling-question">1. 研究问题</h2>
-          <p>本实验研究 Qwen2.5-Coder-14B rollout policy 在 vLLM 中采用不同 tensor parallel size 时的性能与容量权衡。第一组实验保持单个 vLLM
-            实例不变，比较 <code>TP=1</code>、<code>TP=2</code> 与 <code>TP=4</code>，回答增加模型并行度能否降低单请求和并发请求的生成延迟，以及跨卡通信开销、KV
-            cache 容量和每卡显存如何随 TP 变化。该组用于刻画单实例的模型并行扩展性，不将 TP=4 使用更多 GPU 后得到的总吞吐直接解释为资源效率提升。</p>
+          <p>本实验研究 Qwen2.5-Coder-14B rollout policy 在 vLLM 中采用不同 tensor parallel size 时的性能与资源权衡。第一组保持单个 vLLM
+            实例不变，比较 <code>TP=1</code>、<code>TP=2</code> 与 <code>TP=4</code>，回答增加模型并行度能否提高当前 SQL workload
+            下的请求吞吐并降低生成延迟，以及获得这些收益需要付出多少额外 GPU。该组用于刻画单实例模型并行扩展性，不将 TP=4 使用四倍 GPU 后得到的绝对吞吐直接解释为资源效率提升。</p>
           <p>第二组实验固定 4 张 H100 的总 GPU 预算，比较 <code>4 replicas × TP=1</code>、<code>2 replicas × TP=2</code> 与
-            <code>1 replica × TP=4</code>。该组回答在相同硬件成本下，应优先使用更高 TP 降低单实例延迟，还是使用更多低 TP 副本提高聚合吞吐；同时考察多轮 SQL agent rollout
-            中长短请求不均衡造成的尾延迟和批次完成时间。最终目标是为 verl/Ray rollout worker 选择吞吐、延迟、显存和调度复杂度之间更合适的部署方式。</p>
+            <code>1 replica × TP=4</code>。该组回答在相同硬件成本和相同全局请求流下，应优先使用更高 TP 降低请求延迟，还是使用更多低 TP
+            副本提高聚合吞吐。最终目标是为 verl/Ray rollout worker 选择吞吐、延迟、资源效率和调度复杂度之间更合适的部署方式。
+          </p>
         </section>
 
         <section aria-labelledby="tp-scaling-method">
           <h2 id="tp-scaling-method">2. 方法</h2>
 
           <h3>2.1 Workload 与控制变量</h3>
-          <p>实验使用与 GRPO rollout 相同的 Qwen2.5-Coder-14B policy、tokenizer、精度和生成协议，并在同一台 4×H100 节点上完成。固定 vLLM
-            版本、CUDA/NCCL 环境、模型 checkpoint、<code>max_model_len</code>、采样参数、请求集合与随机种子；除 TP 和副本数外，不改变影响调度与显存容量的参数。请求从真实 SQL
-            agent rollout 中构造固定 trace，保留输入长度、输出长度和交互轮数分布，并覆盖并发度 <code>1/2/4/8</code>。每个配置先完成独立 warmup，再重复测量相同 trace；若某配置发生
-            OOM，则记录其容量边界，不通过缩短上下文或降低并发改变该配置的 workload。</p>
+          <p>实验使用 SFT-ratio merged Qwen2.5-Coder-14B checkpoint，在同一台 4×80GB H100 节点和同一软件环境中完成。请求来自
+            <code>validation.parquet</code> 的 300 条 prompt，并使用模型 tokenizer 的 chat template 格式化；这是隔离 vLLM serving
+            性能的单次生成测试，不包含 SQL 执行、执行反馈和后续 rewrite turn。样本平均包含约 224 个输入 token 和 32 个输出 token，代表当前 SQL subagent
+            的短输出 workload。</p>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>变量</th>
+                    <th>固定值</th>
+                    <th>说明</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>请求与并发</td>
+                    <td>300 requests；global concurrency=8</td>
+                    <td>六组使用相同样本顺序与并发上限</td>
+                  </tr>
+                  <tr>
+                    <td>生成配置</td>
+                    <td><code>temperature=0</code>；<code>top_p=1</code>；<code>max_tokens=512</code></td>
+                    <td>实际平均输出约 32 tokens</td>
+                  </tr>
+                  <tr>
+                    <td>vLLM 容量</td>
+                    <td><code>max_model_len=4096</code>；<code>max_num_seqs=64</code>；<code>max_num_batched_tokens=8192</code></td>
+                    <td>所有配置保持一致</td>
+                  </tr>
+                  <tr>
+                    <td>精度与显存</td>
+                    <td>BF16；<code>gpu_memory_utilization=0.80</code></td>
+                    <td>vLLM 按比例预留 KV cache，显存峰值不能视为模型静态占用</td>
+                  </tr>
+                  <tr>
+                    <td>计时边界</td>
+                    <td>服务 ready 后开始，最后一个 response 完成后结束</td>
+                    <td>不计模型服务启动时间；未额外执行应用层 warmup</td>
+                  </tr>
+                  <tr>
+                    <td>多副本分发</td>
+                    <td>按请求序号 round-robin</td>
+                    <td>客户端将请求确定性地轮询发送到各 base URL</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 1. 正式运行 <code>formal_20260805_191101</code> 的 workload、vLLM 配置和测量边界。</p>
+          </div>
 
           <h3>2.2 实验一：单实例 TP 扩展性</h3>
           <div class="table-block">
@@ -2509,11 +3124,12 @@
                 </tbody>
               </table>
             </div>
-            <p class="caption">表 1. 单实例 TP 扩展实验。该组使用的总 GPU 数不同，因此同时报告绝对性能与每 GPU 归一化效率。</p>
+            <p class="caption">表 2. 单实例 TP 扩展实验。该组使用的总 GPU 数不同，因此同时报告绝对性能与每 GPU 归一化效率。</p>
           </div>
-          <p>每个 TP 配置使用相同请求 trace 和并发度阶梯，分别测量低并发下的单请求延迟与高并发下的持续批处理吞吐。除绝对吞吐外，计算
+          <p>每个 TP 配置使用相同的 300 条请求和全局并发度 8。除绝对吞吐外，计算
             <code>speedup(TP) = throughput(TP) / throughput(TP=1)</code> 与
-            <code>parallel efficiency = speedup(TP) / TP</code>，用于区分模型并行带来的真实性能收益和单纯增加 GPU 数量的影响。</p>
+            <code>parallel efficiency = speedup(TP) / TP</code>，用于区分模型并行带来的性能收益和单纯增加 GPU 数量的影响。
+          </p>
 
           <h3>2.3 实验二：固定 4-GPU 总预算</h3>
           <div class="table-block">
@@ -2534,14 +3150,14 @@
                     <td>4</td>
                     <td>1</td>
                     <td>4</td>
-                    <td>按实例负载分发到四个独立副本</td>
+                    <td>round-robin 分发到四个独立副本</td>
                   </tr>
                   <tr>
                     <td><code>2 × TP=2</code></td>
                     <td>2</td>
                     <td>2</td>
                     <td>4</td>
-                    <td>按实例负载分发到两个独立副本</td>
+                    <td>round-robin 分发到两个独立副本</td>
                   </tr>
                   <tr>
                     <td><code>1 × TP=4</code></td>
@@ -2553,16 +3169,170 @@
                 </tbody>
               </table>
             </div>
-            <p class="caption">表 2. 固定 4×H100 总预算实验。三组消费相同请求 trace，并保持总 GPU 数和测量窗口一致。</p>
+            <p class="caption">表 3. 固定 4×H100 总预算实验。三组消费相同请求集合，并保持总 GPU 数和测量窗口一致。</p>
           </div>
-          <p>多副本配置使用确定性的 least-loaded 分发策略，并记录单副本与聚合指标。主比较采用相同请求总量下的聚合 output tokens/s、requests/s 和完整 trace
-            完成时间；辅助比较使用 p95 延迟与最慢副本完成时间，判断副本间长度不均衡是否抵消数据并行带来的吞吐收益。</p>
+          <p>多副本配置按请求序号使用确定性的 round-robin 分发。全局并发固定为 8，因此 4×TP=1 和 2×TP=2
+            在均匀分发时每实例分别只有约 2 和 4 个并发请求；该实验比较的是固定低并发 workload 下的端到端表现，而不是各拓扑的饱和容量。</p>
 
           <h3>2.4 指标与分析口径</h3>
-          <p>吞吐指标包括 output tokens/s、total tokens/s 与 requests/s；延迟指标包括 TTFT、TPOT、端到端请求延迟及完整 rollout trace 完成时间，并报告
-            p50、p95 和最大值。资源指标包括逐卡峰值显存、平均/峰值 GPU 利用率以及 OOM 或调度失败情况。单实例实验同时报告 TP speedup 和每 GPU
-            吞吐；固定预算实验以 4-GPU 聚合吞吐、尾延迟和 GPU-seconds/request 为主要决策指标。结果分析将区分低并发延迟、饱和吞吐和多轮 agent
-            批次完成时间，避免用单一 tokens/s 指标替代完整 rollout 的实际效率。</p>
+          <p>吞吐指标包括 output tokens/s、total tokens/s 与 requests/s；延迟指标包括 TTFT、TPOT 和端到端 request latency，并报告 mean、p50、p95 与
+            p99。资源指标来自 1 秒间隔的 <code>nvidia-smi</code> 采样，包括逐卡峰值显存和峰值 GPU 利用率。本轮每个配置执行一次正式测量，因此表中数值是单次点估计；相同物理配置的
+            <code>single_tp4</code> 与 <code>fixed_1rep_tp4</code> 可作为有限的运行稳定性复核，但不能代替多个独立重复实验。</p>
+        </section>
+
+        <section aria-labelledby="tp-scaling-results">
+          <h2 id="tp-scaling-results">3. 结果</h2>
+
+          <h3>3.1 单实例 TP 扩展</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>配置</th>
+                    <th>GPU 数</th>
+                    <th>Requests/s</th>
+                    <th>Output tok/s</th>
+                    <th>Speedup</th>
+                    <th>并行效率</th>
+                    <th>Latency p50</th>
+                    <th>Latency p95</th>
+                    <th>Mean TPOT</th>
+                    <th>每卡峰值显存</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>TP=1</code></td>
+                    <td>1</td>
+                    <td>17.65</td>
+                    <td>558.84</td>
+                    <td>1.00×</td>
+                    <td>100.0%</td>
+                    <td>348.3ms</td>
+                    <td>922.2ms</td>
+                    <td>13.68ms/token</td>
+                    <td>63.9GiB</td>
+                  </tr>
+                  <tr>
+                    <td><code>TP=2</code></td>
+                    <td>2</td>
+                    <td>24.39</td>
+                    <td>771.50</td>
+                    <td>1.38×</td>
+                    <td>69.1%</td>
+                    <td>249.9ms</td>
+                    <td>645.4ms</td>
+                    <td>9.72ms/token</td>
+                    <td>65.6GiB</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td><code>TP=4</code></td>
+                    <td>4</td>
+                    <td><strong>31.20</strong></td>
+                    <td><strong>986.52</strong></td>
+                    <td><strong>1.77×</strong></td>
+                    <td>44.2%</td>
+                    <td><strong>192.0ms</strong></td>
+                    <td><strong>521.7ms</strong></td>
+                    <td><strong>7.52ms/token</strong></td>
+                    <td>65.7GiB</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 4. 单实例、global concurrency=8 的 TP 扩展结果。Speedup 以 requests/s 计算；并行效率为 speedup/TP。</p>
+          </div>
+          <p>TP=2 和 TP=4 相对 TP=1 的请求吞吐分别提高 38.2% 和 76.8%，p95 延迟分别降低 30.0% 和 43.4%。增加 TP
+            在当前 workload 下持续改善绝对性能，但 speedup 明显低于 GPU 数量增长：每 GPU 请求吞吐从 TP=1 的 17.65 requests/s 降至 TP=2 的 12.19 和 TP=4
+            的 7.80，说明更高 TP 的低延迟收益伴随显著的资源效率下降。</p>
+
+          <h3>3.2 固定 4-GPU 预算</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>拓扑</th>
+                    <th>实例数</th>
+                    <th>Requests/s</th>
+                    <th>Output tok/s</th>
+                    <th>Mean latency</th>
+                    <th>Latency p50</th>
+                    <th>Latency p95</th>
+                    <th>Mean TTFT</th>
+                    <th>Mean TPOT</th>
+                    <th>每卡最高显存</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>4 × TP=1</code></td>
+                    <td>4</td>
+                    <td>19.27</td>
+                    <td>609.13</td>
+                    <td>405.6ms</td>
+                    <td>326.1ms</td>
+                    <td>836.8ms</td>
+                    <td>27.62ms</td>
+                    <td>12.57ms/token</td>
+                    <td>64.4GiB</td>
+                  </tr>
+                  <tr>
+                    <td><code>2 × TP=2</code></td>
+                    <td>2</td>
+                    <td>27.22</td>
+                    <td>860.42</td>
+                    <td>288.5ms</td>
+                    <td>232.9ms</td>
+                    <td>596.8ms</td>
+                    <td>23.76ms</td>
+                    <td>8.81ms/token</td>
+                    <td>65.7GiB</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td><code>1 × TP=4</code></td>
+                    <td>1</td>
+                    <td><strong>31.15</strong></td>
+                    <td><strong>985.04</strong></td>
+                    <td><strong>252.4ms</strong></td>
+                    <td><strong>200.0ms</strong></td>
+                    <td><strong>506.6ms</strong></td>
+                    <td>26.02ms</td>
+                    <td><strong>7.47ms/token</strong></td>
+                    <td>65.7GiB</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">表 5. 固定 4×H100、global concurrency=8 的拓扑对照。所有配置均完成 300/300 个请求，无请求失败或 OOM。</p>
+          </div>
+          <p>在相同四卡预算下，1×TP=4 相比 4×TP=1 将 requests/s 和 output tokens/s 均提高约 61.7%，同时将 p50 与 p95
+            延迟分别降低 38.7% 和 39.5%；相比 2×TP=2，请求吞吐提高 14.5%，p95 延迟降低 15.1%。结果说明在全局并发度 8
+            时，单请求模型并行加速比增加低 TP 副本更有效。原因并非多副本拓扑本身缺乏容量，而是轮询后 4×TP=1 每个副本平均只有约两个并发请求，无法形成足够大的持续 batch。</p>
+
+          <h3>3.3 运行稳定性与显存</h3>
+          <p>六组共完成 1,800/1,800 个请求，没有请求失败或 OOM。物理配置相同的 <code>single_tp4</code> 与
+            <code>fixed_1rep_tp4</code> 分别达到 31.20 和 31.15 requests/s，差异约 0.17%；output tokens/s 差异约
+            0.15%，说明本次节点内短时测量具有较好的重复性。</p>
+          <p>各已使用 GPU 的峰值显存约为 63.9–65.7GiB。由于所有服务都设置 <code>gpu_memory_utilization=0.80</code>，vLLM 会利用剩余预算预留
+            KV cache，因此该数字主要代表配置的显存预算高水位，不能解释为 TP=4 的模型参数或激活天然占用约 66GiB。单实例 TP=1/2/4 的聚合显存随 GPU 数增加，也不应直接用于比较模型本身的内存效率。</p>
+        </section>
+
+        <section aria-labelledby="tp-scaling-conclusion">
+          <h2 id="tp-scaling-conclusion">4. 结论与边界</h2>
+          <ul class="config-list">
+            <li><strong>低并发部署选择</strong>：对当前平均约 224 input tokens、32 output tokens 的 SQL workload，在 global concurrency=8
+              下，1×TP=4 同时取得最高吞吐和最低尾延迟，是固定四卡预算下的当前最优配置。</li>
+            <li><strong>单实例扩展规律</strong>：TP 从 1 增至 2、4 时绝对性能持续提高，但并行效率从 100% 降至 69.1% 和 44.2%；TP=4
+              的优势是响应速度，而不是每 GPU 吞吐。</li>
+            <li><strong>不能外推最大吞吐</strong>：本轮只有 concurrency=8，且每个配置只有一次正式测量。4×TP=1 与 2×TP=2
+              没有被充分压满，因此当前结果不能回答高并发下哪种拓扑拥有最高饱和容量。</li>
+            <li><strong>后续验证</strong>：固定相同 300 条 prompt，在 global concurrency=32/64 下重复固定预算对照，并为每个配置执行至少三次独立运行；随后再使用包含执行反馈与 rewrite turn
+              的完整 agent trace 验证端到端 rollout 完成时间。</li>
+          </ul>
+          <p class="source">数据来源：<code>artifacts/logs/vllm_tp_scaling/formal_20260805_191101</code> 下六组
+            <code>summary.json</code>、逐请求 <code>requests.jsonl</code> 与 <code>gpu_monitor.csv</code>。服务启动时间不计入请求测量窗口。</p>
         </section>
       </div>
 
@@ -2572,6 +3342,10 @@
   <script>
     const buttons = Array.from(document.querySelectorAll(".tab-button"));
     const panels = Array.from(document.querySelectorAll(".tab-panel"));
+    const grpoTab = document.getElementById("tab-grpo");
+    const grpoTabMenu = document.getElementById("grpo-tab-menu");
+    const grpoOptions = Array.from(document.querySelectorAll(".grpo-option"));
+    const grpoSubviews = Array.from(document.querySelectorAll(".grpo-subview"));
     const perfTab = document.getElementById("tab-perf");
     const perfTabMenu = document.getElementById("perf-tab-menu");
     const perfOptions = Array.from(document.querySelectorAll(".perf-option"));
@@ -2588,6 +3362,12 @@
     buttons.forEach((button, index) => {
       button.addEventListener("click", () => activateTab(button));
       button.addEventListener("keydown", (event) => {
+        if (button === grpoTab && event.key === "ArrowDown") {
+          event.preventDefault();
+          grpoTab.setAttribute("aria-expanded", "true");
+          (grpoOptions.find((option) => option.getAttribute("aria-checked") === "true") || grpoOptions[0]).focus();
+          return;
+        }
         if (button === perfTab && event.key === "ArrowDown") {
           event.preventDefault();
           perfTab.setAttribute("aria-expanded", "true");
@@ -2603,6 +3383,48 @@
         next.focus();
         activateTab(next);
       });
+    });
+
+    function activateGrpoView(value) {
+      grpoSubviews.forEach((view) => {
+        view.hidden = view.dataset.grpoView !== value;
+      });
+      grpoOptions.forEach((option) => {
+        option.setAttribute("aria-checked", String(option.dataset.grpoValue === value));
+      });
+    }
+
+    grpoOptions.forEach((option, index) => {
+      option.addEventListener("click", () => {
+        activateTab(grpoTab);
+        activateGrpoView(option.dataset.grpoValue);
+      });
+      option.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          grpoTab.setAttribute("aria-expanded", "false");
+          grpoTab.focus();
+          return;
+        }
+        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+          return;
+        }
+        event.preventDefault();
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        grpoOptions[(index + direction + grpoOptions.length) % grpoOptions.length].focus();
+      });
+    });
+
+    grpoTabMenu.addEventListener("mouseenter", () => grpoTab.setAttribute("aria-expanded", "true"));
+    grpoTabMenu.addEventListener("mouseleave", () => {
+      if (!grpoTabMenu.contains(document.activeElement)) {
+        grpoTab.setAttribute("aria-expanded", "false");
+      }
+    });
+    grpoTabMenu.addEventListener("focusin", () => grpoTab.setAttribute("aria-expanded", "true"));
+    grpoTabMenu.addEventListener("focusout", (event) => {
+      if (!grpoTabMenu.contains(event.relatedTarget)) {
+        grpoTab.setAttribute("aria-expanded", "false");
+      }
     });
 
     function activatePerfView(value) {
@@ -2647,6 +3469,7 @@
       }
     });
 
+    activateGrpoView("experiment");
     activatePerfView("bottleneck");
   </script>
 </body>
