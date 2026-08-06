@@ -20,5 +20,5 @@ rollout:
 eval:
   sample_size: 300
   sample_seed: 0
-  concurrency: 16
+  concurrency: 8
   log_every: 20
