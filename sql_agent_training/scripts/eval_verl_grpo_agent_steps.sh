@@ -34,6 +34,7 @@ Environment overrides:
   CHECKER_MODEL_NAME       Optional checker model name, e.g. deepseek-chat
   CHECKER_API_KEY_ENV      Optional checker API key env var. Default in Python: LLM_API_KEY_AGENT
   CHECKER_TEMPERATURE      Optional checker temperature. Default in Python: 0.0 when checker is set
+  EVAL_ENV_FILE            Optional .env path passed to agent_eval.py
   EVAL_SPLIT              Default: validation
   EVAL_MODEL_ROOT         Default: artifacts/eval_models/<run_name>
   EVAL_OUTPUT_ROOT        Default: artifacts/eval/<run_name> for chain,
@@ -114,6 +115,7 @@ CHECKER_MODEL_NAME="${CHECKER_MODEL_NAME:-}"
 CHECKER_API_KEY_ENV="${CHECKER_API_KEY_ENV:-}"
 CHECKER_REQUEST_TIMEOUT_SECONDS="${CHECKER_REQUEST_TIMEOUT_SECONDS:-}"
 CHECKER_TEMPERATURE="${CHECKER_TEMPERATURE:-}"
+EVAL_ENV_FILE="${EVAL_ENV_FILE:-}"
 CHECKER_OUTPUT_TAG="${CHECKER_OUTPUT_TAG:-}"
 if [[ -z "${CHECKER_OUTPUT_TAG}" && -n "${CHECKER_BACKEND}${CHECKER_API_URL}${CHECKER_MODEL_NAME}${CHECKER_API_KEY_ENV}" ]]; then
   CHECKER_OUTPUT_TAG="checker_${CHECKER_MODEL_NAME:-${CHECKER_BACKEND:-remote}}"
@@ -205,6 +207,9 @@ if [[ -n "${CHECKER_REQUEST_TIMEOUT_SECONDS}" ]]; then
 fi
 if [[ -n "${CHECKER_TEMPERATURE}" ]]; then
   AGENT_EVAL_EXTRA_ARGS+=(--checker-temperature "${CHECKER_TEMPERATURE}")
+fi
+if [[ -n "${EVAL_ENV_FILE}" ]]; then
+  AGENT_EVAL_EXTRA_ARGS+=(--env-file "${EVAL_ENV_FILE}")
 fi
 
 for STEP in "${STEP_VALUES[@]}"; do

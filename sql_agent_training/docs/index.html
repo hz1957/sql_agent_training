@@ -1878,12 +1878,22 @@
                   <tr>
                     <td>S3 <code>branch=4</code> / <code>beam=2</code> / <code>n=20</code></td>
                     <td>20</td>
-                    <td><strong>83.67%</strong></td>
+                    <td>83.67%</td>
                     <td><strong>98.33%</strong></td>
                     <td>1.46</td>
                     <td>17.67%</td>
                     <td>27.33%</td>
                     <td><strong>68.29%</strong></td>
+                  </tr>
+                  <tr>
+                    <td>S3 <code>branch=4</code> / <code>beam=2</code> / <code>n=20</code> + DeepSeek checker</td>
+                    <td>20</td>
+                    <td><strong>86.00%</strong></td>
+                    <td><strong>98.33%</strong></td>
+                    <td>1.40</td>
+                    <td><strong>6.00%</strong></td>
+                    <td>29.67%</td>
+                    <td>66.29%</td>
                   </tr>
                   <tr>
                     <td>S3 <code>branch=8</code> / <code>beam=1</code> / <code>n=24</code></td>
@@ -1918,14 +1928,17 @@
                 </tbody>
               </table>
             </div>
-            <p class="caption">表 6. Full Mixed-SFT 基线与四组 rollout 方案的 agent evaluation。四组 GRPO 方案采用相同 base
-              policy、训练稳定性配置和评测协议；粗体标出每列最优点估计。</p>
+            <p class="caption">表 6. Full Mixed-SFT 基线、四组 rollout 方案与一组 DeepSeek-checker 复评的 agent evaluation。四组 GRPO
+              训练方案采用相同 base policy 与训练稳定性配置；除 DeepSeek-checker 行外，评测协议相同。DeepSeek-checker 行复用 S3
+              <code>branch=4/beam=2/n=20</code> checkpoint，仅替换 checker；粗体标出表内重点指标。</p>
           </div>
 
           <p>原三组执行准确率的点估计仅分布在 82.00%–83.67% 之间，当前结果没有拉开清晰差距。S3 <code>branch=4/beam=2/n=20</code> 的准确率最高，但仅比 S1
             <code>n=8</code> 高 0.33 个百分点；这一微小差值不足以支持 tree rollout 更准确的结论。S3 <code>branch=8/beam=1/n=24</code> 比前者低 1.67
             个百分点，没有显示扩大 branch 和 rollout slots 的收益。DAPO clip-higher 的准确率为 80.33%，低于原 S1 n=8，但平均轮数、耗尽轮数率与 rewrite rate 更低。
           </p>
+          <p>在不改变 S3 policy 的情况下，将 checker 替换为远端 DeepSeek API 后，执行准确率升至 86.00%，耗尽轮数率降至 6.00%。这一结果说明当前 agent
+            eval 对 checker 质量非常敏感，也支持后续把 checker 校准作为独立优化方向，而不是只扩大 rollout 或训练步数。</p>
           <p>行为与资源指标提供了更明确的工程区分。S3 n=24 相比 S3 n=20 的平均轮数从 1.46 增至 1.65，耗尽轮数率从 17.67% 增至 28.00%，rewrite rate 从 27.33% 增至
             35.67%，同时训练计算量和阶段边界显存压力更高，因此不再采用。S1 n=8 的准确率与 S3 n=20 基本持平，但平均轮数、耗尽轮数率和 rewrite rate 均最低，且 rollout slots
             最少，因此是当前性价比最好的默认方案；需要保留 tree search 时，则使用 <code>branch=4/beam=2/n=20</code>。</p>

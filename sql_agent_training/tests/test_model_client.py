@@ -3,6 +3,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 from sql_agent_training.agent.model_client import (
     HuggingFaceModelClient,
     ModelRequest,
@@ -211,3 +213,15 @@ def test_openai_chat_client_generates_without_tokenizer(monkeypatch) -> None:
         {"role": "user", "content": "Write SQL"},
         {"role": "user", "content": "Tool observation:\nsyntax error"},
     ]
+
+
+def test_openai_chat_client_rejects_non_header_api_key() -> None:
+    client = OpenAIChatModelClient(
+        base_url="https://example.test/v1",
+        model_name="deepseek-chat",
+        api_key="你的key",
+        max_retries=0,
+    )
+
+    with pytest.raises(ValueError, match="API key contains"):
+        client.generate(ModelRequest(turns=[AgentTurn(role="user", content="Check SQL")]))

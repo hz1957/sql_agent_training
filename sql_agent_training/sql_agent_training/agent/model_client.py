@@ -116,7 +116,15 @@ def _post_json(
     body = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
+        authorization = f"Bearer {api_key}"
+        try:
+            authorization.encode("latin-1")
+        except UnicodeEncodeError as exc:
+            raise ValueError(
+                "API key contains characters that cannot be sent in an HTTP Authorization header. "
+                "Check the configured API key environment variable; it may still contain a placeholder value."
+            ) from exc
+        headers["Authorization"] = authorization
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:

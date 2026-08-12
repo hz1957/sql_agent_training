@@ -31,7 +31,7 @@ try:  # pragma: no cover - exercised on the verl runtime.
 except ImportError:  # pragma: no cover - local tests run without verl installed.
 
     class AgentLoopBase:  # type: ignore[no-redef]
-        pass
+        pass 
 
     AgentLoopOutput = None  # type: ignore[assignment]
 
