@@ -448,6 +448,20 @@
       color: #8b8d91;
     }
 
+    .lang-switch {
+      position: absolute;
+      top: 16px;
+      right: 4px;
+      color: var(--muted);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+      font-size: 12px;
+      text-decoration: none;
+    }
+
+    .lang-switch:hover {
+      color: var(--accent);
+    }
+
     @media (max-width: 640px) {
       body {
         font-size: 15px;
@@ -533,6 +547,7 @@
 
 <body>
   <nav class="tab-bar" aria-label="报告分类">
+    <a class="lang-switch" href="en/index.html">English</a>
     <div class="tabs">
       <div class="tab-list" role="tablist">
         <button class="tab-button" role="tab" id="tab-sft" aria-controls="panel-sft" aria-selected="true">SFT
@@ -587,7 +602,7 @@
       <section aria-labelledby="sft-research-question">
         <h2 id="sft-research-question">研究问题</h2>
         <p>本实验旨在回答三个问题。第一，在 SQL agent 的执行反馈评测协议下，相较于仅使用单轮 question/schema-to-SQL 样本的 Pure-SFT，引入经执行验证的 trajectory
-          supervision 是否能够在控制模型起点、LoRA 容量、学习率、训练预算与解码协议后带来可观测的 execution accuracy 增益。第二，在 Mixed-SFT 已显示正向点估计后，学习率与 LoRA
+          supervision 是否能够在控制模型起点、LoRA 容量、学习率、训练预算与评测生成设置后带来可观测的 execution accuracy 增益。第二，在 Mixed-SFT 已显示正向点估计后，学习率与 LoRA
           rank 的有限网格是否改变主候选配置。第三，在固定总训练记录数与优化预算的条件下，gold SQL 与 trajectory supervision 的混合比例如何影响最终执行正确率、rewrite
           行为与耗尽交互轮数的比例。</p>
       </section>

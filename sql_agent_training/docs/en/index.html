@@ -1,0 +1,3931 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SFT/GRPO Experiments and Performance Analysis</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #ffffff;
+      --ink: #202124;
+      --muted: #5f6368;
+      --line: #c8c9cc;
+      --line-light: #e4e5e7;
+      --accent: #8b1e2d;
+      --soft: #f6f6f4;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", SimSun, Georgia, serif;
+      font-size: 16px;
+      line-height: 1.85;
+    }
+
+    .tab-bar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.97);
+    }
+
+    .tabs {
+      display: flex;
+      align-items: stretch;
+      flex-wrap: wrap;
+      width: min(920px, calc(100vw - 40px));
+      margin: 0 auto;
+    }
+
+    .tab-list {
+      display: flex;
+    }
+
+    .tab-button {
+      appearance: none;
+      position: relative;
+      min-width: 150px;
+      padding: 15px 24px 13px;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font: 600 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    }
+
+    .tab-button::after {
+      position: absolute;
+      right: 18px;
+      bottom: -1px;
+      left: 18px;
+      height: 3px;
+      background: transparent;
+      content: "";
+    }
+
+    .tab-button:hover {
+      color: var(--ink);
+    }
+
+    .tab-button[aria-selected="true"] {
+      color: var(--accent);
+    }
+
+    .tab-button[aria-selected="true"]::after {
+      background: var(--accent);
+    }
+
+    .page {
+      width: min(920px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 54px 0 80px;
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .perf-tab-menu,
+    .grpo-tab-menu {
+      position: relative;
+      display: flex;
+    }
+
+    .perf-tab-menu .tab-button,
+    .grpo-tab-menu .tab-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .tab-caret {
+      width: 6px;
+      height: 6px;
+      margin: -3px 0 0 9px;
+      border-right: 1.5px solid currentColor;
+      border-bottom: 1.5px solid currentColor;
+      transform: rotate(45deg);
+    }
+
+    .perf-dropdown,
+    .grpo-dropdown {
+      --menu-x: -50%;
+      position: absolute;
+      top: calc(100% - 1px);
+      left: 50%;
+      z-index: 20;
+      width: 300px;
+      padding: 6px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--paper);
+      box-shadow: 0 10px 28px rgba(32, 33, 36, 0.12);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translate(var(--menu-x), -6px);
+      transition: opacity 140ms ease, transform 140ms ease, visibility 140ms ease;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    }
+
+    .perf-tab-menu:hover .perf-dropdown,
+    .perf-tab-menu:focus-within .perf-dropdown,
+    .perf-tab-menu.menu-open .perf-dropdown,
+    .grpo-tab-menu:hover .grpo-dropdown,
+    .grpo-tab-menu:focus-within .grpo-dropdown,
+    .grpo-tab-menu.menu-open .grpo-dropdown {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transform: translate(var(--menu-x), 0);
+    }
+
+    .perf-option,
+    .grpo-option {
+      display: block;
+      width: 100%;
+      padding: 10px 12px;
+      border: 0;
+      border-left: 3px solid transparent;
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+      text-align: left;
+    }
+
+    .perf-option:hover,
+    .perf-option:focus-visible,
+    .grpo-option:hover,
+    .grpo-option:focus-visible {
+      background: var(--soft);
+      outline: none;
+    }
+
+    .perf-option[aria-checked="true"],
+    .grpo-option[aria-checked="true"] {
+      border-left-color: var(--accent);
+      color: var(--accent);
+      font-weight: 650;
+    }
+
+    .perf-subview[hidden],
+    .grpo-subview[hidden] {
+      display: none;
+    }
+
+    .study-title {
+      margin: 0 0 28px;
+      font-size: 25px;
+    }
+
+    .case-study {
+      padding: 18px 0;
+      border-top: 1px solid var(--line-light);
+    }
+
+    .case-study:last-child {
+      border-bottom: 1px solid var(--line-light);
+    }
+
+    .case-study summary {
+      color: var(--ink);
+      cursor: pointer;
+      font: 650 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    }
+
+    .case-grid {
+      display: grid;
+      grid-template-columns: 112px minmax(0, 1fr);
+      gap: 10px 18px;
+      margin: 18px 0 0;
+    }
+
+    .case-grid dt {
+      color: var(--muted);
+      font: 600 12px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    }
+
+    .case-grid dd {
+      min-width: 0;
+      margin: 0;
+    }
+
+    .case-grid pre {
+      margin: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .paper-header {
+      margin-bottom: 42px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--line);
+      text-align: center;
+    }
+
+    .paper-kicker,
+    .paper-meta,
+    .caption,
+    .source {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    }
+
+    .paper-kicker {
+      margin: 0 0 10px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    h1 {
+      max-width: 780px;
+      margin: 0 auto 16px;
+      font-size: 34px;
+      font-weight: 700;
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    .paper-meta {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .abstract {
+      margin: 0 0 42px;
+      padding: 22px 28px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: var(--soft);
+    }
+
+    .abstract h2 {
+      margin-top: 0;
+      text-align: center;
+    }
+
+    .abstract p {
+      margin-bottom: 0;
+    }
+
+    section {
+      margin-top: 44px;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 21px;
+      font-weight: 700;
+      line-height: 1.45;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 30px 0 10px;
+      font-size: 17px;
+      line-height: 1.5;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 16px;
+      text-align: justify;
+      text-justify: inter-ideograph;
+    }
+
+    code {
+      padding: 1px 4px;
+      background: #f0f0ee;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .equation {
+      margin: 18px 0 20px 2em;
+      overflow-x: auto;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 14px;
+      line-height: 1.8;
+      white-space: pre-line;
+    }
+
+    .table-block {
+      margin: 26px 0 12px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      min-width: 760px;
+      border-top: 2px solid var(--ink);
+      border-bottom: 2px solid var(--ink);
+      border-collapse: collapse;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    }
+
+    th,
+    td {
+      padding: 10px 11px;
+      border-bottom: 1px solid var(--line-light);
+      text-align: left;
+      vertical-align: top;
+      font-size: 13px;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+
+    th {
+      border-bottom: 1px solid var(--ink);
+      font-weight: 700;
+      white-space: normal;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .best-row td {
+      background: #faf5f5;
+    }
+
+    .compact-resource-table {
+      min-width: 720px;
+      table-layout: fixed;
+    }
+
+    .compact-resource-table th,
+    .compact-resource-table td {
+      padding: 8px 8px;
+      font-size: 12.5px;
+      line-height: 1.45;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+
+    .compact-resource-table code,
+    .compact-resource-table strong {
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+
+    .compact-resource-table th:nth-child(2),
+    .compact-resource-table td:nth-child(2),
+    .compact-resource-table th:nth-child(8),
+    .compact-resource-table td:nth-child(8) {
+      width: 18%;
+    }
+
+    .status {
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .status.best {
+      color: var(--accent);
+    }
+
+    .status.pending {
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .caption {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+      text-align: left;
+    }
+
+    .source {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.65;
+      overflow-wrap: anywhere;
+      text-align: left;
+    }
+
+    .config-list {
+      margin: 8px 0 0;
+      padding-left: 1.35em;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .config-list li {
+      margin: 8px 0;
+    }
+
+    .placeholder {
+      color: #8b8d91;
+    }
+
+    .lang-switch {
+      position: absolute;
+      top: 16px;
+      right: 4px;
+      color: var(--muted);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+      font-size: 12px;
+      text-decoration: none;
+    }
+
+    .lang-switch:hover {
+      color: var(--accent);
+    }
+
+    @media (max-width: 640px) {
+      body {
+        font-size: 15px;
+      }
+
+      .tabs,
+      .page {
+        width: min(100vw - 24px, 920px);
+      }
+
+      .tab-button {
+        flex: 1;
+        min-width: 0;
+        padding-right: 10px;
+        padding-left: 10px;
+      }
+
+      .tab-list {
+        flex: 1 1 100%;
+      }
+
+      .page {
+        padding-top: 34px;
+      }
+
+      h1 {
+        font-size: 27px;
+      }
+
+      .abstract {
+        padding: 18px;
+      }
+
+      .perf-tab-menu {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .perf-tab-menu .tab-button,
+      .grpo-tab-menu .tab-button {
+        width: 100%;
+      }
+
+      .perf-dropdown,
+      .grpo-dropdown {
+        --menu-x: 0;
+        right: 0;
+        left: auto;
+        width: min(300px, calc(100vw - 24px));
+      }
+
+      .case-grid {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+
+      .equation {
+        margin-left: 0;
+      }
+
+      section {
+        margin-top: 36px;
+      }
+    }
+
+    @media print {
+      .tab-bar {
+        display: none;
+      }
+
+      .page {
+        width: 100%;
+        padding: 0;
+      }
+
+      .tab-panel {
+        display: block;
+        break-after: page;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <nav class="tab-bar" aria-label="Report categories">
+    <a class="lang-switch" href="../index.html">中文</a>
+    <div class="tabs">
+      <div class="tab-list" role="tablist">
+        <button class="tab-button" role="tab" id="tab-sft" aria-controls="panel-sft" aria-selected="true">SFT
+          Experiments</button>
+        <div class="grpo-tab-menu" id="grpo-tab-menu" role="presentation">
+          <button class="tab-button" role="tab" id="tab-grpo" aria-controls="panel-grpo" aria-selected="false"
+            aria-haspopup="menu" aria-expanded="false">
+            GRPO<span class="tab-caret" aria-hidden="true"></span>
+          </button>
+          <div class="grpo-dropdown" id="grpo-dropdown" role="menu" aria-label="GRPO reports">
+            <button class="grpo-option" type="button" role="menuitemradio" aria-checked="true"
+              data-grpo-value="experiment">GRPO Experiments</button>
+            <button class="grpo-option" type="button" role="menuitemradio" aria-checked="false"
+              data-grpo-value="error-analysis">Error Analysis</button>
+          </div>
+        </div>
+        <div class="perf-tab-menu" id="perf-tab-menu" role="presentation">
+          <button class="tab-button" role="tab" id="tab-perf" aria-controls="panel-perf" aria-selected="false"
+            aria-haspopup="menu" aria-expanded="false">
+            Performance Testing<span class="tab-caret" aria-hidden="true"></span>
+          </button>
+          <div class="perf-dropdown" id="perf-dropdown" role="menu" aria-label="Performance experiments">
+            <button class="perf-option" type="button" role="menuitemradio" aria-checked="true"
+              data-perf-value="bottleneck">Locating GRPO/verl Bottlenecks</button>
+            <button class="perf-option" type="button" role="menuitemradio" aria-checked="false"
+              data-perf-value="tp-scaling">vLLM TP Scaling Experiments</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="page">
+    <article id="panel-sft" class="tab-panel active" role="tabpanel" aria-labelledby="tab-sft">
+      <header class="paper-header">
+        <p class="paper-kicker">Qwen2.5-Coder-14B-Instruct · Pure SFT vs. Mixed SFT</p>
+        <h1>A Controlled Comparison of Single-Turn Supervision and Trajectory-Mixed Supervision</h1>
+        <p class="paper-meta">Experiment log</p>
+      </header>
+
+      <section class="abstract" aria-labelledby="sft-abstract">
+        <h2 id="sft-abstract">Abstract</h2>
+        <p>This study compares parameter-efficient supervised fine-tuning strategies starting from the same base
+          <code>Qwen2.5-Coder-14B-Instruct</code>, with a focus on the role of execution-verified trajectories in the
+          SQL agent protocol. Step one directly compares Pure-SFT and Mixed-SFT: on the same set of 500 Spider
+          validation samples, Pure-SFT checkpoint-300 reaches an execution accuracy of 77.60%, versus 80.60% for
+          Mixed-SFT checkpoint-300, an absolute difference of +3.00 percentage points. Step two fixes the Mixed-SFT
+          data and sweeps a learning-rate / LoRA-rank grid; <code>lr=5e-5, r=32</code> remains the top point estimate,
+          and expanding to <code>r=64</code> brings no stable gain. Step three fixes <code>lr=5e-5, r=32</code>, 4,800
+          training records, and 300 optimizer steps, and compares the ratio of gold SQL to trajectory supervision;
+          3,200 gold + 1,600 trajectory achieves the highest execution accuracy at 79.80%, a +3.40 percentage-point
+          improvement over the 4,800 gold-only condition's 76.40%. Overall, the results support mixing roughly one
+          third execution-verified trajectories into single-turn gold-SQL supervision, though the current conclusions
+          still rest on a single training seed and a 500-sample validation subset.</p>
+      </section>
+
+      <section aria-labelledby="sft-research-question">
+        <h2 id="sft-research-question">Research Questions</h2>
+        <p>This experiment aims to answer three questions. First, under the SQL agent's execution-feedback evaluation
+          protocol, does introducing execution-verified trajectory supervision yield an observable execution-accuracy
+          gain over Pure-SFT — which uses only single-turn question/schema-to-SQL samples — once the model starting
+          point, LoRA capacity, learning rate, training budget, and evaluation generation settings are held constant?
+          Second, once Mixed-SFT has shown a positive point estimate, does a limited grid over learning rate and LoRA
+          rank change the leading candidate configuration? Third, under a fixed total number of training records and
+          optimization budget, how does the mixing ratio of gold SQL to trajectory supervision affect final execution
+          accuracy, rewrite behavior, and the rate of turn-budget exhaustion?</p>
+      </section>
+
+      <section aria-labelledby="sft-step-1">
+        <h2 id="sft-step-1">1. Step One: Pure-SFT vs. Mixed-SFT</h2>
+        <p>The core hypothesis tested in step one is whether, given the same 14B base checkpoint, LoRA capacity,
+          learning rate, global batch size, and 300-step training budget, replacing part of the single-turn gold SQL
+          with execution-verified agent trajectories improves the model's final SQL correctness under the multi-turn
+          execution-feedback protocol. The original 14B model without LoRA is used only to characterize pre-finetuning
+          performance; the primary effect size for step one is defined as the paired execution-accuracy difference
+          between Mixed-SFT checkpoint-300 and Pure-SFT checkpoint-300.</p>
+
+        <h3>1.1 Treatment, Control, and Shared Baseline</h3>
+        <div class="table-block">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Policy</th>
+                  <th>Initialization</th>
+                  <th>Supervision data</th>
+                  <th>Training budget</th>
+                  <th>Experimental role</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Pure-SFT</td>
+                  <td>Base 14B + new LoRA</td>
+                  <td>Spider gold SQL, single-turn supervision</td>
+                  <td>checkpoint-300; ~4,800 sample presentations</td>
+                  <td>Step-one supervised fine-tuning control group</td>
+                </tr>
+                <tr>
+                  <td>Mixed-SFT</td>
+                  <td>Base 14B + separate new LoRA</td>
+                  <td>3,200 gold + 1,600 trajectory</td>
+                  <td>checkpoint-300; 4,800 records = exactly 1 epoch</td>
+                  <td>Step-one trajectory-mixing treatment group</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">Table 1. Model lineage and comparison roles. The 77.60% figure belongs to the Pure-SFT
+            control group, not to the base 14B model without LoRA.</p>
+        </div>
+
+        <h3>1.2 Trajectory Generation and Execution Verification</h3>
+        <p>Trajectories were generated by the existing <code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code> policy. 1,000
+          Spider questions were randomly drawn from the training set, with 4 rollouts per question; sampling
+          temperature was 0.9, maximum turns 3, and random seed 43. A candidate trajectory's final SQL had to produce
+          the same execution result as the gold SQL on the corresponding SQLite database to enter the correct-trajectory
+          pool. This criterion is execution equivalence, not exact SQL string match.</p>
+
+        <div class="table-block">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Trajectory generation item</th>
+                  <th>Observed value</th>
+                  <th>Methodological note</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Teacher policy</td>
+                  <td><code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code></td>
+                  <td>The teacher is used only to generate training trajectories; the student is reinitialized from
+                    the base 14B instruct model</td>
+                </tr>
+                <tr>
+                  <td>Sampling scale</td>
+                  <td>1,000 questions × 4 rollouts = 4,000 candidates</td>
+                  <td><code>temperature=0.9</code>; <code>max_turns=3</code>; <code>seed=43</code></td>
+                </tr>
+                <tr>
+                  <td>Execution-correct trajectories</td>
+                  <td>3,201 before dedup; 2,422 after dedup</td>
+                  <td>Only candidates whose final SQL is execution-equivalent to gold SQL are retained</td>
+                </tr>
+                <tr>
+                  <td>Final selected trajectories</td>
+                  <td>1,600 records; 913 unique source questions</td>
+                  <td>Sampled round-robin by source question group to reduce the dominance of questions with
+                    multiple correct rollouts</td>
+                </tr>
+                <tr>
+                  <td>Trajectory type</td>
+                  <td>1,137 direct; 463 rewrite</td>
+                  <td>Direct trajectories end after the first SQL action; rewrite trajectories include execution
+                    feedback and a subsequent correction</td>
+                </tr>
+                <tr>
+                  <td>Generation time</td>
+                  <td>123.56 s</td>
+                  <td>4×H100, vLLM tensor parallel size 4; excludes model serving startup time</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">Table 2. Trajectory generation and filtering results. Correctness is determined by
+            database execution equivalence; deduplication was completed before final selection.</p>
+        </div>
+
+        <h3>1.3 Mixed Dataset Construction</h3>
+        <p>The Mixed-SFT dataset consists of 3,200 Spider gold records plus all 1,600 deduplicated trajectory records.
+          To broaden question coverage, gold sampling excludes the source question UIDs already covered by the
+          trajectory pool. Each trajectory record supervises only the final correct SQL action: direct records use
+          the initial agent prompt, while rewrite records' prompts include the prior SQL, database execution feedback,
+          and the correction instruction. Failed SQL is thus retained as context rather than as a completion target.</p>
+
+        <div class="equation" aria-label="Mixed SFT data composition">3,200 gold
+          + 1,137 direct trajectory
+          + 463 rewrite trajectory
+          = 4,800 distinct SFT records</div>
+
+        <div class="table-block">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Data type</th>
+                  <th>Record count</th>
+                  <th>Share</th>
+                  <th>Supervision target</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Gold SQL</td>
+                  <td>3,200</td>
+                  <td>66.67%</td>
+                  <td>Single-turn supervision for <code>question + schema → gold SQL</code></td>
+                </tr>
+                <tr>
+                  <td>Direct trajectory</td>
+                  <td>1,137</td>
+                  <td>23.69%</td>
+                  <td>First correct SQL action under the initial agent prompt</td>
+                </tr>
+                <tr>
+                  <td>Rewrite trajectory</td>
+                  <td>463</td>
+                  <td>9.65%</td>
+                  <td>Final correct corrected SQL conditioned on execution feedback</td>
+                </tr>
+                <tr>
+                  <td>Total</td>
+                  <td>4,800</td>
+                  <td>100.00%</td>
+                  <td>All completion tokens contribute to the loss; all prompt tokens are masked</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">Table 3. Mixed-SFT data composition. 4,800 denotes the number of distinct training
+            records, not the number of distinct source questions.</p>
+        </div>
+
+        <h3>1.4 Training Setup and Controlled Variables</h3>
+        <p>Both Pure-SFT and Mixed-SFT initialize a new PEFT LoRA from the base <code>Qwen2.5-Coder-14B-Instruct</code>.
+          The two groups use the same LoRA structure, learning rate, global batch size, and checkpoint-300 budget.
+          Mixed-SFT completes one epoch over 4,800 fixed records; Pure-SFT's checkpoint-300 likewise corresponds to
+          roughly 4,800 sample presentations, but its samples are drawn in random order from a 7,000-record gold-only
+          training pool. The primary intended difference between the two groups is supervision data composition;
+          the prompt length cap and the GPU / gradient-accumulation decomposition differ for implementation reasons
+          and are reported as a methodological limitation.</p>
+
+        <div class="table-block">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Variable</th>
+                  <th>Pure-SFT control</th>
+                  <th>Mixed-SFT treatment</th>
+                  <th>Control status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Base model</td>
+                  <td><code>Qwen2.5-Coder-14B-Instruct</code></td>
+                  <td><code>Qwen2.5-Coder-14B-Instruct</code></td>
+                  <td>Identical</td>
+                </tr>
+                <tr>
+                  <td>LoRA</td>
+                  <td><code>r=32</code>; <code>alpha=64</code>; <code>dropout=0.05</code>; <code>bias=none</code></td>
+                  <td><code>r=32</code>; <code>alpha=64</code>; <code>dropout=0.05</code>; <code>bias=none</code></td>
+                  <td>Identical; target modules are <code>q/k/v/o/gate/up/down_proj</code> in both</td>
+                </tr>
+                <tr>
+                  <td>Supervision data</td>
+                  <td>Gold-only; 7,000-record pool</td>
+                  <td>3,200 gold + 1,137 direct + 463 rewrite</td>
+                  <td>The target variable; both groups see ~4,800 samples by step 300</td>
+                </tr>
+                <tr>
+                  <td>Sequence length</td>
+                  <td><code>prompt=2048</code>; <code>response=512</code></td>
+                  <td><code>prompt=3584</code>; <code>response=512</code></td>
+                  <td>Not fully controlled; the Mixed-SFT cap is extended to accommodate execution feedback</td>
+                </tr>
+                <tr>
+                  <td>Hardware and batch</td>
+                  <td>2×H100; micro batch 1; accumulation 8</td>
+                  <td>4×H100; micro batch 1; accumulation 4</td>
+                  <td>Global batch is 16 in both; system decomposition differs, so wall-clock time is not compared</td>
+                </tr>
+                <tr>
+                  <td>Optimizer</td>
+                  <td><code>lr=5e-5</code>; linear; warmup 0.03; weight decay 0</td>
+                  <td><code>lr=5e-5</code>; linear; warmup 0.03; weight decay 0</td>
+                  <td>Identical</td>
+                </tr>
+                <tr>
+                  <td>Training budget</td>
+                  <td>checkpoint-300 selected; ~4,800 sample presentations</td>
+                  <td><code>max_steps=300</code>; 4,800 records × 1 epoch</td>
+                  <td>Optimizer steps aligned with sample presentation count</td>
+                </tr>
+                <tr>
+                  <td>Training system</td>
+                  <td>bf16; gradient checkpointing; DeepSpeed ZeRO-2</td>
+                  <td>bf16; gradient checkpointing; DeepSpeed ZeRO-2</td>
+                  <td>Identical training precision and ZeRO stage</td>
+                </tr>
+                <tr>
+                  <td>Agent evaluation</td>
+                  <td>500 validation examples; sample seed 0</td>
+                  <td>Same 500 validation examples; sample seed 0</td>
+                  <td>Same UIDs, greedy decoding, <code>max_turns=3</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">Table 4. Training configuration for Pure-SFT and Mixed-SFT. Data composition is the
+            primary intervention variable; the prompt cap and hardware decomposition are not fully matched, so
+            training speed should not be compared across the two.</p>
+        </div>
+
+        <h3>1.5 Agent Evaluation Results</h3>
+        <p>The main evaluation was run on the same set of 500 Spider validation samples. Execution accuracy is the
+          primary endpoint; executable rate, average number of turns, rewrite rate, rewrite success rate, and
+          ran-out-of-turns rate are used to characterize behavioral change. Pure-SFT checkpoint-300 answered 388
+          correctly, for an execution accuracy of 77.60%. The base 14B model without LoRA has not yet completed
+          agent evaluation under the same protocol on this fixed subset, so no speculative value is filled in.</p>
+
+        <div class="table-block">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Policy</th>
+                  <th>Correct</th>
+                  <th>Execution acc.</th>
+                  <th>Δ vs. Pure-SFT</th>
+                  <th>Executable</th>
+                  <th>Avg. turns</th>
+                  <th>Rewrite rate</th>
+                  <th>Rewrite success</th>
+                  <th>Turn-limit rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Base 14B, no LoRA <span class="status pending">pending</span></td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                </tr>
+                <tr>
+                  <td>Pure-SFT step 300 <span class="status">control</span></td>
+                  <td>388/500</td>
+                  <td>77.60%</td>
+                  <td>Reference</td>
+                  <td>97.60%</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>—</td>
+                </tr>
+                <tr>
+                  <td>Mixed step 100</td>
+                  <td>396/500</td>
+                  <td>79.20%</td>
+                  <td>+1.60 pp</td>
+                  <td>96.60%</td>
+                  <td>1.440</td>
+                  <td>25.20%</td>
+                  <td>60.32%</td>
+                  <td>17.80%</td>
+                </tr>
+                <tr>
+                  <td>Mixed step 200</td>
+                  <td><strong>405/500</strong></td>
+                  <td><strong>81.00%</strong></td>
+                  <td><strong>+3.40 pp</strong></td>
+                  <td>97.60%</td>
+                  <td><strong>1.384</strong></td>
+                  <td><strong>22.20%</strong></td>
+                  <td><strong>61.26%</strong></td>
+                  <td><strong>16.00%</strong></td>
+                </tr>
+                <tr class="best-row">
+                  <td>Mixed step 300 <span class="status best">engineering candidate</span></td>
+                  <td>403/500</td>
+                  <td>80.60%</td>
+                  <td>+3.00 pp</td>
+                  <td>97.60%</td>
+                  <td>1.424</td>
+                  <td>24.00%</td>
+                  <td>60.83%</td>
+                  <td>17.80%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">Table 5. Agent evaluation on the fixed set of 500 validation samples. The main comparison
+            in step one is Pure-SFT step 300 vs. Mixed-SFT step 300; the base 14B is the shared baseline, and its
+            values are still pending evaluation under the same protocol.</p>
+        </div>
+
+        <p>All three Mixed-SFT checkpoints have a parse error rate and no-parseable-SQL rate of 0. Mixed-SFT
+          checkpoint-300 adds 15 correct samples relative to Pure-SFT checkpoint-300, reducing the error count from
+          112 to 97 — a 13.39% relative error reduction; both have an executable rate of 97.60%. Mixed-SFT
+          checkpoint-200's point estimate is 0.40 percentage points higher than checkpoint-300's, i.e., 2/500 samples.
+          Because all policies act on the same UIDs, this marginal proportion difference is not by itself enough to
+          support a significance claim; a rigorous comparison would require running an exact McNemar test and a
+          paired bootstrap confidence interval on per-sample predictions.</p>
+
+        <h3>1.6 Conclusion and Checkpoint Selection</h3>
+        <p>Under the same training budget, Mixed-SFT reaches an execution accuracy of 80.60%, 3.00 percentage points
+          higher than Pure-SFT. The highest intermediate evaluation result during training was 81.00%, only 2/500
+          samples above the final result, and is therefore not grounds for switching the final model.</p>
+        <p>Subsequent experiments uniformly use the Mixed-SFT model that completed the predetermined training budget.
+          The current results come from a single training seed and 500 validation samples, and are not yet sufficient
+          to separate the independent contributions of direct and rewrite trajectories.</p>
+      </section>
+
+      <section aria-labelledby="sft-step-2">
+        <h2 id="sft-step-2">2. Step Two: Learning-Rate and LoRA-Capacity Grid</h2>
+        <p>After step one establishes a point estimate favoring Mixed-SFT over Pure-SFT, this study further examines
+          whether the learning rate and LoRA capacity used during supervised fine-tuning are a major performance
+          bottleneck. This experiment fixes the base <code>Qwen2.5-Coder-14B-Instruct</code> starting point, 4,800
+          Mixed-SFT training records, a global batch size of 16, 300 optimizer steps, bf16, gradient checkpointing,
+          and DeepSpeed ZeRO-2, varying only the learning rate and LoRA rank. All candidates' checkpoint-300 are
+          evaluated on the same set of 500 Spider validation samples under the same agent protocol and greedy
+          decoding.
+        </p>
+
+        <div class="table-block">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Learning rate</th>
+                  <th>LoRA</th>
+                  <th>Correct</th>
+                  <th>Execution acc.</th>
+                  <th>Executable</th>
+                  <th>Avg. turns</th>
+                  <th>Rewrite success</th>
+                  <th>Turn-limit rate</th>
+                  <th>Conclusion</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>2e-5</code></td>
+                  <td><code>r=32, alpha=64</code></td>
+                  <td>390/500</td>
+                  <td>78.00%</td>
+                  <td>97.40%</td>
+                  <td>1.462</td>
+                  <td>55.73%</td>
+                  <td>18.60%</td>
+                  <td>Below the leading candidate</td>
+                </tr>
+                <tr>
+                  <td><code>3e-5</code></td>
+                  <td><code>r=32, alpha=64</code></td>
+                  <td>393/500</td>
+                  <td>78.60%</td>
+                  <td>97.20%</td>
+                  <td>1.448</td>
+                  <td>55.20%</td>
+                  <td>18.80%</td>
+                  <td>Below the leading candidate</td>
+                </tr>
+                <tr class="best-row">
+                  <td><code>5e-5</code></td>
+                  <td><code>r=32, alpha=64</code></td>
+                  <td><strong>403/500</strong></td>
+                  <td><strong>80.60%</strong></td>
+                  <td><strong>97.60%</strong></td>
+                  <td><strong>1.424</strong></td>
+                  <td><strong>60.83%</strong></td>
+                  <td><strong>17.80%</strong></td>
+                  <td><span class="status best">Retained as leading candidate</span></td>
+                </tr>
+                <tr>
+                  <td><code>2e-5</code></td>
+                  <td><code>r=64, alpha=128</code></td>
+                  <td>395/500</td>
+                  <td>79.00%</td>
+                  <td>97.20%</td>
+                  <td>1.450</td>
+                  <td>57.48%</td>
+                  <td>18.20%</td>
+                  <td>Added capacity does not offset the low-learning-rate disadvantage</td>
+                </tr>
+                <tr>
+                  <td><code>3e-5</code></td>
+                  <td><code>r=64, alpha=128</code></td>
+                  <td>398/500</td>
+                  <td>79.60%</td>
+                  <td>97.40%</td>
+                  <td>1.454</td>
+                  <td>60.63%</td>
+                  <td>19.40%</td>
+                  <td>Best of the new configurations, but does not exceed the leading candidate</td>
+                </tr>
+                <tr>
+                  <td><code>5e-5</code></td>
+                  <td><code>r=64, alpha=128</code></td>
+                  <td>396/500</td>
+                  <td>79.20%</td>
+                  <td>97.20%</td>
+                  <td>1.438</td>
+                  <td>59.35%</td>
+                  <td>18.80%</td>
+                  <td>Added capacity yields no positive benefit</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">Table 6. checkpoint-300 agent evaluation across the Mixed-SFT learning-rate × LoRA-rank
+            grid. Other than learning rate and LoRA capacity, training data, model starting point, training budget,
+            and evaluation protocol are held constant.</p>
+        </div>
+
+        <p>The results show that expanding LoRA rank produces no stable gain under the current setup. The best
+          configuration in the added grid is <code>lr=3e-5, r=64</code>, with an execution accuracy of 79.60%, 1.00
+          percentage point (5 correct samples) below the existing leading candidate <code>lr=5e-5, r=32</code>.
+          Training logs show that <code>r=64</code> combined with a higher learning rate further reduces training
+          loss, but the corresponding agent-level execution accuracy does not improve in step, indicating that
+          token-level fit cannot be used directly as an agent-policy selection criterion.
+        </p>
+        <p>Accordingly, this study does not replace the Mixed-SFT checkpoint-300 leading candidate selected in step
+          one. This conclusion is based on the current 500-sample validation subset and a single training seed;
+          under the conditions of this experiment round, expanding LoRA capacity shows no stable agent-level gain.</p>
+      </section>
+
+      <section aria-labelledby="sft-step-3">
+        <h2 id="sft-step-3">3. Step Three: Training-Data Ratio Experiment</h2>
+        <p>Step three, using the <code>lr=5e-5, r=32</code> configuration determined in step two, fixes the base 14B
+          starting point, LoRA structure, global batch size, 4,800 training records, 300 optimizer steps, and the
+          same 500-sample agent evaluation, and specifically studies the ratio of gold SQL to trajectory supervision.
+          The goal of this experiment is not to compare LoRA capacity again, but to estimate a reasonable share of
+          execution-verified trajectories under a fixed total training budget.</p>
+
+        <h3>3.1 Expanding the Trajectory Pool</h3>
+        <p>To keep step three from being constrained by the scale of the first 1,600-trajectory batch, the trajectory
+          pool was regenerated and replaced. The new teacher is still
+          <code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code>, sampling 1,500 training questions with 4 rollouts each;
+          sampling temperature was 0.9, maximum turns 3, and random seed 44. From the deduplicated correct trajectories,
+          3,000 SFT records were ultimately selected for constructing datasets at different ratios.</p>
+
+        <div class="table-block">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Trajectory pool statistic</th>
+                  <th>Observed value</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Sampling scale</td>
+                  <td>1,500 questions × 4 rollouts = 6,000 candidates</td>
+                  <td>vLLM tensor parallel size 4; <code>temperature=0.9</code></td>
+                </tr>
+                <tr>
+                  <td>Execution-correct trajectories</td>
+                  <td>4,833 before dedup; 3,702 after dedup</td>
+                  <td>Final SQL is execution-equivalent to gold SQL on the corresponding database</td>
+                </tr>
+                <tr>
+                  <td>Final selected trajectories</td>
+                  <td>3,000 records; 1,357 unique source questions</td>
+                  <td>Reached <code>target_correct=3000</code></td>
+                </tr>
+                <tr>
+                  <td>Trajectory type</td>
+                  <td>2,226 direct; 774 rewrite</td>
+                  <td>Direct is 74.20%; rewrite is 25.80%</td>
+                </tr>
+                <tr>
+                  <td>Generation time</td>
+                  <td>181.86 s</td>
+                  <td>Excludes model serving startup and environment setup time</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">Table 7. Expanded trajectory pool used in step three. The trajectory pool directory
+            keeps the original path name, but its contents were replaced with 3,000 correct trajectories from
+            seed 44.</p>
+        </div>
+
+        <h3>3.2 Ratio Design and Training Convergence</h3>
+        <p>All four ratio configurations contain 4,800 training records and complete checkpoint-300 under the same
+          training budget. The trajectory subset is sampled to approximately match the direct/rewrite distribution
+          of the expanded trajectory pool; the gold-only group serves as the internal control for the ratio
+          experiment.</p>
+
+        <div class="table-block">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ratio cell</th>
+                  <th>Gold</th>
+                  <th>Direct traj.</th>
+                  <th>Rewrite traj.</th>
+                  <th>Trajectory share</th>
+                  <th>Val. loss</th>
+                  <th>Val. token acc.</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>gold4800_d0_r0</code></td>
+                  <td>4,800</td>
+                  <td>0</td>
+                  <td>0</td>
+                  <td>0.00%</td>
+                  <td>0.2394</td>
+                  <td>94.51%</td>
+                </tr>
+                <tr>
+                  <td><code>gold4000_d568_r232</code></td>
+                  <td>4,000</td>
+                  <td>568</td>
+                  <td>232</td>
+                  <td>16.67%</td>
+                  <td>0.2331</td>
+                  <td>94.63%</td>
+                </tr>
+                <tr class="best-row">
+                  <td><code>gold3200_d1137_r463</code></td>
+                  <td>3,200</td>
+                  <td>1,137</td>
+                  <td>463</td>
+                  <td>33.33%</td>
+                  <td><strong>0.2310</strong></td>
+                  <td><strong>94.71%</strong></td>
+                </tr>
+                <tr>
+                  <td><code>gold2400_d1706_r694</code></td>
+                  <td>2,400</td>
+                  <td>1,706</td>
+                  <td>694</td>
+                  <td>50.00%</td>
+                  <td>0.2326</td>
+                  <td>94.45%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">Table 8. Training data composition and step-300 token-level validation metrics for the
+            step-three ratio experiment. All four groups fix the total record count, learning rate, LoRA
+            configuration, and optimizer steps.</p>
+        </div>
+
+        <h3>3.3 Agent Evaluation Results</h3>
+        <p>The agent evaluation results show a nonlinear relationship between trajectory supervision and its benefit.
+          Relative to 4,800 gold-only, mixing in 800 trajectory records raises execution accuracy from 76.40% to
+          77.80%; mixing in 1,600 trajectory records raises it further to 79.80%, the highest point estimate in this
+          group; when trajectories increase to 2,400, execution accuracy is 79.40%, slightly below the 1,600-trajectory
+          configuration, though it has the highest rewrite success rate.</p>
+
+        <div class="table-block">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ratio cell</th>
+                  <th>Correct</th>
+                  <th>Execution acc.</th>
+                  <th>Δ vs. gold-only</th>
+                  <th>Executable</th>
+                  <th>Avg. turns</th>
+                  <th>Rewrite rate</th>
+                  <th>Rewrite success</th>
+                  <th>Turn-limit rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>4,800 gold</td>
+                  <td>382/500</td>
+                  <td>76.40%</td>
+                  <td>Reference</td>
+                  <td>96.60%</td>
+                  <td>1.492</td>
+                  <td>27.40%</td>
+                  <td>54.01%</td>
+                  <td>20.40%</td>
+                </tr>
+                <tr>
+                  <td>4,000 gold + 800 trajectory</td>
+                  <td>389/500</td>
+                  <td>77.80%</td>
+                  <td>+1.40 pp</td>
+                  <td>97.20%</td>
+                  <td>1.506</td>
+                  <td>28.40%</td>
+                  <td>57.04%</td>
+                  <td>21.00%</td>
+                </tr>
+                <tr class="best-row">
+                  <td>3,200 gold + 1,600 trajectory <span class="status best">best ratio</span></td>
+                  <td><strong>399/500</strong></td>
+                  <td><strong>79.80%</strong></td>
+                  <td><strong>+3.40 pp</strong></td>
+                  <td>97.20%</td>
+                  <td><strong>1.416</strong></td>
+                  <td><strong>24.20%</strong></td>
+                  <td>60.33%</td>
+                  <td><strong>16.40%</strong></td>
+                </tr>
+                <tr>
+                  <td>2,400 gold + 2,400 trajectory</td>
+                  <td>397/500</td>
+                  <td>79.40%</td>
+                  <td>+3.00 pp</td>
+                  <td>97.20%</td>
+                  <td>1.450</td>
+                  <td>26.20%</td>
+                  <td><strong>61.83%</strong></td>
+                  <td>18.20%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">Table 9. checkpoint-300 agent evaluation for the step-three ratio experiment. All
+            results use the same 500 validation samples, the same prompt template, greedy decoding, and
+            <code>max_turns=3</code>.</p>
+        </div>
+
+        <p>Under the fixed 4,800-record condition, the 1,600-trajectory configuration has 101 errors, 17 fewer than
+          gold-only's 118 — a 14.41% relative error reduction. Increasing trajectories further to 2,400 does not
+          further improve execution accuracy, suggesting that under the current teacher-generated trajectory pool
+          and single training seed, an excessive trajectory share may sacrifice some single-turn gold SQL coverage.
+          The two top configurations differ by only 2/500 samples and so cannot be interpreted as a significant
+          difference; but 3,200 gold + 1,600 trajectory simultaneously achieves the highest execution accuracy, the
+          lowest average number of turns, the lowest rewrite rate, and the lowest turn-limit-exhaustion rate, making
+          it the most balanced ratio currently observed.</p>
+
+        <h3>3.4 SFT Conclusions</h3>
+        <p>The overall conclusions of the SFT experiments are as follows. First, Mixed-SFT's point-estimate
+          improvement over Pure-SFT replicates across two independent setups: step one's 3,200 gold + 1,600
+          trajectory reaches 80.60%, and the same ratio in step three, after regenerating the trajectory pool,
+          reaches 79.80% — both above their respective gold-only controls. Second, <code>lr=5e-5, r=32</code> is
+          currently the best and simplest LoRA configuration; <code>r=64</code> has not shown itself to be necessary.
+          Third, under a fixed total number of training records, roughly one third trajectory supervision is
+          currently the best ratio; it outperforms pure gold-only while more reliably lowering the average number of
+          turns and the turn-limit-exhaustion rate than 50% trajectory does.</p>
+      </section>
+
+    </article>
+
+    <article id="panel-grpo" class="tab-panel" role="tabpanel" aria-labelledby="tab-grpo">
+      <div class="grpo-subview" data-grpo-view="experiment">
+        <header class="paper-header">
+          <p class="paper-kicker">Qwen2.5-Coder-14B-Instruct-SFT-Merged</p>
+          <h1>GRPO Reward Design and Search Strategy Experiment Results</h1>
+          <p class="paper-meta">Experiment log</p>
+        </header>
+
+        <section class="abstract" aria-labelledby="grpo-abstract">
+          <h2 id="grpo-abstract">Abstract</h2>
+          <p>This experiment studies two-stage parameter-efficient training: first, the SFT LoRA for
+            Qwen2.5-Coder-14B-Instruct is merged into the 14B base to form a unified SFT-Merged policy; a new LoRA
+            is then trained for each GRPO scheme on top of that policy, rather than updating all 14B parameters.
+            In the initial S1–S4 reward-design comparison, S3 has the highest execution-accuracy point estimate at
+            80.67%, a 3.33-percentage-point improvement over the SFT-Merged baseline; the subsequent hyperparameter
+            experiment settled on <code>KL=0.01</code>, <code>PPO epoch=2</code>, <code>temperature=1.0</code>, and
+            <code>gamma=0.9</code>. On the updated SFT ratio base, the rollout comparison yields 83.67% for S3
+            <code>branch=4/beam=2/n=20</code>, 83.33% for S1 <code>n=8</code>, and 82.00% for S3
+            <code>branch=8/beam=1/n=24</code>; accuracy does not separate clearly, but S1 n=8 has the best compute
+            and interaction efficiency.
+          </p>
+        </section>
+
+        <section aria-labelledby="grpo-research-question">
+          <h2 id="grpo-research-question">Research Questions</h2>
+          <p>This experiment aims to answer: under the same SFT-Merged base policy and the same second-stage LoRA
+            training framework, do different reward designs and rollout search strategies provide an additional
+            execution-accuracy gain over the SFT-Merged baseline; and how should differences among S1–S4 be
+            interpreted given that they coexist with potential confounders such as the reward variable, chain/tree
+            rollout form, batch size, and PPO mini-batch size.</p>
+        </section>
+
+        <section aria-labelledby="grpo-method">
+          <h2 id="grpo-method">1. Method</h2>
+          <p>This section describes the objects of comparison, controlled variables, and evaluation protocol for the
+            GRPO experiments. To avoid conflating the first-stage supervised fine-tuning with the second-stage
+            reinforcement learning, the report separately describes the construction of the SFT policy, the training
+            of the GRPO adapters, and the final agent evaluation.</p>
+          <p>S1–S4 in this document are code names for four GRPO schemes, each jointly denoting a rollout structure
+            and a reward design. S1 denotes chain rollout + final execution reward, corresponding to
+            <code>chain_final</code>; S2 adds an executable fallback for failed paths on top of S1, corresponding to
+            <code>chain_executable</code>; S3 denotes tree rollout + final execution reward with tree backup,
+            corresponding to <code>tree_final</code>; S4 adds an executable fallback on top of S3, corresponding to
+            <code>tree_executable</code>. The chain schemes sample multiple independent multi-turn trajectories from
+            the same prompt and estimate advantage within the group; the tree schemes branch and prune at every SQL
+            action node and back up the value of leaves or subtrees to the parent node. The executable fallback's
+            <code>beta=0.1</code> acts, in the tree schemes, as an auxiliary advantage weight for the failed group,
+            not as a floor on the raw value.
+          </p>
+
+          <h3>1.1 Model Lineage and Two-Stage LoRA</h3>
+          <p>Stage one initializes a supervised fine-tuning policy from <code>Qwen2.5-Coder-14B-Instruct</code>.
+            All subsequent GRPO experiments uniformly use the same SFT checkpoint as their starting point; this
+            checkpoint corresponds to LoRA rank 32, alpha 64, learning rate <code>5e-5</code>, at global step 300 of
+            training. The key control point here is that S1–S4 do not start from different SFT starting points, but
+            share the same, already-finetuned SFT policy.</p>
+          <p>To let the second-stage training compare only the differences intrinsic to GRPO, the selected SFT
+            adapter is first merged into the 14B base, forming a unified
+            <code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code> policy. The tokenizer remains identical to the base
+            14B model. SFT-Merged can therefore be treated as a fixed initial policy that is "14B base + SFT LoRA
+            effect"; once GRPO begins, the stage-one SFT adapter is not reloaded.
+          </p>
+          <div class="equation" aria-label="Two-stage LoRA model lineage">Qwen2.5-Coder-14B-Instruct
+            + SFT LoRA (r=32, alpha=64, checkpoint-300)
+            → fixed SFT-Merged policy
+            + fresh GRPO LoRA (r=64, alpha=128, all-linear)
+            → S1 / S2 / S3 / S4 LoRA checkpoint</div>
+          <p>Stage two trains a separate new actor LoRA for each GRPO scheme, with rank 64, alpha 128, target modules
+            <code>all-linear</code>, and a learning rate that remains <code>5e-5</code>. S1–S4 therefore compare
+            "different GRPO adapters trained on the same SFT policy," not four different full-parameter models.
+          </p>
+          <p>At evaluation time, the SFT-Merged baseline loads only the fixed SFT policy; S1–S4 each attach their own
+            second-stage GRPO adapter on top of the same SFT policy. This lets the performance differences reported
+            here be attributed to the effect of policy updates during the GRPO stage, while avoiding the introduction
+            of stage-one SFT weight differences into the comparison.</p>
+
+          <h3>1.2 SFT/GRPO Data Isolation and the Formal Training Run's Scale</h3>
+          <p>The final formal S1 chain training run isolates SFT and GRPO data by <code>source_uid</code>. The
+            original Spider train pool contains 7,000 questions; the selected Mixed-SFT dataset contains 4,800
+            training records — 3,200 gold, 1,137 direct trajectory, and 463 rewrite trajectory — corresponding to
+            4,533 unique source questions. The training record count exceeds the unique question count because a
+            single source question can contribute multiple trajectory records.</p>
+          <p>When constructing the formal GRPO data, the training pool excludes all 4,533 SFT
+            <code>source_uid</code>s, yielding 2,467 GRPO prompts, for an SFT/GRPO overlap of 0 as measured by source
+            question<sup><a href="#ref-sft-grpo-overlap">[1]</a></sup>. The formal run completed 275 steps with a
+            train batch size of 8, for a cumulative total of 2,200 prompt presentations; each prompt is configured
+            with <code>rollout_n=8</code>, giving 17,600 rollout slots. It is important to distinguish the data pool
+            size from the training budget here: the available GRPO pool has 2,467 records, while the actual
+            optimization process consumed 2,200 prompt instances cumulatively; SFT's 4,800, meanwhile, is the
+            training record count, corresponding to 4,533 unique questions.
+          </p>
+          <p>The zero-overlap conclusion above applies specifically to the final 275-step formal S1 training run.
+            The earlier short-run experiments used to select reward, KL, temperature, gamma, and rollout scheme drew
+            on the full Spider train pool and should not be described as using the same data-isolation setup.</p>
+
+          <h3>1.3 Controlled Variables and Comparison Structure</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Parameter group</th>
+                    <th>Common S1–S4 setting</th>
+                    <th>Control purpose</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>GRPO base policy</td>
+                    <td><code>Qwen2.5-Coder-14B-Instruct-SFT-Merged</code>, i.e., the 14B base + merged SFT LoRA
+                      checkpoint-300</td>
+                    <td>All four groups start from the exact same SFT policy</td>
+                  </tr>
+                  <tr>
+                    <td>Tokenizer</td>
+                    <td>Identical to the base Qwen2.5-Coder-14B-Instruct tokenizer</td>
+                    <td>No scheme-specific tokenizer across S1–S4</td>
+                  </tr>
+                  <tr>
+                    <td>Training data and hardware</td>
+                    <td>Spider train prompts; single node, 4×H100</td>
+                    <td>Fixed sample source and hardware scale</td>
+                  </tr>
+                  <tr>
+                    <td>GRPO actor optimization</td>
+                    <td>Actor learning rate <code>5e-5</code>; PPO epoch 1; micro-batch/GPU=1; FSDP; gradient
+                      checkpointing
+                    </td>
+                    <td>The learning rate applies only to the newly created GRPO LoRA parameters</td>
+                  </tr>
+                  <tr>
+                    <td>GRPO LoRA</td>
+                    <td>Fresh adapter; rank=64; alpha=128; target=<code>all-linear</code></td>
+                    <td>Fixes the trainable parameter structure of stage two</td>
+                  </tr>
+                  <tr>
+                    <td>GRPO checkpoint</td>
+                    <td>Only the stage-two GRPO adapter is saved</td>
+                    <td>Only the stage-two adapter is saved; the full-parameter 14B model is not duplicated</td>
+                  </tr>
+                  <tr>
+                    <td>Training schedule</td>
+                    <td>150 training steps; saved every 25 steps; evaluated uniformly at global step 150</td>
+                    <td>Fixes training length and checkpoint position</td>
+                  </tr>
+                  <tr>
+                    <td>KL</td>
+                    <td>No reference KL reward or KL loss used</td>
+                    <td>No reference KL is used across S1–S4</td>
+                  </tr>
+                  <tr>
+                    <td>Rollout sampling</td>
+                    <td>
+                      <code>temperature=1.0</code>; <code>top_p=1.0</code>; <code>top_k=-1</code>;
+                      <code>do_sample=True</code>
+                    </td>
+                    <td>Fixes the generation distribution parameters</td>
+                  </tr>
+                  <tr>
+                    <td>Interaction and length</td>
+                    <td><code>max_turns=3</code>; prompt/response length both 2048</td>
+                    <td>Fixes the maximum correction turns and context budget</td>
+                  </tr>
+                  <tr>
+                    <td>vLLM rollout</td>
+                    <td>TP=4; PP=1; GPU memory utilization=0.32; max batched tokens=4096; max sequences=4; layered
+                      summon=True
+                    </td>
+                    <td>Fixes the inference deployment and concurrency cap</td>
+                  </tr>
+                  <tr>
+                    <td>Common reward parameters</td>
+                    <td><code>gamma=0.9</code></td>
+                    <td>Fixes the multi-turn and tree-backup discount</td>
+                  </tr>
+                  <tr>
+                    <td>Agent evaluation</td>
+                    <td>300 validation
+                      examples; <code>sample_seed=0</code>; <code>temperature=0.0</code>; <code>max_turns=3</code>;
+                      response length=2048</td>
+                    <td>The 300 UIDs and their order have been verified identical across S1–S4</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 1. Training, rollout, and evaluation parameters held identical across the S1–S4
+              launch scripts.</p>
+          </div>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Varied parameter</th>
+                    <th>S1</th>
+                    <th>S2</th>
+                    <th>S3</th>
+                    <th>S4</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Rollout structure</td>
+                    <td>chain</td>
+                    <td>chain</td>
+                    <td>tree</td>
+                    <td>tree</td>
+                  </tr>
+                  <tr>
+                    <td>Reward scheme</td>
+                    <td>chain final<br><code>chain_final</code></td>
+                    <td>chain final + executable fallback<br><code>chain_executable</code></td>
+                    <td>tree final<br><code>tree_final</code></td>
+                    <td>tree final + executable fallback<br><code>tree_executable</code></td>
+                  </tr>
+                  <tr>
+                    <td>Executable beta</td>
+                    <td>not used</td>
+                    <td>0.1</td>
+                    <td>not used</td>
+                    <td>0.1</td>
+                  </tr>
+                  <tr>
+                    <td>Advantage estimator</td>
+                    <td><code>grpo_multi_step</code></td>
+                    <td><code>grpo_multi_step</code></td>
+                    <td><code>grpo_tree</code></td>
+                    <td><code>grpo_tree</code></td>
+                  </tr>
+                  <tr>
+                    <td>Train batch size</td>
+                    <td>4</td>
+                    <td>4</td>
+                    <td>2</td>
+                    <td>2</td>
+                  </tr>
+                  <tr>
+                    <td>PPO mini-batch size</td>
+                    <td>4</td>
+                    <td>4</td>
+                    <td>2</td>
+                    <td>2</td>
+                  </tr>
+                  <tr>
+                    <td>Rollout n / tree slots</td>
+                    <td>8</td>
+                    <td>8</td>
+                    <td>20</td>
+                    <td>20</td>
+                  </tr>
+                  <tr>
+                    <td>Configured rollout slots / batch</td>
+                    <td>4×8=32</td>
+                    <td>4×8=32</td>
+                    <td>2×20=40</td>
+                    <td>2×20=40</td>
+                  </tr>
+                  <tr>
+                    <td>Tree parameters</td>
+                    <td>not applicable</td>
+                    <td>not applicable</td>
+                    <td>branch=4; beam=2; tau=1.0; epsilon=0.1</td>
+                    <td>branch=4; beam=2; tau=1.0; epsilon=0.1</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 2. Parameters that actually differ across S1–S4.</p>
+          </div>
+
+          <p>S2 adds a <code>beta=0.1</code> executable fallback on top of S1's chain final reward, with all other
+            explicit training parameters identical; S4 adds a group-gated executable fallback to S3's tree advantage
+            computation. S1/S2 and S3/S4 thus each form an internal "with vs. without fallback" comparison. By
+            contrast, S1 and S3 differ not only in rollout structure and advantage estimator, but also in train
+            batch size, PPO mini-batch size, the number of rollouts per prompt, and the number of rollout slots
+            configured per batch.</p>
+          <p>Furthermore, none of the four launch scripts explicitly sets a training random seed, and each scheme
+            currently has only one training run. Even in the paired S1/S2 or S3/S4 comparisons, training randomness
+            cannot be ruled out. Reporting confidence intervals or a stable effect size would require explicitly
+            fixing and repeating multiple training seeds for each candidate.</p>
+
+          <h3>1.4 Reward and the Executable Fallback</h3>
+          <p>Algorithmic semantics should be distinguished from code identifiers: the configuration name
+            <code>chain_executable</code> denotes "chain final + executable fallback," and
+            <code>tree_executable</code> denotes "tree final + executable fallback." Both S2 and S4 retain the final
+            correctness reward and its discounted backup; the difference is that S2 writes executability into the
+            raw score of failed trajectories, whereas S4 uses executability only as a normalized fallback advantage
+            signal when a tree sibling group shows no final-correctness distinction whatsoever.</p>
+          <p>In chain rollout, the verifier only issues an outcome reward <em>R</em><sub>T</sub> when a trajectory
+            terminates. If the SQL generated at turn <em>T</em> is semantically correct, then
+            <em>R</em><sub>T</sub>=1; the empirical return for the action at turn <em>t</em> is obtained by
+            discounting that terminal reward backward, rather than treating the discounted value as an immediate
+            reward given by the environment at that turn. If the entire trajectory ultimately fails, all action
+            returns are 0 under S1; S2, in contrast, assigns a fallback score of <code>beta=0.1</code> only to SQL
+            actions that execute safely and without error in SQLite. "Executable" here means only
+            <code>execution.ok=True</code>; it does not mean the SQL is semantically equivalent to the gold query.
+          </p>
+          <div class="equation" aria-label="Chain return formula">R_T = 1, if the final SQL is correct; otherwise 0
+            Q_hat(t) = gamma^(T − t) × R_T, if the trajectory ultimately succeeds
+            Q_hat(t) = beta, if the trajectory ultimately fails and the current SQL is executable (S2 only)
+            Q_hat(t) = 0, otherwise</div>
+          <p>In chain S2, the executable fallback is a floor that replaces the failure reward, not an additional
+            bonus. So as long as the trajectory ultimately succeeds, S2 uses the same discounted correctness reward
+            as S1, without adding <code>beta</code> on top. This avoids giving a trajectory that "first produces
+            incorrect but executable SQL, then successfully corrects it" a higher total return than one that gets
+            it right on the first turn, simply by accumulating fallback score.
+          </p>
+          <p>In tree rollout, a correct node is a terminal node whose outcome reward is 1, so that node's
+            correctness-backed return is likewise 1. S3/S4 both first independently compute
+            <em>F</em>(<em>n</em>), which is backed up from final correctness: a non-correct internal node takes the
+            mean of its children's <em>F</em> and multiplies by <code>gamma</code>, and a failed leaf node is 0. S4
+            no longer takes <code>max(F, beta × I_executable)</code> node by node; the executable fallback is used
+            only to break ties with a normalized executability metric when a sibling group's final-correctness
+            signal cannot distinguish nodes at all.</p>
+          <div class="equation" aria-label="Tree return and fallback advantage formula">F(n) = 1, if the current SQL is
+            correct
+            F(n) = gamma × mean[F(c)], for a non-correct internal node
+            F(n) = 0, for a failed leaf node
+            A_i = Normalize(F_i), if range(F) > tau
+            A_i = beta × Normalize(I_executable(i)), if max(F)=0 and executability differs across the group (S4 only)
+            A_i = 0, otherwise</div>
+          <p>Chain and tree therefore use the same class of terminal-reward discounted propagation; the difference is
+            that chain propagates along a single sampled trajectory, whereas tree averages the returns of multiple
+            sampled child branches at each internal node. There is no learned critic here, and this is not GAE;
+            <code>gamma</code> is used to construct the empirical action returns compared within a GRPO group.
+            Sibling nodes generated from the same parent state form one GRPO comparison group, and node returns are
+            centered and normalized within the group to obtain the advantage. The tree scheme thus compares "the
+            relative returns of different SQL actions under the same database state and feedback."
+          </p>
+          <p>From the perspective of the literature, training GRPO with only the final verifier reward is a
+            reasonable outcome-supervision variant: DeepSeekMath's GRPO normalizes the final rewards of multiple
+            outputs under the same prompt within the group, and assigns the resulting advantage to that output's
+            tokens<sup><a href="#ref-deepseekmath">[2]</a></sup>. With a binary correct/incorrect reward and a clear
+            split of positive and negative samples within the group — especially at <code>G=2</code> — this
+            objective is very close to online DPO / contrastive learning; but ordinary GRPO still includes on-policy
+            sampling, group normalization, and PPO clip/KL mechanisms, so it cannot simply be treated as strictly
+            equivalent to DPO<sup><a href="#ref-grpo-dpo">[3]</a></sup>.
+          </p>
+          <p>DeepSeekMath presents both outcome-supervised and process-supervised GRPO. The former shows that a final
+            reward is sufficient to define a valid GRPO training objective, but its ablation results show that, for
+            the corresponding math tasks, process supervision outperforms outcome
+            supervision<sup><a href="#ref-deepseekmath">[2]</a></sup>. This result therefore supports using the final
+            verifier reward as a simple, reproducible baseline, but does not support the claim that it is superior
+            to process reward.</p>
+          <p>DeepSeek-R1 addresses a different dimension: the source of the reward. On verifiable tasks such as math
+            and code, a rule-based programmatic verifier avoids the need to train an additional neural reward model
+            and the reward-hacking risk that comes with it<sup><a href="#ref-deepseek-r1">[4]</a></sup>. Neural
+            reward models here include both outcome reward models (ORMs), which score only the complete output, and
+            process reward models (PRMs), which score intermediate reasoning steps; the choice between a rule-based
+            verifier and a neural reward model is not equivalent to the choice between outcome supervision and
+            process supervision.</p>
+          <p>This experiment uses a programmatic SQL verifier to produce the terminal correctness reward, and then
+            performs credit assignment via chain discounting or tree backup, without introducing a separate process
+            reward model. The final SQL execution reward is therefore a low-complexity, auditable baseline, not a
+            reward design already proven optimal; whether process-level reward can further improve training still
+            requires a separate ablation. In addition, a binary verifier reward can make an entire group correct or
+            entirely incorrect, so within-group reward variance must be monitored to avoid the GRPO advantage
+            degenerating to zero.</p>
+
+          <h3>1.5 Tree Frontier and Beam Selection</h3>
+          <p>The tree's root state first samples <code>branch_n=4</code> SQL candidates. Nodes that pass the checker
+            and are executable terminate immediately under <code>prune_on_terminal_proxy=True</code>; nodes with
+            unrecoverable SQLite errors are also pruned as failed leaves, including hallucinated table names that
+            clearly do not exist and are not a minor spelling variant of a schema table name, timeouts, and
+            memory-limit errors. Only nodes that were not terminated by the proxy, have not reached the maximum
+            number of turns, and can construct a rewrite state proceed to the next-layer frontier. When the frontier
+            exceeds <code>beam_size=2</code>, the beam is not chosen as the top 2 by model log probability, nor
+            ranked by the node's final gold reward; instead a proxy score is computed from execution signals visible
+            to the agent during the rollout:</p>
+          <div class="equation" aria-label="Beam proxy score formula">proxy(n) =
+            +0.2 if the SQL is successfully parsed; otherwise −2.0
+            +1.0 if the SQL is executable; otherwise −0.5
+            +0.2 if the SQL is executable and its result is not an empty set</div>
+          <p>This experiment sets <code>beam_tau=1.0</code> and <code>beam_epsilon_random=0.1</code>. At each
+            selection step, with 10% probability 2 nodes are retained by uniform random sampling without replacement
+            from the frontier; in the remaining 90% of cases, nodes are sampled by weighted, without-replacement
+            sampling according to <code>exp(proxy(n) / tau)</code>, rather than deterministically choosing the two
+            highest-scoring nodes. If the frontier has 2 or fewer nodes, all are retained. The random numbers are
+            derived from the task's <code>root_uid</code>, so beam sampling is reproducible given identical frontier
+            contents and order.</p>
+          <p>Each of the 2 retained parent nodes per layer continues to generate 4 branches. The maximum number of
+            rollout slots for a three-turn tree search is therefore
+            <code>4 + (3 − 1) × 2 × 4 = 20</code>: 4 nodes in the first turn, and up to 8 nodes in each of the
+            second and third turns.</p>
+        </section>
+
+        <section aria-labelledby="grpo-results">
+          <h2 id="grpo-results">2. Results</h2>
+          <p>S3 reaches an execution accuracy of 80.67% on the 300 validation samples, the highest value in this
+            selection round, 3.33 percentage points above the SFT-Merged baseline (77.33%) that carries no GRPO
+            adapter. S1's execution accuracy is 80.33%, only 0.33 percentage points below S3; since the two groups
+            also differ in batch size, number of rollouts, and advantage estimator, and there is no multi-seed
+            repetition, this 0.33-point gap cannot be attributed to an independent benefit of tree rollout. S2
+            reaches 79.67%, 0.66 percentage points below its parameter-matched counterpart S1; S4 reaches 76.00%,
+            4.67 percentage points below its parameter-matched counterpart S3, and 1.33 percentage points below the
+            SFT-Merged baseline. Ranked by current point estimate, the order is S3, S1, S2, SFT-Merged baseline, S4.</p>
+          <p>Note that the S4 checkpoint in Table 3 comes from the earlier <code>max(F, beta × I_executable)</code>
+            implementation; the current code has since switched to a group-gated fallback advantage, so this
+            historical S4 result does not represent the effect of the new S4 design.</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Scheme</th>
+                    <th>Sampling and reward</th>
+                    <th>Training setup</th>
+                    <th>Execution accuracy</th>
+                    <th>Correct</th>
+                    <th>Executable rate</th>
+                    <th>vs. baseline</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>SFT-Merged baseline</td>
+                    <td>14B base + merged SFT LoRA; no GRPO adapter</td>
+                    <td>GRPO step 0</td>
+                    <td>77.33%</td>
+                    <td>232/300</td>
+                    <td>98.33%</td>
+                    <td>0.00pp</td>
+                    <td><span class="status">Reference line</span></td>
+                  </tr>
+                  <tr>
+                    <td>S1</td>
+                    <td>chain, final reward</td>
+                    <td><code>bs=4</code>, <code>n=8</code></td>
+                    <td>80.33%</td>
+                    <td>241/300</td>
+                    <td>98.33%</td>
+                    <td>+3.00pp</td>
+                    <td><span class="status">Point estimate improved</span></td>
+                  </tr>
+                  <tr>
+                    <td>S2</td>
+                    <td>chain, final + executable fallback</td>
+                    <td><code>bs=4</code>, <code>n=8</code>, <code>beta=0.1</code></td>
+                    <td>79.67%</td>
+                    <td>239/300</td>
+                    <td>98.67%</td>
+                    <td>+2.33pp</td>
+                    <td><span class="status">Point estimate improved</span></td>
+                  </tr>
+                  <tr class="best-row">
+                    <td><strong>S3</strong></td>
+                    <td>tree, final reward</td>
+                    <td><code>bs=2</code>, <code>n=20</code>, <code>branch=4</code>, <code>beam=2</code></td>
+                    <td><strong>80.67%</strong></td>
+                    <td><strong>242/300</strong></td>
+                    <td>96.67%</td>
+                    <td><strong>+3.33pp</strong></td>
+                    <td><span class="status best">Highest point estimate</span></td>
+                  </tr>
+                  <tr>
+                    <td>S4</td>
+                    <td>tree, final + executable fallback (old max implementation)</td>
+                    <td><code>bs=2</code>, <code>n=20</code>, <code>beta=0.1</code></td>
+                    <td>76.00%</td>
+                    <td>228/300</td>
+                    <td>97.33%</td>
+                    <td>-1.33pp</td>
+                    <td><span class="status">Not adopted for now</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 3. Evaluation results for the four GRPO LoRA step-100 checkpoints against the
+              shared SFT-Merged base policy. All results come from the same 300 validation samples.</p>
+          </div>
+
+          <p>Because all five evaluations use exactly the same 300 UIDs, paired tests are possible. Relative to the
+            SFT-Merged baseline, the "GRPO-exclusive correct : baseline-exclusive correct" counts for S1–S4 are
+            18:9, 18:11, 26:16, and 22:26, respectively, with exact McNemar <em>p</em> values of 0.122, 0.265, 0.164,
+            and 0.665; none of the individual GRPO checkpoints therefore differs from the baseline at the 0.05
+            significance level. S3 and S1 each answer correctly on only 19 and 18 exclusive samples respectively, a
+            net difference of just 1, with <em>p</em>=1.000. S1 vs. S2 exclusive-correct counts are 17 to 15,
+            <em>p</em>=0.860. S3 vs. S4 exclusive-correct counts are 24 to 10, <em>p</em>=0.024; this is an
+            exploratory comparison without correction for multiple comparisons, and none of these evaluation tests
+            account for variance introduced by training seed.
+          </p>
+          <p>Executable rate and execution accuracy are not monotonically related. S2's executable rate is 98.67%,
+            the highest among the five groups, yet its execution accuracy remains below S1's; S3's executable rate
+            is 96.67%, lower than both S1 and S2, yet it attains the highest point estimate. The current results can
+            only show that the completed S2 and old-implementation S4 checkpoints did not convert executable
+            fallback into higher semantic execution accuracy.</p>
+        </section>
+
+        <section aria-labelledby="grpo-tuning">
+          <h2 id="grpo-tuning">3. S3 Hyperparameter Tuning</h2>
+          <p>S3 was selected as the engineering candidate for hyperparameter tuning because it had the highest
+            step-100 point estimate and does not use the executable fallback; this selection does not imply S3 has
+            been shown to be significantly better than S1 or the SFT-Merged baseline. Stage one fixes S3's
+            SFT-Merged base, fresh GRPO LoRA configuration, tree rollout, batch size, <code>temperature=1.0</code>,
+            and <code>gamma=0.9</code>, and studies only reference KL and PPO epoch. All candidates are evaluated
+            uniformly at global step 100 on the same 300 validation samples.
+          </p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Candidate</th>
+                    <th>KL coefficient</th>
+                    <th>PPO epoch</th>
+                    <th>Eval step</th>
+                    <th>Execution accuracy</th>
+                    <th>Executable rate</th>
+                    <th>Avg. turns</th>
+                    <th>Rewrite success</th>
+                    <th>Turn-limit rate</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>S3 historical baseline</td>
+                    <td>reference KL off</td>
+                    <td>1</td>
+                    <td>100</td>
+                    <td>80.67%</td>
+                    <td>96.67%</td>
+                    <td>1.763</td>
+                    <td>62.20%</td>
+                    <td>33.33%</td>
+                    <td><span class="status">Historical reference</span></td>
+                  </tr>
+                  <tr>
+                    <td>S3 epoch sweep</td>
+                    <td>reference KL off</td>
+                    <td>2</td>
+                    <td>100</td>
+                    <td>65.33%</td>
+                    <td>92.67%</td>
+                    <td>2.553</td>
+                    <td>57.38%</td>
+                    <td>75.33%</td>
+                    <td><span class="status">Clear regression</span></td>
+                  </tr>
+                  <tr>
+                    <td>S3 epoch sweep</td>
+                    <td>reference KL off</td>
+                    <td>3</td>
+                    <td>100</td>
+                    <td>77.67%</td>
+                    <td>96.33%</td>
+                    <td>1.490</td>
+                    <td>50.59%</td>
+                    <td>20.33%</td>
+                    <td><span class="status">Evaluated</span></td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>S3 KL sweep</td>
+                    <td>0.01</td>
+                    <td>2</td>
+                    <td>100</td>
+                    <td><strong>79.67%</strong></td>
+                    <td>98.33%</td>
+                    <td>1.687</td>
+                    <td><strong>66.09%</strong></td>
+                    <td>28.67%</td>
+                    <td><span class="status best">Best at step 100 so far</span></td>
+                  </tr>
+                  <tr>
+                    <td>S3 KL sweep</td>
+                    <td>0.02</td>
+                    <td>2</td>
+                    <td>100</td>
+                    <td>79.00%</td>
+                    <td>98.33%</td>
+                    <td>1.750</td>
+                    <td>60.66%</td>
+                    <td>31.33%</td>
+                    <td><span class="status">Evaluated</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 4. S3 reference-KL and PPO-epoch tuning results. All candidates fix
+              <code>temperature=1.0</code> and <code>gamma=0.9</code>, use the same 300 validation samples, and are
+              evaluated uniformly at global step 100.
+            </p>
+          </div>
+          <p>Among the four step-100 candidates, <code>KL=0.01, PPO epoch=2</code> has the highest execution
+            accuracy at 79.67%. With KL off, epoch 2 regresses noticeably to 65.33%, average turns reach 2.553, and
+            75.33% of samples exhaust all three turns. Relative to the SFT-Merged policy, this checkpoint's execution
+            accuracy drops by 12.00 percentage points, the rewrite rate rises from 28.33% to 79.00%, and the
+            turn-limit-exhaustion rate rises from 21.67% to 75.33%; training logs also show average turns and
+            response length continuing to rise over the later stages. This result should therefore first be
+            interpreted as cumulative behavioral drift in the run without reference KL, rather than evaluation
+            noise.</p>
+          <p><code>KL=0.01, PPO epoch=2</code> restores execution accuracy to 79.67%, while lowering average turns
+            and the turn-limit-exhaustion rate to 1.687 and 28.67% respectively; raising KL further to 0.02 brings
+            no additional gain, and execution accuracy instead drops by 0.67 percentage points. This result provides
+            a clear engineering basis for using KL=0.01 to stabilize the policy, but the older experiment logs also
+            show <code>data.seed=None</code> and <code>shuffle=True</code>, so the differences between runs cannot
+            be fully attributed causally to KL or PPO epoch.
+          </p>
+        </section>
+
+        <section aria-labelledby="grpo-temperature-gamma">
+          <h2 id="grpo-temperature-gamma">4. Temperature and Gamma Tuning</h2>
+          <p>Stage two fixes S3 tree-final, <code>KL=0.01</code>, <code>PPO epoch=2</code>, actor learning rate 5e-5,
+            batch size 2, branch 4, beam 2, and max turns 3, and studies only rollout temperature and tree reward
+            gamma. To remove the confound of unfixed data order from the previous stage, all three runs explicitly
+            set <code>data.seed=42</code> and <code>rollout.seed=42</code>, train for 100 steps, and are evaluated
+            uniformly at global step 100 on the same 300 validation samples.
+          </p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Candidate</th>
+                    <th>Temperature</th>
+                    <th>Gamma</th>
+                    <th>KL</th>
+                    <th>PPO epoch</th>
+                    <th>Seed</th>
+                    <th>Eval step</th>
+                    <th>Execution accuracy</th>
+                    <th>Executable rate</th>
+                    <th>Avg. turns</th>
+                    <th>Rewrite rate</th>
+                    <th>Turn-limit rate</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="best-row">
+                    <td>Fixed-seed baseline</td>
+                    <td>1.0</td>
+                    <td>0.9</td>
+                    <td>0.01</td>
+                    <td>2</td>
+                    <td>42</td>
+                    <td>100</td>
+                    <td><strong>81.33%</strong></td>
+                    <td>98.00%</td>
+                    <td><strong>1.477</strong></td>
+                    <td><strong>28.33%</strong></td>
+                    <td><strong>16.33%</strong></td>
+                    <td><span class="status best">Current best</span></td>
+                  </tr>
+                  <tr>
+                    <td>Temperature sweep</td>
+                    <td>1.2</td>
+                    <td>0.9</td>
+                    <td>0.01</td>
+                    <td>2</td>
+                    <td>42</td>
+                    <td>100</td>
+                    <td>79.67%</td>
+                    <td><strong>98.33%</strong></td>
+                    <td>1.667</td>
+                    <td>38.00%</td>
+                    <td>27.33%</td>
+                    <td><span class="status">No positive gain</span></td>
+                  </tr>
+                  <tr>
+                    <td>Gamma sweep</td>
+                    <td>1.0</td>
+                    <td>0.8</td>
+                    <td>0.01</td>
+                    <td>2</td>
+                    <td>42</td>
+                    <td>100</td>
+                    <td>76.33%</td>
+                    <td>94.00%</td>
+                    <td>2.067</td>
+                    <td>55.67%</td>
+                    <td>49.00%</td>
+                    <td><span class="status">Clear regression</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 5. Fixed-seed univariate experiments over temperature and gamma. All three runs
+              complete a full 100 training steps and are evaluated on the same 300 validation samples at global
+              step 100.</p>
+          </div>
+          <p>The fixed-seed baseline has the highest execution accuracy, at 81.33%. Raising temperature from 1.0 to
+            1.2 lowers execution accuracy by 1.67 percentage points; the paired result is 14 questions exclusive to
+            the baseline versus 9 exclusive to temperature=1.2, exact McNemar <em>p</em>=0.405, which is not yet
+            enough to demonstrate a statistical difference between the two, but temperature=1.2 has higher average
+            turns, rewrite rate, and turn-limit-exhaustion rate, so it offers no engineering benefit. Lowering gamma
+            from 0.9 to 0.8 drops execution accuracy by 5.00 percentage points and executable rate by 4.00 percentage
+            points, and raises the turn-limit-exhaustion rate from 16.33% to 49.00%; the paired result is 30
+            questions exclusive to the baseline versus 15 exclusive to gamma=0.8, uncorrected exact McNemar
+            <em>p</em>=0.0357. After Holm correction across the two preregistered primary comparisons, this
+            difference becomes <em>p</em>=0.0714, so the statistical conclusion remains cautious, but gamma=0.8
+            should be rejected on engineering grounds.
+          </p>
+          <p>Since neither univariate change produced a positive point estimate, the interaction combination
+            <code>temperature=1.2, gamma=0.8</code> was not run. The rollout-scale and search-structure comparison
+            therefore fixes <code>temperature=1.0, gamma=0.9, KL=0.01, PPO epoch=2</code>.
+          </p>
+        </section>
+
+        <section aria-labelledby="grpo-rollout-comparison">
+          <h2 id="grpo-rollout-comparison">5. Rollout Scale and Search Structure Comparison</h2>
+          <p>All three formal training runs start from
+            <code>Qwen2.5-Coder-14B-Instruct-SFT-Ratio-Gold3200-D1137-R463-LR5e5-R32-Merged</code>, fixing train
+            batch size=4, KL=0.01, PPO epoch=2, temperature=1.0, gamma=0.9, dynamic batching, remove padding, layered
+            summon, number of training steps, and random seed, and are evaluated using the same validation subset
+            and greedy agent protocol. The two S3 experiments change branch, beam, and rollout-slot count
+            simultaneously; S1 also changes the chain/tree rollout, reward scheme, and advantage estimator, so what
+            is compared here is the complete scheme, not the effect of any single parameter in isolation.</p>
+          <p>Training and inference should first be distinguished: chain is not an outdated scheme but a strong
+            baseline in current GRPO/RLVR and CoT reasoning. Both DeepSeekMath's and DeepSeek-R1's GRPO adopt the
+            chain-output unit of "sample multiple complete outputs for the same question and estimate advantage with
+            within-group reward"; CoT prompting, self-consistency, and best-of-N inference likewise all sample, vote,
+            or rerank over multiple independent reasoning chains. Chain's engineering advantages are simplicity, easy
+            parallelism, direct alignment with the final-answer verifier or SQL execution reward, and no additional
+            bias from a beam/proxy score. Under this experiment's setting — <code>max_turns=3</code>, a verifiable
+            final SQL, and evaluation using the greedy agent protocol — S1 chain <code>n=8</code> becoming the
+            default candidate is therefore supported by both the literature and engineering considerations.
+          </p>
+          <p>The tree-based GRPO/agent-RL literature supports a different direction: when a task is long-horizon,
+            multi-hop, involves expensive tool calls, or has high uncertainty in intermediate decisions, organizing a
+            shared prefix into a tree lets the common prefix be reused under a fixed token or tool-call budget, and
+            lets the leaf node's final reward be backed up into branch-, step-, or token-level advantage. Tree-GRPO
+            also shows that intra-tree GRPO and step-level DPO share the same preference-gradient structure. The main
+            theoretical benefit of tree is thus not that "more sampling is necessarily more accurate," but better use
+            of the exploration budget and better credit assignment; these benefits, however, depend on task length,
+            branch position, the advantage estimator, and the rollout budget. This experiment's S3 tree-final is an
+            engineering-oriented tree-rollout variant for the SQL agent, and is not equivalent to the full
+            intra-tree/inter-tree advantage estimator of ICLR 2026 Tree-GRPO.</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Scheme</th>
+                    <th>Rollout slots</th>
+                    <th>Execution accuracy</th>
+                    <th>Executable rate</th>
+                    <th>Avg. turns</th>
+                    <th>Turn-limit rate</th>
+                    <th>Rewrite rate</th>
+                    <th>Rewrite success</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Full Mixed-SFT (no GRPO)</td>
+                    <td>—</td>
+                    <td>79.00%</td>
+                    <td>96.80%</td>
+                    <td>1.44</td>
+                    <td>18.80%</td>
+                    <td>25.20%</td>
+                    <td>57.14%</td>
+                  </tr>
+                  <tr>
+                    <td>S3 <code>branch=4</code> / <code>beam=2</code> / <code>n=20</code></td>
+                    <td>20</td>
+                    <td>83.67%</td>
+                    <td><strong>98.33%</strong></td>
+                    <td>1.46</td>
+                    <td>17.67%</td>
+                    <td>27.33%</td>
+                    <td><strong>68.29%</strong></td>
+                  </tr>
+                  <tr>
+                    <td>S3 <code>branch=4</code> / <code>beam=2</code> / <code>n=20</code> + DeepSeek checker</td>
+                    <td>20</td>
+                    <td><strong>86.00%</strong></td>
+                    <td><strong>98.33%</strong></td>
+                    <td>1.40</td>
+                    <td><strong>6.00%</strong></td>
+                    <td>29.67%</td>
+                    <td>66.29%</td>
+                  </tr>
+                  <tr>
+                    <td>S3 <code>branch=8</code> / <code>beam=1</code> / <code>n=24</code></td>
+                    <td>24</td>
+                    <td>82.00%</td>
+                    <td><strong>98.33%</strong></td>
+                    <td>1.65</td>
+                    <td>28.00%</td>
+                    <td>35.67%</td>
+                    <td>65.42%</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>S1 chain <code>n=8</code> <span class="status best">efficiency candidate</span></td>
+                    <td>8</td>
+                    <td>83.33%</td>
+                    <td>97.67%</td>
+                    <td><strong>1.38</strong></td>
+                    <td><strong>14.33%</strong></td>
+                    <td><strong>22.33%</strong></td>
+                    <td>59.70%</td>
+                  </tr>
+                  <tr>
+                    <td>S1 chain <code>n=8</code> + DAPO clip-higher</td>
+                    <td>8</td>
+                    <td>80.33%</td>
+                    <td><strong>98.33%</strong></td>
+                    <td><strong>1.26</strong></td>
+                    <td><strong>9.67%</strong></td>
+                    <td><strong>16.00%</strong></td>
+                    <td>60.42%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 6. Agent evaluation for the Full Mixed-SFT baseline, four rollout schemes, and
+              one DeepSeek-checker re-evaluation. The four GRPO training schemes use the same base policy and
+              training-stability configuration; other than the DeepSeek-checker row, the evaluation protocol is
+              identical throughout. The DeepSeek-checker row reuses the S3 <code>branch=4/beam=2/n=20</code>
+              checkpoint with only the checker swapped; bold marks the key metrics in the table.</p>
+          </div>
+
+          <p>The original three groups' execution-accuracy point estimates span only 82.00%–83.67%, with no clear
+            separation among current results. S3 <code>branch=4/beam=2/n=20</code> has the highest accuracy, but only
+            0.33 percentage points above S1 <code>n=8</code>; this small difference is not enough to support a
+            conclusion that tree rollout is more accurate. S3 <code>branch=8/beam=1/n=24</code> is 1.67 percentage
+            points below the former, showing no benefit from expanding branch and rollout slots. DAPO clip-higher's
+            accuracy is 80.33%, below the original S1 n=8, but its average turns, turn-limit-exhaustion rate, and
+            rewrite rate are all lower.
+          </p>
+          <p>Without changing the S3 policy, replacing the checker with the remote DeepSeek API raises execution
+            accuracy to 86.00% and lowers the turn-limit-exhaustion rate to 6.00%. This result shows that the current
+            agent evaluation is highly sensitive to checker quality, and also supports treating checker calibration
+            as an independent optimization direction going forward, rather than simply scaling up rollout or
+            training steps.</p>
+          <p>Behavioral and resource metrics provide a clearer engineering distinction. Going from S3 n=20 to S3
+            n=24, average turns rise from 1.46 to 1.65, the turn-limit-exhaustion rate rises from 17.67% to 28.00%,
+            and the rewrite rate rises from 27.33% to 35.67%, while training compute and stage-boundary memory
+            pressure are also higher, so it is no longer adopted. S1 n=8's accuracy is essentially tied with S3 n=20,
+            but its average turns, turn-limit-exhaustion rate, and rewrite rate are all the lowest, and it uses the
+            fewest rollout slots, making it the best-value default scheme currently available; when tree search needs
+            to be retained, use <code>branch=4/beam=2/n=20</code>.</p>
+        </section>
+
+        <footer class="source">
+          <div>References:</div>
+          <div><a href="https://arxiv.org/abs/2201.11903">Chain-of-Thought Prompting Elicits Reasoning in Large Language
+              Models</a></div>
+          <div><a href="https://arxiv.org/abs/2203.11171">Self-Consistency Improves Chain of Thought Reasoning in
+              Language Models</a></div>
+          <div><a href="https://arxiv.org/abs/2408.03314">Scaling LLM Test-Time Compute Optimally can be More Effective
+              than Scaling Model Parameters</a></div>
+          <div><a id="ref-deepseekmath" href="https://arxiv.org/abs/2402.03300">[2] DeepSeekMath: Pushing the Limits of
+              Mathematical Reasoning in Open Language Models</a></div>
+          <div><a id="ref-grpo-dpo" href="https://arxiv.org/abs/2510.00977">[3] It Takes Two: Your GRPO Is Secretly
+              DPO</a></div>
+          <div><a id="ref-deepseek-r1" href="https://arxiv.org/abs/2501.12948">[4] DeepSeek-R1: Incentivizing Reasoning
+              Capability in LLMs via Reinforcement Learning</a></div>
+          <div><a href="https://arxiv.org/abs/2305.18290">Direct Preference Optimization: Your Language Model is
+              Secretly a Reward Model</a></div>
+          <div><a href="https://arxiv.org/abs/2509.21240">Tree Search for LLM Agent Reinforcement Learning</a></div>
+          <div><a href="https://aclanthology.org/2025.acl-long.604/">TreeRL: LLM Reinforcement Learning with On-Policy
+              Tree Search</a></div>
+          <div><a href="https://arxiv.org/abs/2506.05183">TreeRPO: Tree Relative Policy Optimization</a></div>
+          <div><a href="https://arxiv.org/abs/2601.03703">TreeAdv: Tree-Structured Advantage Redistribution for
+              Group-Based RL</a></div>
+          <div><a id="ref-sft-grpo-overlap" href="https://arxiv.org/abs/2604.13515">[1] SFT-GRPO Data Overlap as a
+              Post-Training Hyperparameter for Autoformalization</a></div>
+        </footer>
+      </div>
+
+      <div class="grpo-subview" data-grpo-view="error-analysis" hidden>
+        <header class="paper-header">
+          <p class="paper-kicker">500-sample paired evaluation · seed 0</p>
+          <h1>GRPO Paired Error Analysis</h1>
+          <p class="paper-meta">S3 vs. SFT · S3 vs. S1</p>
+        </header>
+
+        <section class="abstract" aria-labelledby="error-analysis-abstract">
+          <h2 id="error-analysis-abstract">Abstract</h2>
+          <p>This page performs only post-training error analysis and does not participate in checkpoint selection
+            or hyperparameter tuning. SFT, S1 chain GRPO <code>n=8</code>, and S3 tree GRPO
+            <code>branch=4/beam=2/n=20</code> are all re-evaluated on the same 500 validation UIDs; all three groups
+            use the same chain greedy agent protocol, <code>temperature=0</code>, <code>max_turns=3</code>, and
+            <code>sample_seed=0</code>. This page therefore compares policies obtained from different training
+            strategies, without mixing in the additional compute benefit of tree test-time search.
+          </p>
+          <p>The paired results show that S3's 29 corrections relative to SFT are accompanied by 16 regressions, with
+            an exact two-sided McNemar test of <code>p=0.0725</code>; S3 relative to S1 shows 23 exclusive corrections
+            and 19 regressions, <code>p=0.6440</code>. Neither comparison reaches significance at
+            <code>α=0.05</code>, so the results should be reported as directional point estimates rather than a
+            confirmed overall advantage.
+          </p>
+        </section>
+
+        <section aria-labelledby="error-analysis-method">
+          <h2 id="error-analysis-method">1. Data and Method</h2>
+          <p>The analysis pairs results by UID, verifying the UID, question, and gold SQL of all three result sets
+            record by record; all 500 records align, with no missing, duplicate, or misordered entries. The primary
+            analysis pre-specifies only two comparisons: S3 vs. SFT, used to assess how GRPO shifts errors relative
+            to the initialization policy, and S3 vs. S1, used to compare the tree-trained and chain-trained policies.
+            The McNemar test uses only the samples where the two policies' results disagree, with the exact
+            two-sided p-value from the binomial distribution.</p>
+
+        </section>
+
+        <section aria-labelledby="error-analysis-paired">
+          <h2 id="error-analysis-paired">2. Error Migration and McNemar Tests</h2>
+
+          <h3>2.1 S3 vs. SFT</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>SFT \ S3</th>
+                    <th>S3 correct</th>
+                    <th>S3 incorrect</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>SFT correct</td>
+                    <td>383</td>
+                    <td>16</td>
+                    <td>399</td>
+                  </tr>
+                  <tr>
+                    <td>SFT incorrect</td>
+                    <td><strong>29</strong></td>
+                    <td>72</td>
+                    <td>101</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 1. Paired migration for S3 relative to SFT. 29 samples were corrected, 16
+              regressed, for 45 discordant pairs in total.</p>
+          </div>
+          <p>Among the 45 discordant samples, the ratio of corrections to regressions is <code>29/16</code>, for a
+            matched odds ratio of <code>1.81</code>. The exact two-sided McNemar test gives <code>p=0.07245</code>,
+            indicating that the direction favoring more corrections than regressions is worth further verification,
+            but the current 500 samples are not enough to reject, at the 5% level, the null hypothesis that migration
+            probabilities are equal in both directions.</p>
+
+          <h3>2.2 S3 vs. S1</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>S1 \ S3</th>
+                    <th>S3 correct</th>
+                    <th>S3 incorrect</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>S1 correct</td>
+                    <td>389</td>
+                    <td>19</td>
+                    <td>408</td>
+                  </tr>
+                  <tr>
+                    <td>S1 incorrect</td>
+                    <td><strong>23</strong></td>
+                    <td>69</td>
+                    <td>92</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 2. Paired migration for S3 relative to S1. S3 is exclusively correct on 23
+              samples, S1 on 19, for 42 discordant pairs in total.</p>
+          </div>
+          <p>Among the 42 discordant samples, the ratio of S3-exclusive to S1-exclusive correct is <code>23/19</code>,
+            for a matched odds ratio of <code>1.21</code>, with an exact two-sided McNemar test of
+            <code>p=0.64397</code>. This result provides no statistical evidence that the tree-trained policy is more
+            accurate than the chain-trained policy, consistent with the main experiment's engineering conclusion that
+            "the two point estimates are close, and S1 uses fewer rollout slots."</p>
+        </section>
+
+        <section aria-labelledby="error-analysis-profile">
+          <h2 id="error-analysis-profile">3. Failure Output Profile</h2>
+          <p>Failures in all three groups are still dominated by "SQL executes but is semantically incorrect" rather
+            than syntax errors. The behavioral tags below come from the complete agent trace and can be determined
+            directly from the logs; a single failure can belong to multiple categories at once, so the columns do
+            not sum to the total failure count.</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Policy</th>
+                    <th>Total failures</th>
+                    <th>Executable but semantically wrong</th>
+                    <th>Execution/protocol failure</th>
+                    <th>Turn-limit exhausted among failures</th>
+                    <th>Checker accepted incorrect SQL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>SFT</td>
+                    <td>101</td>
+                    <td>87</td>
+                    <td>14</td>
+                    <td>38</td>
+                    <td>63</td>
+                  </tr>
+                  <tr>
+                    <td>S1</td>
+                    <td>92</td>
+                    <td>78</td>
+                    <td>14</td>
+                    <td>39</td>
+                    <td>53</td>
+                  </tr>
+                  <tr>
+                    <td>S3</td>
+                    <td><strong>88</strong></td>
+                    <td>77</td>
+                    <td><strong>11</strong></td>
+                    <td>41</td>
+                    <td><strong>49</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 3. Behavioral facts of failure outputs. "Checker accepted incorrect SQL" means
+              the checker's final output was <code>THE QUERY IS CORRECT.</code> while the execution reward was 0.</p>
+          </div>
+
+          <p>S3 lowers the failure count from SFT's 101 to 88, and also lowers non-executable/protocol failures from
+            14 to 11; but 77 of its 88 failures are still executable, indicating that the main remaining bottleneck
+            is semantic constraints rather than SQL syntax. Among S3's failures, 41 exhaust all three turns, more
+            than SFT's 38; this is consistent with S3's higher average number of turns, and also shows that a
+            stronger policy has not eliminated checker-driven ineffective repairs.</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Policy</th>
+                    <th>Join path/key</th>
+                    <th>Schema linking</th>
+                    <th>Predicate/value</th>
+                    <th>Nested/set</th>
+                    <th>Aggregation</th>
+                    <th>DISTINCT/order/limit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>SFT</td>
+                    <td>51</td>
+                    <td>51</td>
+                    <td>48</td>
+                    <td>21</td>
+                    <td>12</td>
+                    <td>13</td>
+                  </tr>
+                  <tr>
+                    <td>S1</td>
+                    <td>45</td>
+                    <td>46</td>
+                    <td>36</td>
+                    <td>27</td>
+                    <td>15</td>
+                    <td>9</td>
+                  </tr>
+                  <tr>
+                    <td>S3</td>
+                    <td>40</td>
+                    <td>39</td>
+                    <td>46</td>
+                    <td>25</td>
+                    <td>16</td>
+                    <td>9</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 4. Candidate tags for structural differences between failed SQL and gold SQL.
+              Multiple tags are allowed; they are meant to organize manual review and should not be interpreted
+              directly as mutually exclusive true root causes.</p>
+          </div>
+          <p>The structural tags show that S3 has fewer candidate join and schema-linking errors relative to SFT, but
+            predicate/value grounding remains the highest-frequency category. Combined with the representative cases,
+            subsequent improvements should prioritize three things: constraining the join graph, strengthening
+            negation-condition and aggregation semantics, and calibrating the checker's false rejection of already-
+            correct SQL and false acceptance of incorrect SQL.</p>
+        </section>
+
+        <section aria-labelledby="error-analysis-cases">
+          <h2 id="error-analysis-cases">4. Representative Cases</h2>
+          <p>The 8 cases below are selected from the paired discordant samples and the samples where all policies
+            fail, covering S3 corrections, S3 regressions, S1-exclusive corrections, and checker-induced behavioral
+            errors. The relevant schema retains only the tables and fields needed to determine the root cause.</p>
+
+          <details class="case-study" open>
+            <summary>Case 1 · <code>car_1:97</code> · S3 corrects the join path</summary>
+            <dl class="case-grid">
+              <dt>Question</dt>
+              <dd>Find the car models whose weight is below the average weight.</dd>
+              <dt>Relevant Schema</dt>
+              <dd>
+                <code>CAR_NAMES(MakeId, Model)</code>; <code>CARS_DATA(Id, Weight)</code>; <code>MODEL_LIST(ModelId, Maker, Model)</code>
+              </dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT T1.Model FROM CAR_NAMES T1 JOIN CARS_DATA T2 ON T1.MakeId = T2.Id
+WHERE T2.Weight &lt; (SELECT AVG(Weight) FROM CARS_DATA)</code></pre>
+              </dd>
+              <dt>Model Trajectory</dt>
+              <dd>SFT directly joins <code>CARS_DATA</code> to <code>MODEL_LIST</code>, and the checker mistakenly
+                accepts it as correct; S1 stays on the wrong <code>MODEL_LIST</code> path across all three turns.
+                S3 rewrites the over-joined four-table query as <code>CAR_NAMES ↔ CARS_DATA</code>, ultimately
+                reaching reward=1.
+              </dd>
+              <dt>Execution Result</dt>
+              <dd>SFT returns 12 rows of incorrect makers; S3's final SQL returns 230 rows of the target model and
+                achieves execution reward=1. Meanwhile, the checker repeatedly outputs
+                <code>THE QUERY IS INCORRECT.</code>, showing that the in-trajectory self-check is inconsistent with
+                the final execution verdict.
+              </dd>
+              <dt>Root Cause</dt>
+              <dd>Confusion between schema linking and join keys; the checker falsely rejects a correct rewrite.</dd>
+              <dt>Improvement</dt>
+              <dd>Constrain candidate joins using the schema's foreign-key graph, and calibrate the checker with an
+                execution-equivalence signal.</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>Case 2 · <code>museum_visit:427</code> · S3 correctly models the complement set</summary>
+            <dl class="case-grid">
+              <dt>Question</dt>
+              <dd>Count the visitors who have not visited any museum opened after 2010.</dd>
+              <dt>Relevant Schema</dt>
+              <dd>
+                <code>visitor(Id)</code>; <code>museum(Museum_ID, Open_Year)</code>; <code>visit(Museum_ID, visitor_ID)</code>
+              </dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT COUNT(*) FROM visitor WHERE Id NOT IN (
+  SELECT visitor_ID FROM museum JOIN visit USING (Museum_ID) WHERE Open_Year &gt; 2010
+)</code></pre>
+              </dd>
+              <dt>Model Trajectory</dt>
+              <dd>SFT first counts people who visited a museum opened after 2010, then flips the condition to
+                <code>&lt;= 2010</code>; S1 excludes museums only within the visit table, missing people who never
+                visited any museum at all. S3 constructs the <code>NOT IN</code> over the complete visitor universe.</dd>
+              <dt>Execution Result</dt>
+              <dd>Both SFT and S1 return 2; S3 returns 3, matching gold.</dd>
+              <dt>Root Cause</dt>
+              <dd>Wrong choice of universe for the negated condition — a predicate-grounding and nested anti-join
+                error.</dd>
+              <dt>Improvement</dt>
+              <dd>Establish an explicit anti-join template for "has not done any X," and check whether the outer
+                entity set is complete.</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>Case 3 · <code>network_1:898</code> · Corrects the column semantics of a set operation</summary>
+            <dl class="case-grid">
+              <dt>Question</dt>
+              <dd>Find the IDs of high-school students who both have friends and are liked by others.</dd>
+              <dt>Relevant Schema</dt>
+              <dd><code>Friend(student_id, friend_id)</code>; <code>Likes(student_id, liked_id)</code></dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT student_id FROM Friend INTERSECT SELECT liked_id FROM Likes</code></pre>
+              </dd>
+              <dt>Model Trajectory</dt>
+              <dd>SFT uses <code>Likes.student_id</code> across all three turns, ignoring the checker's feedback;
+                S1 and S3 use <code>liked_id</code>. S1 is repeatedly falsely rejected by the checker but eventually
+                returns to the correct SQL anyway; S3 gets it right in one turn.</dd>
+              <dt>Execution Result</dt>
+              <dd>SFT returns 8 incorrect IDs; S1/S3 return a different set of 8 IDs matching gold.</dd>
+              <dt>Root Cause</dt>
+              <dd>Confusion over the role of the right-hand column in a set operation, plus repeated generation of
+                the same incorrect SQL.</dd>
+              <dt>Improvement</dt>
+              <dd>Add column-role descriptions to the schema representation, and add no-progress detection for
+                repeated identical SQL.</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>Case 4 · <code>dog_kennels:976</code> · S3 mis-writes temporal semantics as a numeric maximum</summary>
+            <dl class="case-grid">
+              <dt>Question</dt>
+              <dd>How much did the most recent treatment cost?</dd>
+              <dt>Relevant Schema</dt>
+              <dd><code>Treatments(cost_of_treatment, date_of_treatment)</code></dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT cost_of_treatment FROM Treatments ORDER BY date_of_treatment DESC LIMIT 1</code></pre>
+              </dd>
+              <dt>Model Trajectory</dt>
+              <dd>Both SFT and S1 generate gold-equivalent SQL in one turn; S3 generates
+                <code>MAX(cost_of_treatment)</code>, which the checker incorrectly accepts, stopping early.</dd>
+              <dt>Execution Result</dt>
+              <dd>The most recent treatment cost is 407; S3 returns the all-time highest cost, 945.</dd>
+              <dt>Root Cause</dt>
+              <dd>"Most recent" is incorrectly mapped to a numeric maximum — a temporal-predicate and ORDER
+                BY/LIMIT semantic error.</dd>
+              <dt>Improvement</dt>
+              <dd>Add contrastive examples for temporal superlatives, and require the checker to verify that the
+                sort field matches the returned field.</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>Case 5 · <code>tvshow:620</code> · Checker reverts a correct intermediate SQL back to the wrong table</summary>
+            <dl class="case-grid">
+              <dt>Question</dt>
+              <dd>When did the episode "A Love of a Lifetime" air?</dd>
+              <dt>Relevant Schema</dt>
+              <dd><code>TV_series(Episode, Air_Date)</code>; <code>Cartoon(Title, Original_air_date)</code></dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT Air_Date FROM TV_series WHERE Episode = 'A Love of a Lifetime'</code></pre>
+              </dd>
+              <dt>Model Trajectory</dt>
+              <dd>SFT/S1 get it right in one turn. S3 mistakenly queries Cartoon in turn 1; by turn 2 it has already
+                generated the gold SQL and returned the correct date, but the checker still judges it incorrect; in
+                turn 3 it reverts back to Cartoon.</dd>
+              <dt>Execution Result</dt>
+              <dd>The correct SQL returns <code>September 24, 2007</code>; the incorrect Cartoon query returns an
+                empty set.</dd>
+              <dt>Root Cause</dt>
+              <dd>An initial schema-linking error compounded by checker false rejection, causing the repair to
+                regress.</dd>
+              <dt>Improvement</dt>
+              <dd>Save and compare historical execution results, and impose a constraint against a "empty set →
+                one reasonable result → empty set" regression.</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>Case 6 · <code>student_transcripts_tracking:564</code> · Different recovery ability under identical feedback</summary>
+            <dl class="case-grid">
+              <dt>Question</dt>
+              <dd>What is the average transcript date?</dd>
+              <dt>Relevant Schema</dt>
+              <dd><code>Transcripts(transcript_date)</code></dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT AVG(transcript_date) FROM Transcripts</code></pre>
+              </dd>
+              <dt>Model Trajectory</dt>
+              <dd>S1 is correct on the first turn, but after the checker questions the date averaging, it ultimately
+                switches to <code>AVG(julianday(...))</code>; S3 is likewise repeatedly rejected, but on turn 3
+                returns to the original correct SQL. SFT also ends up with an execution-equivalent result.</dd>
+              <dt>Execution Result</dt>
+              <dd>Gold/S3 return 1989.9333; S1 returns the Julian day value 2448053.8885.</dd>
+              <dt>Root Cause</dt>
+              <dd>The checker steers the repair in the wrong direction; S3 recovers before exhausting its turns,
+                while S1 is led astray by the feedback.</dd>
+              <dt>Improvement</dt>
+              <dd>Treat the checker's natural-language suggestions as low-confidence evidence, and allow retaining or
+                rolling back to the historical best SQL.</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>Case 7 · <code>student_transcripts_tracking:581</code> · An S1-exclusive correction of a projection error</summary>
+            <dl class="case-grid">
+              <dt>Question</dt>
+              <dd>Describe section h.</dd>
+              <dt>Relevant Schema</dt>
+              <dd><code>Sections(section_name, section_description, other_details)</code></dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT section_description FROM Sections WHERE section_name = 'h'</code></pre>
+              </dd>
+              <dt>Model Trajectory</dt>
+              <dd>SFT uses <code>SELECT *</code>; S3 selects <code>other_details</code>; both are mistakenly
+                accepted by the checker. S1 explicitly selects <code>section_description</code>.
+              </dd>
+              <dt>Execution Result</dt>
+              <dd>SFT returns the entire row, S3 returns <code>NULL</code>, and S1 returns the correct description,
+                <code>et</code>.</dd>
+              <dt>Root Cause</dt>
+              <dd>Projection grounding between the natural-language word "describe" and the schema's description
+                field.</dd>
+              <dt>Improvement</dt>
+              <dd>Strengthen lexical linking between question words and field names, and have the checker verify the
+                number and meaning of the output columns.</dd>
+            </dl>
+          </details>
+
+          <details class="case-study">
+            <summary>Case 8 · <code>student_transcripts_tracking:530</code> · Gold-equivalent SQL degrades after checker rejection</summary>
+            <dl class="case-grid">
+              <dt>Question</dt>
+              <dd>Find the semester name and semester id with the most enrolled students.</dd>
+              <dt>Relevant Schema</dt>
+              <dd>
+                <code>Semesters(semester_id, semester_name)</code>; <code>Student_Enrolment(semester_id, student_id)</code>
+              </dd>
+              <dt>Gold SQL</dt>
+              <dd>
+                <pre><code>SELECT T1.semester_name, T1.semester_id
+FROM Semesters T1 JOIN Student_Enrolment T2 ON T1.semester_id = T2.semester_id
+GROUP BY T1.semester_id ORDER BY COUNT(*) DESC LIMIT 1</code></pre>
+              </dd>
+              <dt>Model Trajectory</dt>
+              <dd>SFT/S1 return incorrect columns such as student_id from the very first turn. S3's first turn is
+                equivalent to the gold SQL and returns the correct semester, but the checker judges it incorrect;
+                over the next two turns it successively drops the ordering/limit and then adds individual-student
+                fields, ending at reward=0.</dd>
+              <dt>Execution Result</dt>
+              <dd>S3's first turn returns <code>('summer 2010', 2)</code>; the final incorrect SQL returns extra
+                student id/name fields.</dd>
+              <dt>Root Cause</dt>
+              <dd>Checker false rejection directly causes a "correct → incorrect" behavioral regression — a
+                high-priority defect in the current plan-execute-repair loop.</dd>
+              <dt>Improvement</dt>
+              <dd>Retain a best-so-far SQL for any historical SQL that executes successfully and whose result shape
+                matches the question; disallow overwriting it without new evidence.</dd>
+            </dl>
+          </details>
+        </section>
+        <section aria-labelledby="error-analysis-limitations">
+          <h2 id="error-analysis-limitations">5. Conclusions and Limitations</h2>
+          <p>The 500-sample paired results support two restrained conclusions. First, S3 shows 29 instances of
+            "incorrect became correct" and 16 of "correct became incorrect" relative to SFT, but the exact McNemar
+            test has not yet crossed the 0.05 threshold. Second, S3 and S1 have similar exclusive-correct counts,
+            showing no stable strategy difference; combined with the main experiment's resource results, S1 remains
+            the cheaper default scheme.</p>
+          <p>The error cases further show that the most valuable improvement for the next stage is not simply
+            scaling up rollout, but improving checker precision and trajectory state management: prematurely
+            accepting incorrect SQL, repeatedly rejecting correct SQL, and the lack of a best-so-far rollback all
+            erode SQL capability the policy already has. The scope of this page's analysis is limited to the final
+            output and the selected trajectory, and does not further attribute causes within tree search's internal
+            candidate-branch process.</p>
+        </section>
+
+      </div>
+    </article>
+
+    <article id="panel-perf" class="tab-panel" role="tabpanel" aria-labelledby="tab-perf">
+      <header class="paper-header">
+        <p class="paper-kicker">4× H100 · verl / Ray / vLLM</p>
+        <h1>GRPO Training and Rollout Performance Analysis</h1>
+        <p class="paper-meta">Pipeline profiling</p>
+      </header>
+
+      <div class="perf-subview" data-perf-view="bottleneck">
+        <h2 class="study-title">Locating GRPO/verl Bottlenecks</h2>
+
+        <section class="abstract" aria-labelledby="perf-abstract">
+          <h2 id="perf-abstract">Abstract</h2>
+          <p>Under the historical full-summon CPU-offload path, Actor→vLLM synchronization took 44.3 seconds, with
+            CPU memory approaching 470GB. Switching to layered summon reduces synchronization time to 7.2 seconds,
+            with peak per-GPU memory of about 59.9GB. Enabling <code>dynamic_bsz</code> and
+            <code>remove_padding</code> lowers policy optimization time from 30.864 seconds to 3.670 seconds. Raising
+            rollout capacity from <code>seqs=4/tokens=4096</code> to <code>seqs=8/tokens=8192</code> lowers rollout
+            time from 24.558 seconds to 18.000 seconds, and average step time from 35.225 seconds to 28.629
+            seconds.</p>
+        </section>
+
+        <section aria-labelledby="perf-question">
+          <h2 id="perf-question">1. Research Questions</h2>
+          <p>Under a fixed S3 tree GRPO, KL=0.01, PPO epoch=2, 4×H100, and LoRA training stack, this section measures
+            rollout, old/reference log-prob, policy optimization, and Actor→vLLM synchronization time. The parameter
+            experiments compare micro batch, dynamic batching, remove padding, token cap, and vLLM rollout capacity,
+            and record peak GPU and CPU memory.</p>
+        </section>
+
+        <section aria-labelledby="perf-method">
+          <h2 id="perf-method">2. Method</h2>
+          <p>The object of analysis is the training log for S3 tree rollout at KL=0.01, PPO epoch=2. The policy still
+            consists of the SFT-Merged 14B base plus a fresh GRPO LoRA (rank=64, alpha=128, all-linear), with an
+            actor learning rate of <code>5e-5</code>. This run uses 4 H100s, a training batch size of 2, and 20
+            rollout slots, with <code>branch_n=4</code>, <code>beam_size=2</code>, and <code>max_turns=3</code>. KL
+            is introduced via <code>use_kl_loss=True</code>; actor parameters and optimizer state are not offloaded.
+          </p>
+          <p>This run has no separate reference worker. The reference log-prob is computed by the actor with its
+            LoRA adapter temporarily disabled, so the reference policy is the SFT-Merged base.</p>
+          <p>The historical log contains 22 complete timing steps. After dropping the first 5 warmup steps, total
+            time and the <code>gen</code>, <code>old_log_prob</code>, <code>ref</code>, <code>update_actor</code>,
+            and <code>update_weights</code> phases are computed over the remaining 17 steps. Below, the last two are
+            referred to as "policy optimization" and "Actor→vLLM synchronization" respectively. The parameter
+            experiments separately use a layered-summon run as the baseline.</p>
+          <p>The training-side baseline uses layered summon, with
+            <code>ppo_micro_batch_size_per_gpu=1</code>, <code>LOG_PROB_USE_DYNAMIC_BSZ=False</code>, and
+            <code>MODEL_USE_REMOVE_PADDING=False</code>, completing 5 steps. Three candidates are tested in turn:
+            micro batch=2; <code>dynamic_bsz=True/remove_padding=True/token cap=16384</code>; and token cap=32768.
+            Each candidate log runs for 10 steps, and the first 2 warmup steps are dropped, leaving 8 for statistics.</p>
+          <p>The rollout-capacity experiment fixes <code>dynamic_bsz=True</code>, <code>remove_padding=True</code>,
+            KL=0.01, PPO epoch=2, and layered summon. The baseline uses <code>max_num_seqs=4</code>,
+            <code>max_num_batched_tokens=4096</code>; the candidate raises both to <code>max_num_seqs=8</code>,
+            <code>max_num_batched_tokens=8192</code>. Both groups run for 10 steps, with statistics computed over the
+            last 8.</p>
+          <p><code>GPU_MONITOR</code> provides per-GPU memory and GPU utilization; verl actor perf metrics provide
+            actor allocated/reserved memory and CPU memory; historical cgroup/RSS records provide host memory for
+            the full-summon fallback. Memory values from different sources are reported separately.</p>
+          <p class="source">
+            Analysis logs: <code>artifacts/logs/verl/verl_grpo_s3_kl01_ep2_tree_final_14b_h100_4gpu_150step_bs2_n20_t10_turn3_g09_branch4_beam2.log</code>; <code>artifacts/logs/verl/verl_grpo_s3_summon_layered_14b_h100_4gpu_5step_bs2_n20_ep2.log</code>; <code>artifacts/logs/verl/verl_grpo_s3_update_actor_micro2_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>; <code>artifacts/logs/verl/verl_grpo_s3_update_actor_dynamic_bsz_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>; <code>artifacts/logs/verl/verl_grpo_s3_update_actor_dynamic_bsz_tok32768_14b_h100_4gpu_10step_bs2_n20_ep2.log</code>; <code>artifacts/logs/verl/verl_grpo_s3_rollout_concurrency_baseline_14b_h100_4gpu_10step_bs2_n20_ep2_seqs4_tok4096.log</code>; <code>artifacts/logs/verl/verl_grpo_s3_rollout_concurrency_seq8_tok8192_14b_h100_4gpu_10step_bs2_n20_ep2_seqs8_tok8192.log</code>
+          </p>
+        </section>
+
+        <section aria-labelledby="perf-results">
+          <h2 id="perf-results">3. Pipeline Results</h2>
+          <h3>3.1 Actor→vLLM Synchronization Fallback</h3>
+          <p>The historical run's average step time is 101.601 seconds, of which Actor→vLLM synchronization takes
+            44.328 seconds and policy optimization takes 29.047 seconds. This synchronization falls into the
+            full-summon CPU-offload fallback path: FSDP materializes and offloads the complete 14B state, and PEFT
+            then extracts the LoRA tensors; the payload actually sent to vLLM is still the LoRA adapter. The 44.328
+            seconds covers materializing the full state, offloading it, and extracting the adapter.</p>
+          <p><code>gen</code> averages 22.788 seconds, ranging 4.100–68.199 seconds. <code>old_log_prob</code>
+            averages 4.473 seconds; the <code>ref</code> forward pass, run by the actor with LoRA disabled, averages
+            0.959 seconds. old log-prob computes entropy, while reference does not. All 22 steps recorded a nonzero
+            <code>actor/kl_loss</code>.</p>
+          <p>The projections in Table 1 modify only one stage at a time, holding the other stages at their measured
+            mean. Synchronization, policy optimization, rollout, and old log-prob use "halved time"; reference uses
+            "time reduced to zero." Throughput change is computed as
+            <code>101.601 / projected_step_time − 1</code>.</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Stage</th>
+                    <th>Mean time</th>
+                    <th>Min</th>
+                    <th>Max</th>
+                    <th>Share of step</th>
+                    <th>Optimization scenario</th>
+                    <th>End-to-end gain</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="best-row">
+                    <td>Actor→vLLM sync</td>
+                    <td>44.328s</td>
+                    <td>43.970s</td>
+                    <td>44.783s</td>
+                    <td>43.6%</td>
+                    <td>Halved → 79.4s/step</td>
+                    <td>Throughput ~+27.9%</td>
+                    <td>full-summon CPU-offload</td>
+                  </tr>
+                  <tr>
+                    <td>Policy optimization</td>
+                    <td>29.047s</td>
+                    <td>28.734s</td>
+                    <td>29.576s</td>
+                    <td>28.6%</td>
+                    <td>Halved → 87.1s/step</td>
+                    <td>Throughput ~+16.7%</td>
+                    <td>29.047s/step</td>
+                  </tr>
+                  <tr>
+                    <td><code>rollout</code></td>
+                    <td>22.788s</td>
+                    <td>4.100s</td>
+                    <td>68.199s</td>
+                    <td>22.4%</td>
+                    <td>Halved → 90.2s/step</td>
+                    <td>Throughput ~+12.6%</td>
+                    <td>Range 4.100–68.199s</td>
+                  </tr>
+                  <tr>
+                    <td><code>old_log_prob</code></td>
+                    <td>4.473s</td>
+                    <td>4.343s</td>
+                    <td>4.887s</td>
+                    <td>4.4%</td>
+                    <td>Halved → 99.4s/step</td>
+                    <td>Throughput ~+2.3%</td>
+                    <td>4.4% step time</td>
+                  </tr>
+                  <tr>
+                    <td><code>reference</code></td>
+                    <td>0.959s</td>
+                    <td>0.941s</td>
+                    <td>1.068s</td>
+                    <td>0.9%</td>
+                    <td>Eliminated → 100.6s/step</td>
+                    <td>Throughput ~+1.0%</td>
+                    <td>actor base forward</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 1. Per-stage timing for the historical CPU-offload fallback run after dropping
+              the first 5 warmup steps.</p>
+          </div>
+
+          <p>CPU memory for the full-summon CPU-offload path approaches 470GB. Explicit full summon needed an
+            additional 1.03 GiB while a single GPU was already at 80,717 MiB, triggering a CUDA OOM. layered summon's
+            per-GPU peak is 59,893 MiB, with Actor→vLLM synchronization averaging 7.222 seconds.</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Sync path</th>
+                    <th>Per-GPU peak</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>full summon - CPU offload</td>
+                    <td>60.5GB</td>
+                    <td>GPU runs successfully; CPU memory approaches 470GB</td>
+                  </tr>
+                  <tr>
+                    <td>Explicit full summon</td>
+                    <td>needs an additional 1.03 GiB beyond 80,717 MiB</td>
+                    <td>Exceeds the 80GB per-GPU capacity; CUDA OOM</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>layered summon</td>
+                    <td>59,893 MiB (58.5 GiB)</td>
+                    <td><strong>GPU runs successfully; Actor CPU memory peak 141.5GB</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 2. Memory records for full-summon CPU-offload, explicit full summon, and
+              layered summon.</p>
+          </div>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>GPU</th>
+                    <th>Mean memory</th>
+                    <th>Peak memory</th>
+                    <th>Mean utilization</th>
+                    <th>Peak utilization</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>0</td>
+                    <td>35.1GB</td>
+                    <td>54.2GB</td>
+                    <td>26.8%</td>
+                    <td>100%</td>
+                  </tr>
+                  <tr>
+                    <td>1</td>
+                    <td>44.6GB</td>
+                    <td>60.0GB</td>
+                    <td>34.9%</td>
+                    <td>100%</td>
+                  </tr>
+                  <tr>
+                    <td>2</td>
+                    <td>44.8GB</td>
+                    <td>60.5GB</td>
+                    <td>44.5%</td>
+                    <td>100%</td>
+                  </tr>
+                  <tr>
+                    <td>3</td>
+                    <td>44.0GB</td>
+                    <td>59.8GB</td>
+                    <td>39.4%</td>
+                    <td>100%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 3. GPU_MONITOR statistics for the CPU-offload fallback run, 1,152 records in
+              total.</p>
+          </div>
+
+          <h3>3.2 Actor Update and Token Packing</h3>
+          <p>The layered baseline's average step time is 62.368 seconds: 30.864 seconds for policy optimization,
+            18.560 seconds for rollout, and 7.222 seconds for Actor→vLLM synchronization. Table 4 compares micro
+            batch and token packing configurations.</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Config</th>
+                    <th>Step</th>
+                    <th><code>rollout</code></th>
+                    <th><code>old_log_prob</code></th>
+                    <th><code>reference</code></th>
+                    <th>Policy update</th>
+                    <th>Actor→vLLM sync</th>
+                    <th>Policy update / 1k tokens</th>
+                    <th>Throughput</th>
+                    <th>vs. baseline</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Layered baseline: micro=1, dynamic=False, remove_padding=False</td>
+                    <td>62.368s</td>
+                    <td>18.560s</td>
+                    <td>4.773s</td>
+                    <td>0.941s</td>
+                    <td>30.864s</td>
+                    <td>7.222s</td>
+                    <td>3.144s</td>
+                    <td>43.247</td>
+                    <td>baseline</td>
+                  </tr>
+                  <tr>
+                    <td>micro=2, dynamic=False, remove_padding=False</td>
+                    <td>48.820s</td>
+                    <td>25.455s</td>
+                    <td>2.319s</td>
+                    <td>0.645s</td>
+                    <td>14.541s</td>
+                    <td>5.853s</td>
+                    <td>1.318s</td>
+                    <td>65.779</td>
+                    <td>step -21.7%; policy optimization -52.9%</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>dynamic=True, remove_padding=True, token cap=16384</td>
+                    <td>37.114s</td>
+                    <td>26.429s</td>
+                    <td>0.742s</td>
+                    <td>0.449s</td>
+                    <td>3.670s</td>
+                    <td>5.818s</td>
+                    <td>0.335s</td>
+                    <td>82.282</td>
+                    <td><strong>step -40.5%; policy optimization -88.1%</strong></td>
+                  </tr>
+                  <tr>
+                    <td>dynamic=True, remove_padding=True, token cap=32768</td>
+                    <td>32.017s</td>
+                    <td>21.347s</td>
+                    <td>0.807s</td>
+                    <td>0.404s</td>
+                    <td>3.706s</td>
+                    <td>5.747s</td>
+                    <td>0.329s</td>
+                    <td>116.809</td>
+                    <td><strong>step -48.7%; policy optimization -88.0%</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 4. Actor-update parameter experiments under the fixed layered summon path.
+              Baseline is <code>verl_grpo_s3_summon_layered_14b_h100_4gpu_5step_bs2_n20_ep2.log</code>; the first 2
+              warmup steps are dropped from all three candidates.
+            </p>
+          </div>
+
+          <p>Both micro=2 and the baseline have an actor allocated peak of 25.614GB. The dynamic/remove-padding
+            configuration peaks at 26.477GB; at token cap=32768 it is 26.699GB. All four groups have a per-GPU peak
+            of roughly 59,891–59,895 MiB. CPU memory peaks range 118–142GB; since the groups run different numbers
+            of steps over different measurement windows, the percentage decrease is not compared.</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table class="compact-resource-table">
+                <thead>
+                  <tr>
+                    <th>Config</th>
+                    <th>Key techniques</th>
+                    <th>Actor allocated peak</th>
+                    <th>Actor reserved peak</th>
+                    <th>Actor CPU peak</th>
+                    <th>GPU memory peak</th>
+                    <th>Mean GPU util range</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Layered baseline</td>
+                    <td>LoRA + FSDP + vLLM TP=4 + layered summon; micro=1; no dynamic; no remove padding</td>
+                    <td>25.614GB</td>
+                    <td>32.346GB</td>
+                    <td>141.533GB</td>
+                    <td>59,893 MiB</td>
+                    <td>22.2%–46.4%</td>
+                    <td>Actor CPU peak 141.5GB</td>
+                  </tr>
+                  <tr>
+                    <td>micro=2</td>
+                    <td>Only raises the PPO/logprob micro batch; still no dynamic; no remove padding</td>
+                    <td>25.614GB</td>
+                    <td>32.346GB</td>
+                    <td>118.253GB</td>
+                    <td>59,895 MiB</td>
+                    <td>24.9%–40.0%</td>
+                    <td>Policy update 14.541s</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>dynamic=True + remove_padding=True</td>
+                    <td>Dynamic batching by token budget; remove padding; token cap=16384</td>
+                    <td>26.477GB</td>
+                    <td>32.346GB</td>
+                    <td>120.232GB</td>
+                    <td>59,891 MiB</td>
+                    <td>25.1%–57.8%</td>
+                    <td><strong>Policy update 3.670s</strong></td>
+                  </tr>
+                  <tr>
+                    <td>dynamic=True + remove_padding=True</td>
+                    <td>Dynamic batching by token budget; remove padding; token cap=32768</td>
+                    <td>26.699GB</td>
+                    <td>32.346GB</td>
+                    <td>122.847GB</td>
+                    <td>59,891 MiB</td>
+                    <td>per-GPU range not recorded</td>
+                    <td>Policy update 3.706s</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 5. Resource peaks for the actor-update parameter experiments. Per-GPU memory
+              comes from <code>GPU_MONITOR</code>; actor memory and CPU memory come from verl actor metrics.</p>
+          </div>
+
+          <p>Raising the token cap from 16384 to 32768 gives policy optimization times of 3.670 and 3.706 seconds,
+            and old log-prob times of 0.742 and 0.807 seconds. The difference in average step time comes from
+            rollout's 26.429 and 21.347 seconds; both groups include 8 measured steps. The actor allocated peak
+            differs by 0.222GB, while the per-GPU peak is the same.</p>
+
+          <h3>3.3 Rollout Concurrency Capacity</h3>
+          <p>Raising <code>max_num_seqs/max_num_batched_tokens</code> from <code>4/4096</code> to <code>8/8192</code>
+            lowers rollout from 24.558 seconds to 18.000 seconds, and average step time from 35.225 seconds to
+            28.629 seconds. Policy optimization is 3.683 and 3.646 seconds respectively, and Actor→vLLM
+            synchronization is 5.824 and 5.835 seconds respectively.</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Config</th>
+                    <th>vLLM rollout capacity</th>
+                    <th>step</th>
+                    <th><code>rollout</code></th>
+                    <th><code>old_log_prob</code></th>
+                    <th><code>reference</code></th>
+                    <th>Policy optimization</th>
+                    <th>Actor→vLLM sync</th>
+                    <th>Throughput</th>
+                    <th>vs. baseline</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Dynamic/remove-padding baseline</td>
+                    <td><code>seqs=4</code>; <code>tokens=4096</code></td>
+                    <td>35.225s</td>
+                    <td>24.558s</td>
+                    <td>0.708s</td>
+                    <td>0.446s</td>
+                    <td>3.683s</td>
+                    <td>5.824s</td>
+                    <td>111.817</td>
+                    <td>baseline</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>Higher rollout concurrency</td>
+                    <td><code>seqs=8</code>; <code>tokens=8192</code></td>
+                    <td>28.629s</td>
+                    <td>18.000s</td>
+                    <td>0.705s</td>
+                    <td>0.437s</td>
+                    <td>3.646s</td>
+                    <td>5.835s</td>
+                    <td>114.776</td>
+                    <td><strong>step -18.7%; rollout -26.7%</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 6. vLLM rollout capacity comparison. Both groups drop the first 2 warmup steps;
+              <code>max_num_seqs</code> and <code>max_num_batched_tokens</code> are varied together.</p>
+          </div>
+
+          <p>The per-GPU peaks for <code>seqs=4/tokens=4096</code> and <code>seqs=8/tokens=8192</code> are 59,891 MiB
+            and 59,643 MiB respectively; the actor reserved peak is 32.346GB in both.</p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table class="compact-resource-table">
+                <thead>
+                  <tr>
+                    <th>Config</th>
+                    <th>vLLM rollout capacity</th>
+                    <th>Actor allocated peak</th>
+                    <th>Actor reserved peak</th>
+                    <th>Actor CPU peak</th>
+                    <th>GPU memory peak</th>
+                    <th>Mean GPU util range</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Dynamic/remove-padding baseline</td>
+                    <td><code>seqs=4</code>; <code>tokens=4096</code></td>
+                    <td>26.607GB</td>
+                    <td>32.346GB</td>
+                    <td>184.676GB</td>
+                    <td>59,891 MiB</td>
+                    <td>per-GPU range not recorded</td>
+                    <td>rollout concurrency baseline</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>Higher rollout concurrency</td>
+                    <td><code>seqs=8</code>; <code>tokens=8192</code></td>
+                    <td>26.477GB</td>
+                    <td>32.346GB</td>
+                    <td>175.320GB</td>
+                    <td>59,643 MiB</td>
+                    <td>per-GPU range not recorded</td>
+                    <td><strong>rollout time decreases; per-GPU memory does not increase</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 7. Resource peaks for the rollout-concurrency-capacity experiment. The two runs
+              use different measurement windows, so the decrease in CPU memory is not compared.</p>
+          </div>
+        </section>
+
+        <section aria-labelledby="perf-rollout-oom">
+          <h2 id="perf-rollout-oom">4. Rollout n=24 Memory OOM Diagnosis</h2>
+
+          <h3>4.1 Problem</h3>
+          <p>In the rollout comparison experiment with fixed 4×H100, train batch size=4, KL=0.01, PPO epoch=2,
+            dynamic batching, remove padding, and layered summon, both S3
+            <code>branch=4/beam=2/rollout_n=20</code> and S1 <code>rollout_n=8</code> complete 100 steps; S3
+            <code>branch=8/beam=1/rollout_n=24</code> fails during the Actor→vLLM synchronization phase at step 33,
+            with the log recording only the first 32 complete timing steps. The exception occurs in
+            <code>update_weights → vLLM wake_up → CuMem create_and_map</code>, i.e., the vLLM weight re-mapping phase
+            following the end of the actor update. After adding an actor-allocator cache cleanup before the vLLM
+            wake-up, the same n=24 configuration completes all 100 steps.
+          </p>
+
+          <h3>4.2 Analysis Method</h3>
+          <p>The analysis aligns the first 32 complete steps of each run, comparing
+            <code>perf/total_num_tokens</code>, <code>global_seqlen/balanced_max</code>,
+            <code>response/aborted_ratio</code>, <code>timing_s/update_actor</code>, and the actor
+            allocated/reserved high-water mark. <code>GPU_MONITOR</code> is used to localize the rollout, actor
+            update, and Actor→vLLM synchronization phases. verl clears gradients at the end of the PPO update; by the
+            time weight synchronization begins, model parameters, LoRA parameters, optimizer state, and FSDP/NCCL
+            buffers are still resident, while activations, the computation graph, and gradients have already been
+            freed.
+          </p>
+
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Config</th>
+                    <th>Global batch</th>
+                    <th>Mean tokens, first 32 steps</th>
+                    <th>Mean aborted ratio</th>
+                    <th>Mean actor update</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>S3 <code>branch=4</code> / <code>beam=2</code> / <code>n=20</code></td>
+                    <td>80</td>
+                    <td>21,826</td>
+                    <td>63.1%</td>
+                    <td>6.02s</td>
+                    <td>Completed 100 steps</td>
+                  </tr>
+                  <tr>
+                    <td>S3 <code>branch=8</code> / <code>beam=1</code> / <code>n=24</code>, before fix</td>
+                    <td>96</td>
+                    <td>26,976</td>
+                    <td>45.1%</td>
+                    <td>7.68s</td>
+                    <td><strong>OOM at the step-33 boundary</strong></td>
+                  </tr>
+                  <tr class="best-row">
+                    <td>S3 <code>branch=8</code> / <code>beam=1</code> / <code>n=24</code>, cache fix</td>
+                    <td>96</td>
+                    <td>26,351</td>
+                    <td>49.5%</td>
+                    <td>7.45s</td>
+                    <td><strong>Completed 100 steps</strong></td>
+                  </tr>
+                  <tr>
+                    <td>S1 chain <code>n=8</code></td>
+                    <td>32</td>
+                    <td>28,013</td>
+                    <td>0%</td>
+                    <td>8.36s</td>
+                    <td>Completed 100 steps</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 8. First 32 complete steps for the rollout comparison and the n=24 fixed rerun.
+              S1's mean token count is 28,013; n=24 is 26,976 before the fix and 26,351 after.</p>
+          </div>
+
+          <h3>4.3 Root Cause</h3>
+          <p>Compared to S3 n=20, the initial n=24 run's mean token count over the first 32 steps is 23.6% higher,
+            actor update time is 27.5% higher, and the fraction of non-aborted response slots rises from 36.9% to
+            54.9%. At the 33rd batch, S3 n=20 reaches 49,190 tokens and 50.52GiB actor reserved; S1 reaches 47,716
+            tokens and 49.84GiB reserved. Both complete that step. The initial n=24 run OOMs before writing out the
+            step-33 metrics; the 44.21GiB reserved value in the log is from step 32.</p>
+          <p>The fixed rerun fills in the missing step-33 data: that step actually reaches 61,558 tokens, with an
+            unbalanced longest-rank value of 31,884 tokens and a per-GPU balanced value of 15,394 tokens; actor
+            allocated/reserved high-water marks are 52.37/57.54GiB respectively, and <code>update_actor</code> takes
+            26.77 seconds. After the cache fix, <code>update_weights</code> takes 6.16 seconds, and training
+            continues through step 100.</p>
+          <p>At step 33, the training-synchronization peak approaches 76.0GB, leaving about 5.5GB free. The failed
+            run uses about 74.5GB before OOM, leaving about 7GB free. vLLM TP4 subsequently needs to re-map its
+            fixed weight shards. <code>max_num_seqs=8</code> and <code>max_num_batched_tokens=8192</code> only
+            constrain generation-phase scheduling concurrency and the KV cache; they do not change the fixed
+            weight-mapping capacity required by <code>wake_up(weights)</code>.
+          </p>
+          <p>The OOM chain is: the n=24 batch raises the actor's memory peak; the PyTorch allocator retains already-
+            freed reserved blocks; physical memory is insufficient when vLLM wake-up re-maps the weights; CuMem's
+            <code>create_and_map</code> fails.</p>
+
+          <h3>4.4 Fix and Verification</h3>
+          <p>Commit <code>1ba45c38</code> runs <code>empty_cache()</code> on each actor rank before the vLLM weight
+            wake-up. With only <code>gpu_memory_utilization</code> lowered from 0.32 to 0.20, the run still OOMs at
+            step 33; after adding the cache fix, the same n=24 training completes 100 steps, with a wall time of
+            4,964 seconds. Rollout count and the training token cap remain unchanged. Subsequent runs record
+            per-rank <code>memory_allocated</code>, <code>memory_reserved</code>, and <code>mem_get_info</code>,
+            supplementing the memory difference before and after the cache cleanup.</p>
+          <p class="source">
+            Analysis logs: <code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b4_beam2_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n20_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>; <code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b8_beam1_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n24_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>; without
+            cache
+            fix: <code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b8_beam1_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n24_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_vllmmem020_seed42.log</code>; with
+            cache
+            fix: <code>artifacts/logs/verl/verl_grpo_rollout_cmp_s3_b8_beam1_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_n24_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_vllmmem020_seed42.log</code>; <code>artifacts/logs/verl/verl_grpo_rollout_cmp_s1_chain_n8_base_ratio_gold3200_d1137_r463_lr5e5_r32_14b_h100_4gpu_100step_bs4_kl01_ep2_t10_turn3_g09_dyn16k_rmpad_seed42.log</code>
+          </p>
+        </section>
+
+        <section aria-labelledby="perf-discussion">
+          <h2 id="perf-discussion">5. Summary of Results</h2>
+          <p>Actor→vLLM synchronization takes 44.328 seconds under the historical full-summon CPU-offload path, and
+            7.222 seconds under the layered summon baseline. <code>dynamic_bsz=True</code> and
+            <code>remove_padding=True</code> lower policy optimization from 30.864 seconds to 3.670 seconds. Raising
+            rollout capacity to <code>seqs=8/tokens=8192</code> lowers rollout from 24.558 seconds to 18.000 seconds,
+            for an average step time of 28.629 seconds.</p>
+          <p>The per-GPU memory peak across the parameter experiments above is 59.6–59.9GB. Policy optimization time
+            at token cap=16384 and 32768 is 3.670 seconds and 3.706 seconds respectively; the current training
+            configuration uses 16384.</p>
+        </section>
+        <section aria-labelledby="perf-optimal-config">
+          <h2 id="perf-optimal-config">6. Current Training Configuration</h2>
+          <ul class="config-list">
+            <li><strong>Workload</strong>: S3 tree GRPO
+              workload, <code>train_batch_size=2</code>, <code>rollout_n=20</code>, <code>branch_n=4</code>,
+              <code>beam_size=2</code>, <code>max_turns=3</code>, 4×H100.
+            </li>
+            <li><strong>Actor→vLLM synchronization</strong>: Uses layered summon, synchronizing the LoRA adapter
+              tensor; measured synchronization time is 5.8–7.2 seconds.</li>
+            <li><strong>Actor/log-prob</strong>: Enables activation checkpointing, <code>dynamic_bsz=True</code>, and
+              <code>remove_padding=True</code>; retains
+              <code>ppo_mini_batch_size=2</code>, <code>ppo_micro_batch_size_per_gpu=1</code>,
+              <code>ppo_max_token_len_per_gpu=16384</code>.
+            </li>
+            <li><strong>vLLM rollout</strong>: Uses
+              <code>tensor_parallel_size=4</code>, <code>pipeline_parallel_size=1</code>,
+              <code>gpu_memory_utilization=0.32</code>, with the capacity cap set to
+              <code>max_num_seqs=8</code>, <code>max_num_batched_tokens=8192</code>.
+            </li>
+            <li><strong>Token cap</strong>: Currently 16384; 32768 has completed 10-step profiling, with a policy
+              optimization time of 3.706 seconds.</li>
+            <li><strong>Monitoring</strong>: Retains <code>GPU_MONITOR</code> and actor perf metrics; the current
+              combination's per-GPU memory peak is 59.6–59.9GB.</li>
+          </ul>
+        </section>
+      </div>
+
+      <div class="perf-subview" data-perf-view="tp-scaling" hidden>
+        <h2 class="study-title">vLLM Tensor Parallel Scaling and Fixed GPU Budget Experiment</h2>
+
+        <section class="abstract" aria-labelledby="tp-scaling-abstract">
+          <h2 id="tp-scaling-abstract">Abstract</h2>
+          <p>This experiment compares vLLM tensor parallel configurations for the Qwen2.5-Coder-14B policy on the
+            same 4×H100 node, using the same 300 SQL agent validation prompts. In a single run at global concurrency
+            8, <code>1×TP=4</code> reaches 31.15 requests/s under a fixed four-GPU budget. Subsequently, at global
+            concurrency 32 and 64, <code>4×TP=1</code>, <code>2×TP=2</code>, and <code>1×TP=4</code> are each
+            repeated 3 times: at concurrency 32 the three reach 63.76±0.50, 71.22±0.25, and 59.91±0.22 requests/s
+            respectively; at concurrency 64 they reach 96.62±0.65, 95.08±2.14, and 81.50±3.15 requests/s
+            respectively. The 18 high-concurrency runs together complete 5,400/5,400 requests, with no request
+            failures or OOMs. All data above comes from a single-turn generation workload that excludes SQL execution
+            feedback and rewrite turns.</p>
+        </section>
+
+        <section aria-labelledby="tp-scaling-question">
+          <h2 id="tp-scaling-question">1. Research Questions</h2>
+          <p>The first group holds a single vLLM instance fixed and compares the request throughput, generation
+            latency, and per-GPU throughput of <code>TP=1</code>, <code>TP=2</code>, and <code>TP=4</code>. The
+            second group fixes 4 H100s and compares <code>4 replicas × TP=1</code>, <code>2 replicas × TP=2</code>,
+            and <code>1 replica × TP=4</code>, raising global concurrency from 8 to 32 and 64, and recording whether
+            the topology ranking changes with request pressure. Service startup, SQL execution, and agent rewrite are
+            excluded from this round's measurement window.</p>
+        </section>
+
+        <section aria-labelledby="tp-scaling-method">
+          <h2 id="tp-scaling-method">2. Method</h2>
+
+          <h3>2.1 Workload and Controlled Variables</h3>
+          <p>The experiment uses the SFT-ratio merged Qwen2.5-Coder-14B checkpoint, and is run on the same 4×80GB
+            H100 node in the same software environment. Requests are the 300 prompts from
+            <code>validation.parquet</code>, formatted using the model tokenizer's chat template; this is a
+            single-generation test that isolates vLLM serving performance and does not include SQL execution,
+            execution feedback, or subsequent rewrite turns. Samples average about 224 input tokens and 32 output
+            tokens, representative of the current SQL subagent's short-output workload.</p>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Variable</th>
+                    <th>Fixed value</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Requests and concurrency</td>
+                    <td>300 requests; global concurrency=8/32/64</td>
+                    <td>All topologies use the same sample set and order</td>
+                  </tr>
+                  <tr>
+                    <td>Generation config</td>
+                    <td><code>temperature=0</code>; <code>top_p=1</code>; <code>max_tokens=512</code></td>
+                    <td>Actual average output is about 32 tokens</td>
+                  </tr>
+                  <tr>
+                    <td>vLLM capacity</td>
+                    <td><code>max_model_len=4096</code>; <code>max_num_seqs=64</code>; <code>max_num_batched_tokens=8192</code></td>
+                    <td>Held identical across all configurations</td>
+                  </tr>
+                  <tr>
+                    <td>Precision and memory</td>
+                    <td>BF16; <code>gpu_memory_utilization=0.80</code></td>
+                    <td>vLLM reserves KV cache proportionally, so the memory peak cannot be treated as the model's
+                      static footprint</td>
+                  </tr>
+                  <tr>
+                    <td>Timing boundary</td>
+                    <td>Starts once the service is ready; ends after the last response completes</td>
+                    <td>Excludes model service startup time; no additional application-layer warmup was run</td>
+                  </tr>
+                  <tr>
+                    <td>Multi-replica dispatch</td>
+                    <td>Round-robin by request index</td>
+                    <td>The client deterministically round-robins requests across each base URL</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 1. Workload, vLLM configuration, and measurement boundaries shared by both
+              rounds of formal runs.</p>
+          </div>
+
+          <h3>2.2 Experiment One: Single-Instance TP Scalability</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Config</th>
+                    <th>Instances</th>
+                    <th>GPUs per instance</th>
+                    <th>Total GPUs</th>
+                    <th>Comparison purpose</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>TP=1</code></td>
+                    <td>1</td>
+                    <td>1</td>
+                    <td>1</td>
+                    <td>Single-GPU capacity and no-cross-GPU-communication baseline</td>
+                  </tr>
+                  <tr>
+                    <td><code>TP=2</code></td>
+                    <td>1</td>
+                    <td>2</td>
+                    <td>2</td>
+                    <td>Observe the latency benefit and communication cost of two-way parallelism</td>
+                  </tr>
+                  <tr>
+                    <td><code>TP=4</code></td>
+                    <td>1</td>
+                    <td>4</td>
+                    <td>4</td>
+                    <td>Observe the latency, throughput, and scaling efficiency of four-way parallelism</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 2. Single-instance TP scaling experiment. Since this group uses different total
+              GPU counts, both absolute performance and per-GPU normalized efficiency are reported.</p>
+          </div>
+          <p>Each TP configuration uses the same 300 requests and a global concurrency of 8. In addition to absolute
+            throughput, we compute <code>speedup(TP) = throughput(TP) / throughput(TP=1)</code> and
+            <code>parallel efficiency = speedup(TP) / TP</code>, to separate the performance gain from model
+            parallelism from the effect of simply adding more GPUs.
+          </p>
+
+          <h3>2.3 Experiment Two: Fixed 4-GPU Total Budget</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Config</th>
+                    <th>Instances</th>
+                    <th>Per-instance TP</th>
+                    <th>Total GPUs</th>
+                    <th>Request dispatch</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>4 × TP=1</code></td>
+                    <td>4</td>
+                    <td>1</td>
+                    <td>4</td>
+                    <td>Round-robin across four independent replicas</td>
+                  </tr>
+                  <tr>
+                    <td><code>2 × TP=2</code></td>
+                    <td>2</td>
+                    <td>2</td>
+                    <td>4</td>
+                    <td>Round-robin across two independent replicas</td>
+                  </tr>
+                  <tr>
+                    <td><code>1 × TP=4</code></td>
+                    <td>1</td>
+                    <td>4</td>
+                    <td>4</td>
+                    <td>A single instance handles the entire request stream</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 3. Fixed 4×H100 total-budget experiment. All three groups consume the same
+              request set and keep the total GPU count and measurement window identical.</p>
+          </div>
+          <p>Multi-replica configurations use deterministic round-robin dispatch by request index. At global
+            concurrency 8, the per-instance concurrency of <code>4×TP=1</code>, <code>2×TP=2</code>, and
+            <code>1×TP=4</code> is about 2, 4, and 8 respectively; at concurrency 32 it is about 8, 16, and 32; at
+            concurrency 64 it is about 16, 32, and 64. The high-concurrency experiment runs each topology 3 times,
+            rotating the execution order of topologies across runs.</p>
+
+          <h3>2.4 Metrics and Analysis Conventions</h3>
+          <p>Throughput metrics include output tokens/s, total tokens/s, and requests/s; latency metrics include
+            TTFT, TPOT, and end-to-end request latency, with mean, p50, p95, and p99 reported. Resource metrics come
+            from <code>nvidia-smi</code> sampling. Results at concurrency 8 come from a single run; results at
+            concurrency 32/64 are the arithmetic mean of 3 runs, with throughput also reporting the sample standard
+            deviation. The p50, p95, p99, TTFT, TPOT, and peak-memory values in the tables are all means of the three
+            run-level metrics, not quantiles recomputed after pooling all 900 requests.</p>
+        </section>
+
+        <section aria-labelledby="tp-scaling-results">
+          <h2 id="tp-scaling-results">3. Results</h2>
+
+          <h3>3.1 Single-Instance TP Scaling</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Config</th>
+                    <th>GPUs</th>
+                    <th>Requests/s</th>
+                    <th>Output tok/s</th>
+                    <th>Speedup</th>
+                    <th>Parallel efficiency</th>
+                    <th>Latency p50</th>
+                    <th>Latency p95</th>
+                    <th>Mean TPOT</th>
+                    <th>Peak memory/GPU</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>TP=1</code></td>
+                    <td>1</td>
+                    <td>17.65</td>
+                    <td>558.84</td>
+                    <td>1.00×</td>
+                    <td>100.0%</td>
+                    <td>348.3ms</td>
+                    <td>922.2ms</td>
+                    <td>13.68ms/token</td>
+                    <td>63.9GiB</td>
+                  </tr>
+                  <tr>
+                    <td><code>TP=2</code></td>
+                    <td>2</td>
+                    <td>24.39</td>
+                    <td>771.50</td>
+                    <td>1.38×</td>
+                    <td>69.1%</td>
+                    <td>249.9ms</td>
+                    <td>645.4ms</td>
+                    <td>9.72ms/token</td>
+                    <td>65.6GiB</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td><code>TP=4</code></td>
+                    <td>4</td>
+                    <td><strong>31.20</strong></td>
+                    <td><strong>986.52</strong></td>
+                    <td><strong>1.77×</strong></td>
+                    <td>44.2%</td>
+                    <td><strong>192.0ms</strong></td>
+                    <td><strong>521.7ms</strong></td>
+                    <td><strong>7.52ms/token</strong></td>
+                    <td>65.7GiB</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 4. Single-instance TP scaling results at global concurrency=8. Speedup is
+              computed from requests/s; parallel efficiency is speedup/TP.</p>
+          </div>
+          <p>Relative to TP=1, request throughput for TP=2 and TP=4 rises by 38.2% and 76.8% respectively, and p95
+            latency falls by 30.0% and 43.4% respectively. As TP increases, speedup is 1.38× and 1.77× respectively;
+            per-GPU request throughput falls from TP=1's 17.65 requests/s to 12.19 for TP=2 and 7.80 for TP=4.</p>
+
+          <h3>3.2 Fixed 4-GPU Budget: concurrency=8</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Topology</th>
+                    <th>Instances</th>
+                    <th>Requests/s</th>
+                    <th>Output tok/s</th>
+                    <th>Mean latency</th>
+                    <th>Latency p50</th>
+                    <th>Latency p95</th>
+                    <th>Mean TTFT</th>
+                    <th>Mean TPOT</th>
+                    <th>Peak memory/GPU</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>4 × TP=1</code></td>
+                    <td>4</td>
+                    <td>19.27</td>
+                    <td>609.13</td>
+                    <td>405.6ms</td>
+                    <td>326.1ms</td>
+                    <td>836.8ms</td>
+                    <td>27.62ms</td>
+                    <td>12.57ms/token</td>
+                    <td>64.4GiB</td>
+                  </tr>
+                  <tr>
+                    <td><code>2 × TP=2</code></td>
+                    <td>2</td>
+                    <td>27.22</td>
+                    <td>860.42</td>
+                    <td>288.5ms</td>
+                    <td>232.9ms</td>
+                    <td>596.8ms</td>
+                    <td>23.76ms</td>
+                    <td>8.81ms/token</td>
+                    <td>65.7GiB</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td><code>1 × TP=4</code></td>
+                    <td>1</td>
+                    <td><strong>31.15</strong></td>
+                    <td><strong>985.04</strong></td>
+                    <td><strong>252.4ms</strong></td>
+                    <td><strong>200.0ms</strong></td>
+                    <td><strong>506.6ms</strong></td>
+                    <td>26.02ms</td>
+                    <td><strong>7.47ms/token</strong></td>
+                    <td>65.7GiB</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 5. Topology comparison at fixed 4×H100, global concurrency=8. All configurations
+              complete 300/300 requests, with no request failures or OOMs.</p>
+          </div>
+          <p>Under the same four-GPU budget, 1×TP=4 raises both requests/s and output tokens/s by about 61.7%
+            relative to 4×TP=1, while lowering p50 and p95 latency by 38.7% and 39.5% respectively; relative to
+            2×TP=2, request throughput rises by 14.5% and p95 latency falls by 15.1%. After round-robin dispatch,
+            each 4×TP=1 replica handles roughly two concurrent requests on average.</p>
+
+          <h3>3.3 Fixed 4-GPU Budget: concurrency=32/64</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Concurrency</th>
+                    <th>Topology</th>
+                    <th>Requests/s</th>
+                    <th>Output tok/s</th>
+                    <th>Mean latency</th>
+                    <th>Latency p95</th>
+                    <th>Latency p99</th>
+                    <th>Mean TTFT</th>
+                    <th>Mean TPOT</th>
+                    <th>Max memory/GPU</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td rowspan="3"><code>32</code></td>
+                    <td><code>4 × TP=1</code></td>
+                    <td>63.76 ± 0.50</td>
+                    <td>2017.91 ± 15.28</td>
+                    <td>453.7ms</td>
+                    <td>939.2ms</td>
+                    <td>1528.0ms</td>
+                    <td>39.7ms</td>
+                    <td>13.78ms/token</td>
+                    <td>64.4GiB</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td><code>2 × TP=2</code></td>
+                    <td><strong>71.22 ± 0.25</strong></td>
+                    <td><strong>2252.90 ± 5.94</strong></td>
+                    <td><strong>416.6ms</strong></td>
+                    <td><strong>886.2ms</strong></td>
+                    <td><strong>1419.0ms</strong></td>
+                    <td>44.0ms</td>
+                    <td><strong>12.46ms/token</strong></td>
+                    <td>65.7GiB</td>
+                  </tr>
+                  <tr>
+                    <td><code>1 × TP=4</code></td>
+                    <td>59.91 ± 0.22</td>
+                    <td>1895.36 ± 8.02</td>
+                    <td>509.1ms</td>
+                    <td>1048.0ms</td>
+                    <td>1766.9ms</td>
+                    <td>56.3ms</td>
+                    <td>15.25ms/token</td>
+                    <td>65.7GiB</td>
+                  </tr>
+                  <tr class="best-row">
+                    <td rowspan="3"><code>64</code></td>
+                    <td><code>4 × TP=1</code></td>
+                    <td><strong>96.62 ± 0.65</strong></td>
+                    <td><strong>3060.32 ± 26.06</strong></td>
+                    <td><strong>528.7ms</strong></td>
+                    <td><strong>1092.1ms</strong></td>
+                    <td><strong>1740.6ms</strong></td>
+                    <td><strong>60.8ms</strong></td>
+                    <td><strong>15.64ms/token</strong></td>
+                    <td>64.4GiB</td>
+                  </tr>
+                  <tr>
+                    <td><code>2 × TP=2</code></td>
+                    <td>95.08 ± 2.14</td>
+                    <td>3005.83 ± 67.65</td>
+                    <td>579.3ms</td>
+                    <td>1200.0ms</td>
+                    <td>1910.8ms</td>
+                    <td>77.0ms</td>
+                    <td>16.97ms/token</td>
+                    <td>65.7GiB</td>
+                  </tr>
+                  <tr>
+                    <td><code>1 × TP=4</code></td>
+                    <td>81.50 ± 3.15</td>
+                    <td>2579.88 ± 100.71</td>
+                    <td>717.3ms</td>
+                    <td>1430.5ms</td>
+                    <td>2452.8ms</td>
+                    <td>89.7ms</td>
+                    <td>21.25ms/token</td>
+                    <td>65.9GiB</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 6. High-concurrency comparison at fixed 4×H100. Throughput is the mean ± sample
+              standard deviation of 3 independent runs; other metrics are the mean of the three run-level summary
+              values. Each group completes 300/300 requests.</p>
+          </div>
+          <p>At concurrency 32, <code>2×TP=2</code>'s request throughput is 11.7% higher than <code>4×TP=1</code>'s
+            and 18.9% higher than <code>1×TP=4</code>'s; the three-run ranges for the three topologies are
+            70.97–71.46, 63.20–64.17, and 59.66–60.04 requests/s respectively. The corresponding p95 latencies are
+            886.2ms, 939.2ms, and 1048.0ms.</p>
+          <p>At concurrency 64, the average request throughput of <code>4×TP=1</code> and <code>2×TP=2</code>
+            differs by 1.6%, with three-run ranges of 96.01–97.31 and 93.79–97.55 requests/s respectively; the two
+            ranges overlap. <code>1×TP=4</code> reaches 81.50±3.15 requests/s, 15.6% lower than <code>4×TP=1</code>,
+            with 31.0% higher p95 latency.</p>
+
+          <h3>3.4 Concurrency Scaling, Run-to-Run Variation, and Memory</h3>
+          <div class="table-block">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Topology</th>
+                    <th>C=8 Requests/s</th>
+                    <th>C=32 Requests/s</th>
+                    <th>C=64 Requests/s</th>
+                    <th>C=32→64 throughput change</th>
+                    <th>C=32→64 mean latency change</th>
+                    <th>C=32→64 p95 change</th>
+                    <th>C=64 throughput CV</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>4 × TP=1</code></td>
+                    <td>19.27</td>
+                    <td>63.76 ± 0.50</td>
+                    <td>96.62 ± 0.65</td>
+                    <td>+51.5%</td>
+                    <td>+16.5%</td>
+                    <td>+16.3%</td>
+                    <td>0.68%</td>
+                  </tr>
+                  <tr>
+                    <td><code>2 × TP=2</code></td>
+                    <td>27.22</td>
+                    <td>71.22 ± 0.25</td>
+                    <td>95.08 ± 2.14</td>
+                    <td>+33.5%</td>
+                    <td>+39.1%</td>
+                    <td>+35.4%</td>
+                    <td>2.25%</td>
+                  </tr>
+                  <tr>
+                    <td><code>1 × TP=4</code></td>
+                    <td>31.15</td>
+                    <td>59.91 ± 0.22</td>
+                    <td>81.50 ± 3.15</td>
+                    <td>+36.0%</td>
+                    <td>+40.9%</td>
+                    <td>+36.5%</td>
+                    <td>3.86%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="caption">Table 7. Request throughput for the same fixed-budget topologies across three global
+              concurrency levels. C=8 is a single run; C=32/64 are the mean ± sample standard deviation of 3 runs.
+              CV is the sample standard deviation of the three C=64 throughput values divided by their mean.</p>
+          </div>
+          <p>Going from concurrency 32 to 64, throughput for <code>4×TP=1</code>, <code>2×TP=2</code>, and
+            <code>1×TP=4</code> increases by 51.5%, 33.5%, and 36.0% respectively, and p95 latency increases by
+            16.3%, 35.4%, and 36.5% respectively. Throughput CV at concurrency 32 is 0.79%, 0.35%, and 0.36%; at
+            concurrency 64 it is 0.68%, 2.25%, and 3.86%.</p>
+          <p>The 18 high-concurrency runs together complete 5,400/5,400 requests. Per-GPU peak memory falls between
+            64.4–65.9GiB, with no OOMs. All services are configured with <code>gpu_memory_utilization=0.80</code>,
+            which includes vLLM's reserved KV-cache budget.</p>
+        </section>
+
+        <section aria-labelledby="tp-scaling-conclusion">
+          <h2 id="tp-scaling-conclusion">4. Deployment Comparison and Scope of Applicability</h2>
+          <ul class="config-list">
+            <li><strong>Concurrency=8</strong>: <code>1×TP=4</code> reaches 31.15 requests/s, with p95 at 506.6ms.</li>
+            <li><strong>Concurrency=32</strong>: <code>2×TP=2</code> reaches 71.22±0.25 requests/s, with p95 at
+              886.2ms.</li>
+            <li><strong>Concurrency=64</strong>: <code>4×TP=1</code> reaches 96.62±0.65 requests/s, and
+              <code>2×TP=2</code> reaches 95.08±2.14 requests/s; the two groups' three-run ranges overlap.</li>
+            <li><strong>Measurement scope</strong>: the 300 prompts average about 224 input tokens and about 32
+              output tokens; timing excludes service startup, SQL execution, checker, and rewrite turns.</li>
+          </ul>
+        </section>
+      </div>
+
+    </article>
+  </main>
+
+  <script>
+    const buttons = Array.from(document.querySelectorAll(".tab-button"));
+    const panels = Array.from(document.querySelectorAll(".tab-panel"));
+    const grpoTab = document.getElementById("tab-grpo");
+    const grpoTabMenu = document.getElementById("grpo-tab-menu");
+    const grpoOptions = Array.from(document.querySelectorAll(".grpo-option"));
+    const grpoSubviews = Array.from(document.querySelectorAll(".grpo-subview"));
+    const perfTab = document.getElementById("tab-perf");
+    const perfTabMenu = document.getElementById("perf-tab-menu");
+    const perfOptions = Array.from(document.querySelectorAll(".perf-option"));
+    const perfSubviews = Array.from(document.querySelectorAll(".perf-subview"));
+
+    function activateTab(button) {
+      buttons.forEach((item) => item.setAttribute("aria-selected", "false"));
+      panels.forEach((panel) => panel.classList.remove("active"));
+      button.setAttribute("aria-selected", "true");
+      document.getElementById(button.getAttribute("aria-controls")).classList.add("active");
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+
+    buttons.forEach((button, index) => {
+      button.addEventListener("click", () => activateTab(button));
+      button.addEventListener("keydown", (event) => {
+        if (button === grpoTab && event.key === "ArrowDown") {
+          event.preventDefault();
+          grpoTab.setAttribute("aria-expanded", "true");
+          (grpoOptions.find((option) => option.getAttribute("aria-checked") === "true") || grpoOptions[0]).focus();
+          return;
+        }
+        if (button === perfTab && event.key === "ArrowDown") {
+          event.preventDefault();
+          perfTab.setAttribute("aria-expanded", "true");
+          (perfOptions.find((option) => option.getAttribute("aria-checked") === "true") || perfOptions[0]).focus();
+          return;
+        }
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+          return;
+        }
+        event.preventDefault();
+        const direction = event.key === "ArrowRight" ? 1 : -1;
+        const next = buttons[(index + direction + buttons.length) % buttons.length];
+        next.focus();
+        activateTab(next);
+      });
+    });
+
+    function activateGrpoView(value) {
+      grpoSubviews.forEach((view) => {
+        view.hidden = view.dataset.grpoView !== value;
+      });
+      grpoOptions.forEach((option) => {
+        option.setAttribute("aria-checked", String(option.dataset.grpoValue === value));
+      });
+    }
+
+    grpoOptions.forEach((option, index) => {
+      option.addEventListener("click", () => {
+        activateTab(grpoTab);
+        activateGrpoView(option.dataset.grpoValue);
+      });
+      option.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          grpoTab.setAttribute("aria-expanded", "false");
+          grpoTab.focus();
+          return;
+        }
+        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+          return;
+        }
+        event.preventDefault();
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        grpoOptions[(index + direction + grpoOptions.length) % grpoOptions.length].focus();
+      });
+    });
+
+    grpoTabMenu.addEventListener("mouseenter", () => grpoTab.setAttribute("aria-expanded", "true"));
+    grpoTabMenu.addEventListener("mouseleave", () => {
+      if (!grpoTabMenu.contains(document.activeElement)) {
+        grpoTab.setAttribute("aria-expanded", "false");
+      }
+    });
+    grpoTabMenu.addEventListener("focusin", () => grpoTab.setAttribute("aria-expanded", "true"));
+    grpoTabMenu.addEventListener("focusout", (event) => {
+      if (!grpoTabMenu.contains(event.relatedTarget)) {
+        grpoTab.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    function activatePerfView(value) {
+      perfSubviews.forEach((view) => {
+        view.hidden = view.dataset.perfView !== value;
+      });
+      perfOptions.forEach((option) => {
+        option.setAttribute("aria-checked", String(option.dataset.perfValue === value));
+      });
+    }
+
+    perfOptions.forEach((option, index) => {
+      option.addEventListener("click", () => {
+        activateTab(perfTab);
+        activatePerfView(option.dataset.perfValue);
+      });
+      option.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          perfTab.setAttribute("aria-expanded", "false");
+          perfTab.focus();
+          return;
+        }
+        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+          return;
+        }
+        event.preventDefault();
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        perfOptions[(index + direction + perfOptions.length) % perfOptions.length].focus();
+      });
+    });
+
+    perfTabMenu.addEventListener("mouseenter", () => perfTab.setAttribute("aria-expanded", "true"));
+    perfTabMenu.addEventListener("mouseleave", () => {
+      if (!perfTabMenu.contains(document.activeElement)) {
+        perfTab.setAttribute("aria-expanded", "false");
+      }
+    });
+    perfTabMenu.addEventListener("focusin", () => perfTab.setAttribute("aria-expanded", "true"));
+    perfTabMenu.addEventListener("focusout", (event) => {
+      if (!perfTabMenu.contains(event.relatedTarget)) {
+        perfTab.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    activateGrpoView("experiment");
+    activatePerfView("bottleneck");
+  </script>
+</body>
+
+</html>

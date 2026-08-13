@@ -228,6 +228,9 @@ sql_agent_training/artifacts/
 sql_agent_training/logs/
 sql_agent_training/checkpoints/
 
+# Local presentation materials
+sql_agent_training/docs/presentation/
+
 # Source package directory, not a virtual environment.
 !sql_agent_training/sql_agent_training/env/
 !sql_agent_training/sql_agent_training/env/**
